@@ -1,9 +1,9 @@
 package quonfig
 
-import sharedeval "github.com/quonfig/eval"
+import evalcore "github.com/quonfig/sdk-go/evalcore"
 
 type runtimeEvaluator struct {
-	shared *sharedeval.Evaluator
+	shared *evalcore.Evaluator
 }
 
 type sharedConfigStoreAdapter struct {
@@ -12,11 +12,11 @@ type sharedConfigStoreAdapter struct {
 
 func newRuntimeEvaluator(store configStore) *runtimeEvaluator {
 	return &runtimeEvaluator{
-		shared: sharedeval.NewEvaluator(&sharedConfigStoreAdapter{store: store}),
+		shared: evalcore.NewEvaluator(&sharedConfigStoreAdapter{store: store}),
 	}
 }
 
-func (a *sharedConfigStoreAdapter) GetConfig(key string) (*sharedeval.Config, bool) {
+func (a *sharedConfigStoreAdapter) GetConfig(key string) (*evalcore.Config, bool) {
 	cfg, ok := a.store.Get(key)
 	if !ok {
 		return nil, false
@@ -25,7 +25,7 @@ func (a *sharedConfigStoreAdapter) GetConfig(key string) (*sharedeval.Config, bo
 }
 
 func (e *runtimeEvaluator) EvaluateConfigResponse(cfg *ConfigResponse, envID string, ctx *ContextSet) *Value {
-	var getter sharedeval.ContextValueGetter = sharedeval.EmptyContext{}
+	var getter evalcore.ContextValueGetter = evalcore.EmptyContext{}
 	if ctx != nil {
 		getter = ctx
 	}
@@ -39,24 +39,24 @@ func (e *runtimeEvaluator) EvaluateConfigResponse(cfg *ConfigResponse, envID str
 	return &value
 }
 
-func configResponseToShared(cfg *ConfigResponse) *sharedeval.Config {
-	sharedCfg := &sharedeval.Config{
+func configResponseToShared(cfg *ConfigResponse) *evalcore.Config {
+	sharedCfg := &evalcore.Config{
 		ID:              cfg.ID,
 		Key:             cfg.Key,
-		Type:            sharedeval.ConfigType(cfg.Type),
-		ValueType:       sharedeval.ValueType(cfg.ValueType),
+		Type:            evalcore.ConfigType(cfg.Type),
+		ValueType:       evalcore.ValueType(cfg.ValueType),
 		SendToClientSDK: cfg.SendToClientSDK,
 		Default:         ruleSetToShared(cfg.Default),
 	}
 	if cfg.Environment != nil {
-		sharedCfg.Environments = []sharedeval.Environment{environmentToShared(*cfg.Environment)}
+		sharedCfg.Environments = []evalcore.Environment{environmentToShared(*cfg.Environment)}
 	}
 	return sharedCfg
 }
 
-func ruleSetToShared(rs RuleSet) sharedeval.RuleSet {
-	shared := sharedeval.RuleSet{
-		Rules: make([]sharedeval.Rule, len(rs.Rules)),
+func ruleSetToShared(rs RuleSet) evalcore.RuleSet {
+	shared := evalcore.RuleSet{
+		Rules: make([]evalcore.Rule, len(rs.Rules)),
 	}
 	for i, rule := range rs.Rules {
 		shared.Rules[i] = ruleToShared(rule)
@@ -64,10 +64,10 @@ func ruleSetToShared(rs RuleSet) sharedeval.RuleSet {
 	return shared
 }
 
-func environmentToShared(env Environment) sharedeval.Environment {
-	shared := sharedeval.Environment{
+func environmentToShared(env Environment) evalcore.Environment {
+	shared := evalcore.Environment{
 		ID:    env.ID,
-		Rules: make([]sharedeval.Rule, len(env.Rules)),
+		Rules: make([]evalcore.Rule, len(env.Rules)),
 	}
 	for i, rule := range env.Rules {
 		shared.Rules[i] = ruleToShared(rule)
@@ -75,9 +75,9 @@ func environmentToShared(env Environment) sharedeval.Environment {
 	return shared
 }
 
-func ruleToShared(rule Rule) sharedeval.Rule {
-	shared := sharedeval.Rule{
-		Criteria: make([]sharedeval.Criterion, len(rule.Criteria)),
+func ruleToShared(rule Rule) evalcore.Rule {
+	shared := evalcore.Rule{
+		Criteria: make([]evalcore.Criterion, len(rule.Criteria)),
 		Value:    valueToShared(rule.Value),
 	}
 	for i, criterion := range rule.Criteria {
@@ -86,8 +86,8 @@ func ruleToShared(rule Rule) sharedeval.Rule {
 	return shared
 }
 
-func criterionToShared(c Criterion) sharedeval.Criterion {
-	shared := sharedeval.Criterion{
+func criterionToShared(c Criterion) evalcore.Criterion {
+	shared := evalcore.Criterion{
 		PropertyName: c.PropertyName,
 		Operator:     c.Operator,
 	}
@@ -98,9 +98,9 @@ func criterionToShared(c Criterion) sharedeval.Criterion {
 	return shared
 }
 
-func valueToShared(v Value) sharedeval.Value {
-	shared := sharedeval.Value{
-		Type:         sharedeval.ValueType(v.Type),
+func valueToShared(v Value) evalcore.Value {
+	shared := evalcore.Value{
+		Type:         evalcore.ValueType(v.Type),
 		Confidential: v.Confidential,
 		DecryptWith:  v.DecryptWith,
 	}
@@ -112,14 +112,14 @@ func valueToShared(v Value) sharedeval.Value {
 		}
 	case *ProvidedData:
 		if value != nil {
-			shared.Value = &sharedeval.ProvidedData{
+			shared.Value = &evalcore.ProvidedData{
 				Source: value.Source,
 				Lookup: value.Lookup,
 			}
 		}
 	case *SchemaData:
 		if value != nil {
-			shared.Value = &sharedeval.SchemaData{
+			shared.Value = &evalcore.SchemaData{
 				SchemaType: value.SchemaType,
 				Schema:     value.Schema,
 			}
@@ -131,13 +131,13 @@ func valueToShared(v Value) sharedeval.Value {
 	return shared
 }
 
-func weightedValuesDataToShared(wv *WeightedValuesData) *sharedeval.WeightedValuesData {
-	shared := &sharedeval.WeightedValuesData{
+func weightedValuesDataToShared(wv *WeightedValuesData) *evalcore.WeightedValuesData {
+	shared := &evalcore.WeightedValuesData{
 		HashByPropertyName: wv.HashByPropertyName,
-		WeightedValues:     make([]sharedeval.WeightedValue, len(wv.WeightedValues)),
+		WeightedValues:     make([]evalcore.WeightedValue, len(wv.WeightedValues)),
 	}
 	for i, entry := range wv.WeightedValues {
-		shared.WeightedValues[i] = sharedeval.WeightedValue{
+		shared.WeightedValues[i] = evalcore.WeightedValue{
 			Weight: entry.Weight,
 			Value:  valueToShared(entry.Value),
 		}
@@ -145,7 +145,7 @@ func weightedValuesDataToShared(wv *WeightedValuesData) *sharedeval.WeightedValu
 	return shared
 }
 
-func sharedValueToLocal(shared sharedeval.Value) Value {
+func sharedValueToLocal(shared evalcore.Value) Value {
 	value := Value{
 		Type:         ValueType(shared.Type),
 		Confidential: shared.Confidential,
@@ -153,18 +153,18 @@ func sharedValueToLocal(shared sharedeval.Value) Value {
 	}
 
 	switch raw := shared.Value.(type) {
-	case *sharedeval.WeightedValuesData:
+	case *evalcore.WeightedValuesData:
 		if raw != nil {
 			value.Value = sharedWeightedValuesDataToLocal(raw)
 		}
-	case *sharedeval.ProvidedData:
+	case *evalcore.ProvidedData:
 		if raw != nil {
 			value.Value = &ProvidedData{
 				Source: raw.Source,
 				Lookup: raw.Lookup,
 			}
 		}
-	case *sharedeval.SchemaData:
+	case *evalcore.SchemaData:
 		if raw != nil {
 			value.Value = &SchemaData{
 				SchemaType: raw.SchemaType,
@@ -178,7 +178,7 @@ func sharedValueToLocal(shared sharedeval.Value) Value {
 	return value
 }
 
-func sharedWeightedValuesDataToLocal(shared *sharedeval.WeightedValuesData) *WeightedValuesData {
+func sharedWeightedValuesDataToLocal(shared *evalcore.WeightedValuesData) *WeightedValuesData {
 	value := &WeightedValuesData{
 		HashByPropertyName: shared.HashByPropertyName,
 		WeightedValues:     make([]WeightedValue, len(shared.WeightedValues)),

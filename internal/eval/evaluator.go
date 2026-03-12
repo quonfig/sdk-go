@@ -4,7 +4,7 @@ import (
 	"time"
 
 	quonfig "github.com/quonfig/sdk-go"
-	sharedeval "github.com/quonfig/eval"
+	evalcore "github.com/quonfig/sdk-go/evalcore"
 )
 
 // FullConfig is a config with all environments, matching the raw JSON format.
@@ -42,15 +42,15 @@ type EvalMatch struct {
 	WeightedValueIndex int
 }
 
-// ContextValueGetter is re-exported from the shared eval package.
-type ContextValueGetter = sharedeval.ContextValueGetter
+// ContextValueGetter is re-exported from the shared evalcore package.
+type ContextValueGetter = evalcore.ContextValueGetter
 
-// EmptyContext is re-exported from the shared eval package.
-type EmptyContext = sharedeval.EmptyContext
+// EmptyContext is re-exported from the shared evalcore package.
+type EmptyContext = evalcore.EmptyContext
 
-// Evaluator is the main evaluation engine. It delegates to the shared eval package.
+// Evaluator is the main evaluation engine. It delegates to the shared evalcore package.
 type Evaluator struct {
-	sharedEval *sharedeval.Evaluator
+	sharedEval  *evalcore.Evaluator
 	configStore ConfigStoreGetter
 }
 
@@ -59,7 +59,7 @@ type sharedConfigStoreAdapter struct {
 	store ConfigStoreGetter
 }
 
-func (a *sharedConfigStoreAdapter) GetConfig(key string) (*sharedeval.Config, bool) {
+func (a *sharedConfigStoreAdapter) GetConfig(key string) (*evalcore.Config, bool) {
 	cfg, ok := a.store.GetConfig(key)
 	if !ok {
 		return nil, false
@@ -71,7 +71,7 @@ func (a *sharedConfigStoreAdapter) GetConfig(key string) (*sharedeval.Config, bo
 func NewEvaluator(configStore ConfigStoreGetter) *Evaluator {
 	adapter := &sharedConfigStoreAdapter{store: configStore}
 	return &Evaluator{
-		sharedEval:  sharedeval.NewEvaluator(adapter),
+		sharedEval:  evalcore.NewEvaluator(adapter),
 		configStore: configStore,
 	}
 }
@@ -80,7 +80,7 @@ func NewEvaluator(configStore ConfigStoreGetter) *Evaluator {
 func NewEvaluatorWithSeed(configStore ConfigStoreGetter, seed int64) *Evaluator {
 	adapter := &sharedConfigStoreAdapter{store: configStore}
 	return &Evaluator{
-		sharedEval:  sharedeval.NewEvaluatorWithSeed(adapter, seed),
+		sharedEval:  evalcore.NewEvaluatorWithSeed(adapter, seed),
 		configStore: configStore,
 	}
 }
@@ -97,16 +97,16 @@ func (e *Evaluator) EvaluateConfig(cfg *FullConfig, envID string, ctx ContextVal
 	return sharedMatchToLocal(sharedMatch)
 }
 
-// fullConfigToShared converts a FullConfig to the shared eval.Config type.
-func fullConfigToShared(fc *FullConfig) *sharedeval.Config {
-	cfg := &sharedeval.Config{
+// fullConfigToShared converts a FullConfig to the shared evalcore.Config type.
+func fullConfigToShared(fc *FullConfig) *evalcore.Config {
+	cfg := &evalcore.Config{
 		ID:              fc.ID,
 		Key:             fc.Key,
-		Type:            sharedeval.ConfigType(fc.Type),
-		ValueType:       sharedeval.ValueType(fc.ValueType),
+		Type:            evalcore.ConfigType(fc.Type),
+		ValueType:       evalcore.ValueType(fc.ValueType),
 		SendToClientSDK: fc.SendToClientSDK,
 		Default:         ruleSetToShared(fc.Default),
-		Environments:    make([]sharedeval.Environment, len(fc.Environments)),
+		Environments:    make([]evalcore.Environment, len(fc.Environments)),
 	}
 	for i, env := range fc.Environments {
 		cfg.Environments[i] = environmentToShared(env)
@@ -114,10 +114,10 @@ func fullConfigToShared(fc *FullConfig) *sharedeval.Config {
 	return cfg
 }
 
-// ruleSetToShared converts a quonfig.RuleSet to the shared eval type.
-func ruleSetToShared(rs quonfig.RuleSet) sharedeval.RuleSet {
-	shared := sharedeval.RuleSet{
-		Rules: make([]sharedeval.Rule, len(rs.Rules)),
+// ruleSetToShared converts a quonfig.RuleSet to the shared evalcore type.
+func ruleSetToShared(rs quonfig.RuleSet) evalcore.RuleSet {
+	shared := evalcore.RuleSet{
+		Rules: make([]evalcore.Rule, len(rs.Rules)),
 	}
 	for i, rule := range rs.Rules {
 		shared.Rules[i] = ruleToShared(rule)
@@ -125,11 +125,11 @@ func ruleSetToShared(rs quonfig.RuleSet) sharedeval.RuleSet {
 	return shared
 }
 
-// environmentToShared converts a quonfig.Environment to the shared eval type.
-func environmentToShared(env quonfig.Environment) sharedeval.Environment {
-	shared := sharedeval.Environment{
+// environmentToShared converts a quonfig.Environment to the shared evalcore type.
+func environmentToShared(env quonfig.Environment) evalcore.Environment {
+	shared := evalcore.Environment{
 		ID:    env.ID,
-		Rules: make([]sharedeval.Rule, len(env.Rules)),
+		Rules: make([]evalcore.Rule, len(env.Rules)),
 	}
 	for i, rule := range env.Rules {
 		shared.Rules[i] = ruleToShared(rule)
@@ -137,10 +137,10 @@ func environmentToShared(env quonfig.Environment) sharedeval.Environment {
 	return shared
 }
 
-// ruleToShared converts a quonfig.Rule to the shared eval type.
-func ruleToShared(rule quonfig.Rule) sharedeval.Rule {
-	shared := sharedeval.Rule{
-		Criteria: make([]sharedeval.Criterion, len(rule.Criteria)),
+// ruleToShared converts a quonfig.Rule to the shared evalcore type.
+func ruleToShared(rule quonfig.Rule) evalcore.Rule {
+	shared := evalcore.Rule{
+		Criteria: make([]evalcore.Criterion, len(rule.Criteria)),
 		Value:    valueToShared(rule.Value),
 	}
 	for i, c := range rule.Criteria {
@@ -149,9 +149,9 @@ func ruleToShared(rule quonfig.Rule) sharedeval.Rule {
 	return shared
 }
 
-// criterionToShared converts a quonfig.Criterion to the shared eval type.
-func criterionToShared(c quonfig.Criterion) sharedeval.Criterion {
-	shared := sharedeval.Criterion{
+// criterionToShared converts a quonfig.Criterion to the shared evalcore type.
+func criterionToShared(c quonfig.Criterion) evalcore.Criterion {
+	shared := evalcore.Criterion{
 		PropertyName: c.PropertyName,
 		Operator:     c.Operator,
 	}
@@ -162,10 +162,10 @@ func criterionToShared(c quonfig.Criterion) sharedeval.Criterion {
 	return shared
 }
 
-// valueToShared converts a quonfig.Value to the shared eval type.
-func valueToShared(v quonfig.Value) sharedeval.Value {
-	sv := sharedeval.Value{
-		Type:         sharedeval.ValueType(v.Type),
+// valueToShared converts a quonfig.Value to the shared evalcore type.
+func valueToShared(v quonfig.Value) evalcore.Value {
+	sv := evalcore.Value{
+		Type:         evalcore.ValueType(v.Type),
 		Confidential: v.Confidential,
 		DecryptWith:  v.DecryptWith,
 	}
@@ -178,14 +178,14 @@ func valueToShared(v quonfig.Value) sharedeval.Value {
 		}
 	case *quonfig.ProvidedData:
 		if val != nil {
-			sv.Value = &sharedeval.ProvidedData{
+			sv.Value = &evalcore.ProvidedData{
 				Source: val.Source,
 				Lookup: val.Lookup,
 			}
 		}
 	case *quonfig.SchemaData:
 		if val != nil {
-			sv.Value = &sharedeval.SchemaData{
+			sv.Value = &evalcore.SchemaData{
 				SchemaType: val.SchemaType,
 				Schema:     val.Schema,
 			}
@@ -198,13 +198,13 @@ func valueToShared(v quonfig.Value) sharedeval.Value {
 }
 
 // weightedValuesDataToShared converts quonfig.WeightedValuesData to the shared type.
-func weightedValuesDataToShared(wv *quonfig.WeightedValuesData) *sharedeval.WeightedValuesData {
-	shared := &sharedeval.WeightedValuesData{
+func weightedValuesDataToShared(wv *quonfig.WeightedValuesData) *evalcore.WeightedValuesData {
+	shared := &evalcore.WeightedValuesData{
 		HashByPropertyName: wv.HashByPropertyName,
-		WeightedValues:     make([]sharedeval.WeightedValue, len(wv.WeightedValues)),
+		WeightedValues:     make([]evalcore.WeightedValue, len(wv.WeightedValues)),
 	}
 	for i, entry := range wv.WeightedValues {
-		shared.WeightedValues[i] = sharedeval.WeightedValue{
+		shared.WeightedValues[i] = evalcore.WeightedValue{
 			Weight: entry.Weight,
 			Value:  valueToShared(entry.Value),
 		}
@@ -213,7 +213,7 @@ func weightedValuesDataToShared(wv *quonfig.WeightedValuesData) *sharedeval.Weig
 }
 
 // sharedMatchToLocal converts a shared EvalMatch back to the local type.
-func sharedMatchToLocal(match *sharedeval.EvalMatch) *EvalMatch {
+func sharedMatchToLocal(match *evalcore.EvalMatch) *EvalMatch {
 	if match == nil {
 		return &EvalMatch{IsMatch: false}
 	}
@@ -229,8 +229,8 @@ func sharedMatchToLocal(match *sharedeval.EvalMatch) *EvalMatch {
 	return result
 }
 
-// sharedValueToLocal converts a shared eval.Value back to a quonfig.Value.
-func sharedValueToLocal(sv sharedeval.Value) quonfig.Value {
+// sharedValueToLocal converts a shared evalcore.Value back to a quonfig.Value.
+func sharedValueToLocal(sv evalcore.Value) quonfig.Value {
 	v := quonfig.Value{
 		Type:         quonfig.ValueType(sv.Type),
 		Confidential: sv.Confidential,
@@ -238,18 +238,18 @@ func sharedValueToLocal(sv sharedeval.Value) quonfig.Value {
 	}
 
 	switch val := sv.Value.(type) {
-	case *sharedeval.WeightedValuesData:
+	case *evalcore.WeightedValuesData:
 		if val != nil {
 			v.Value = sharedWeightedValuesDataToLocal(val)
 		}
-	case *sharedeval.ProvidedData:
+	case *evalcore.ProvidedData:
 		if val != nil {
 			v.Value = &quonfig.ProvidedData{
 				Source: val.Source,
 				Lookup: val.Lookup,
 			}
 		}
-	case *sharedeval.SchemaData:
+	case *evalcore.SchemaData:
 		if val != nil {
 			v.Value = &quonfig.SchemaData{
 				SchemaType: val.SchemaType,
@@ -263,7 +263,7 @@ func sharedValueToLocal(sv sharedeval.Value) quonfig.Value {
 }
 
 // sharedWeightedValuesDataToLocal converts shared WeightedValuesData back to quonfig type.
-func sharedWeightedValuesDataToLocal(wv *sharedeval.WeightedValuesData) *quonfig.WeightedValuesData {
+func sharedWeightedValuesDataToLocal(wv *evalcore.WeightedValuesData) *quonfig.WeightedValuesData {
 	local := &quonfig.WeightedValuesData{
 		HashByPropertyName: wv.HashByPropertyName,
 		WeightedValues:     make([]quonfig.WeightedValue, len(wv.WeightedValues)),
