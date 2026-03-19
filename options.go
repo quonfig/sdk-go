@@ -53,8 +53,13 @@ type Options struct {
 	TelemetryURL               string
 }
 
-// TelemetryEnabled returns true if any telemetry collection is enabled.
+// TelemetryEnabled returns true if a TelemetryURL is configured and any
+// telemetry collection is enabled.  Without an explicit TelemetryURL telemetry
+// is disabled — the SDK must never send telemetry to the config delivery API.
 func (o *Options) TelemetryEnabled() bool {
+	if o.TelemetryURL == "" {
+		return false
+	}
 	return o.CollectEvaluationSummaries || o.ContextTelemetryMode != ContextTelemetryNone
 }
 
@@ -66,7 +71,8 @@ func defaultOptions() Options {
 		CollectEvaluationSummaries: true,
 		ContextTelemetryMode:       ContextTelemetryPeriodicExample,
 		TelemetrySyncInterval:      60 * time.Second,
-		TelemetryURL:               "https://telemetry.quonfig.com",
+		// TelemetryURL intentionally left empty — telemetry is disabled unless a
+		// dedicated telemetry service URL is explicitly provided via WithTelemetryURL.
 	}
 }
 
