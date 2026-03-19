@@ -232,8 +232,8 @@ func TestSubmitter_AuthHeader(t *testing.T) {
 	if authHeader == "" {
 		t.Fatal("expected Authorization header")
 	}
-	// Should be Basic auth with base64("authuser:my-sdk-key")
-	expected := "Basic YXV0aHVzZXI6bXktc2RrLWtleQ=="
+	// Should be Basic auth with base64("1:my-sdk-key")
+	expected := "Basic MTpteS1zZGsta2V5"
 	if authHeader != expected {
 		t.Errorf("expected auth header %q, got %q", expected, authHeader)
 	}

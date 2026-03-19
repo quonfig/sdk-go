@@ -221,7 +221,7 @@ func (s *Submitter) postWithRetry(url string, data []byte) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Quonfig-SDK-Version", sdkVersion)
 
-		encodedAuth := base64.StdEncoding.EncodeToString([]byte("authuser:" + s.apiKey))
+		encodedAuth := base64.StdEncoding.EncodeToString([]byte("1:" + s.apiKey))
 		req.Header.Set("Authorization", "Basic "+encodedAuth)
 
 		resp, err := s.httpClient.Do(req)
