@@ -77,7 +77,7 @@ func (a *EvalSummaryAggregator) GetAndClear() *TelemetryEvent {
 		counter := EvalCounter{
 			ConfigID:              match.ConfigID,
 			ConditionalValueIndex: match.RuleIndex,
-			ConfigRowIndex:        match.RuleIndex,
+			ConfigRowIndex:        0,
 			WeightedValueIndex:    match.WeightedValueIndex,
 			SelectedValue:         selectedValueJSON,
 			Count:                 a.counts[groupingKey],
