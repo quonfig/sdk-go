@@ -96,7 +96,7 @@ func TestSubmitter_SkipsLogLevelEvaluations(t *testing.T) {
 	s.RecordEvaluation(EvalMatch{
 		ConfigID:      "cfg-log",
 		ConfigKey:     "log.level.myservice",
-		ConfigType:    "log_level_v2",
+		ConfigType:    "log_level",
 		SelectedValue: "DEBUG",
 	})
 
@@ -105,7 +105,7 @@ func TestSubmitter_SkipsLogLevelEvaluations(t *testing.T) {
 
 	event := s.evalAggregator.GetAndClear()
 	if event != nil {
-		t.Error("expected log_level_v2 evaluations to be skipped")
+		t.Error("expected log_level evaluations to be skipped")
 	}
 }
 

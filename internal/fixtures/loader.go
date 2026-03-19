@@ -35,7 +35,7 @@ func (s *ConfigStore) Len() int {
 // LoadFromDir loads all config JSON files from a directory into the store.
 func (s *ConfigStore) LoadFromDir(dir string) error {
 	// Load configs, feature-flags, segments
-	for _, subdir := range []string{"configs", "feature-flags", "segments"} {
+	for _, subdir := range []string{"configs", "feature-flags", "segments", "log-levels"} {
 		dirPath := filepath.Join(dir, subdir)
 		entries, err := os.ReadDir(dirPath)
 		if err != nil {

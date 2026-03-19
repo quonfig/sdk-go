@@ -104,8 +104,8 @@ func (s *Submitter) RecordEvaluation(match EvalMatch) {
 }
 
 func (m EvalMatch) isValid() bool {
-	// Skip log level evaluations (same as old sdk-go)
-	return m.ConfigType != "log_level_v2"
+	// Skip log level evaluations from telemetry
+	return m.ConfigType != "log_level"
 }
 
 // RecordContext enqueues a context for shape and example aggregation.
