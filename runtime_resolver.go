@@ -66,12 +66,12 @@ func (r *runtimeResolver) resolveDecryption(val *Value, configKey, envID string,
 		return nil, fmt.Errorf("%w: decryption key config %q not found", ErrUnableToDecrypt, val.DecryptWith)
 	}
 
-	keyValue := r.evaluator.EvaluateConfigResponse(keyCfg, envID, ctx)
-	if keyValue == nil {
+	keyResult := r.evaluator.EvaluateConfigResponse(keyCfg, envID, ctx)
+	if keyResult == nil || !keyResult.IsMatch || keyResult.Value == nil {
 		return nil, fmt.Errorf("%w: decryption key config %q did not match", ErrUnableToDecrypt, val.DecryptWith)
 	}
 
-	resolvedKey, err := r.ResolveValue(keyValue, keyCfg.Key, keyCfg.ValueType, envID, ctx)
+	resolvedKey, err := r.ResolveValue(keyResult.Value, keyCfg.Key, keyCfg.ValueType, envID, ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to resolve decryption key from %q: %v", ErrUnableToDecrypt, val.DecryptWith, err)
 	}

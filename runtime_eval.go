@@ -24,19 +24,64 @@ func (a *sharedConfigStoreAdapter) GetConfig(key string) (*evalcore.Config, bool
 	return configResponseToShared(cfg), true
 }
 
-func (e *runtimeEvaluator) EvaluateConfigResponse(cfg *ConfigResponse, envID string, ctx *ContextSet) *Value {
+func (e *runtimeEvaluator) EvaluateConfigResponse(cfg *ConfigResponse, envID string, ctx *ContextSet) *EvalResult {
 	var getter evalcore.ContextValueGetter = evalcore.EmptyContext{}
 	if ctx != nil {
 		getter = ctx
 	}
 
 	match := e.shared.EvaluateConfig(configResponseToShared(cfg), envID, getter)
+
+	result := &EvalResult{
+		ConfigID:   cfg.ID,
+		ConfigKey:  cfg.Key,
+		ConfigType: cfg.Type,
+	}
+
 	if match == nil || !match.IsMatch || match.Value == nil {
-		return nil
+		result.IsMatch = false
+		result.Reason = ReasonDefault
+		return result
 	}
 
 	value := sharedValueToLocal(*match.Value)
-	return &value
+	result.Value = &value
+	result.IsMatch = true
+	result.RuleIndex = match.RuleIndex
+	result.WeightedValueIndex = match.WeightedValueIndex
+
+	// Determine evaluation reason
+	switch {
+	case match.WeightedValueIndex > 0:
+		result.Reason = ReasonSplit
+	case len(match.Value.Type) > 0 && match.RuleIndex == 0 && !hasTargetingRules(cfg):
+		result.Reason = ReasonStatic
+	default:
+		result.Reason = ReasonTargetingMatch
+	}
+
+	return result
+}
+
+// hasTargetingRules returns true if any rule has non-ALWAYS_TRUE criteria.
+func hasTargetingRules(cfg *ConfigResponse) bool {
+	checkRules := func(rules []Rule) bool {
+		for _, rule := range rules {
+			for _, c := range rule.Criteria {
+				if c.Operator != "ALWAYS_TRUE" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if checkRules(cfg.Default.Rules) {
+		return true
+	}
+	if cfg.Environment != nil {
+		return checkRules(cfg.Environment.Rules)
+	}
+	return false
 }
 
 func configResponseToShared(cfg *ConfigResponse) *evalcore.Config {

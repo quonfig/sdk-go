@@ -35,8 +35,8 @@ type configStore interface {
 // This interface breaks the import cycle between quonfig and internal/eval.
 type ConfigEvaluator interface {
 	// EvaluateConfigResponse evaluates a ConfigResponse for the given environment and context.
-	// Returns the matched value (or nil if no match).
-	EvaluateConfigResponse(cfg *ConfigResponse, envID string, ctx *ContextSet) *Value
+	// Returns the full evaluation result including match metadata for telemetry and reasons.
+	EvaluateConfigResponse(cfg *ConfigResponse, envID string, ctx *ContextSet) *EvalResult
 }
 
 // ValueResolver resolves a matched value (e.g., ENV_VAR lookup, decryption).
@@ -55,6 +55,7 @@ type Client struct {
 	envID     string // environment ID for evaluation (e.g. "Production")
 
 	transport *runtimeTransport
+	telemetry *telemetrySubmitter
 
 	mu                     sync.RWMutex
 	initializationDone     chan struct{}
@@ -82,6 +83,11 @@ func NewClient(opts ...Option) (*Client, error) {
 		opts:               o,
 		initializationDone: make(chan struct{}),
 		closeCh:            make(chan struct{}),
+	}
+
+	if o.TelemetryEnabled() {
+		client.telemetry = newTelemetrySubmitter(o)
+		client.telemetry.Start()
 	}
 
 	if o.APIKey == "" {
@@ -132,10 +138,13 @@ func (c *Client) Refresh() error {
 	return c.fetchAndInstall(context.Background(), false)
 }
 
-// Close stops any background refresh loop started by WithRefreshInterval.
+// Close stops any background refresh loop and flushes pending telemetry.
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
 		close(c.closeCh)
+		if c.telemetry != nil {
+			c.telemetry.Stop()
+		}
 	})
 }
 
@@ -256,6 +265,7 @@ func (c *Client) resolve(key string, ctx *ContextSet) (*Value, bool, error) {
 	resolver := c.resolver
 	envID := c.envID
 	globalContext := c.opts.GlobalContext
+	telemetry := c.telemetry
 	c.mu.RUnlock()
 
 	if store == nil {
@@ -268,21 +278,33 @@ func (c *Client) resolve(key string, ctx *ContextSet) (*Value, bool, error) {
 
 	mergedCtx := Merge(globalContext, ctx)
 
+	// Record context for telemetry (before evaluation, same as old sdk-go)
+	if telemetry != nil {
+		telemetry.RecordContext(mergedCtx)
+	}
+
 	// If we have an evaluator, use it for full rule evaluation with context
 	if evaluator != nil {
-		result := evaluator.EvaluateConfigResponse(cfg, envID, mergedCtx)
-		if result != nil {
-			// Pass through the resolver if available (handles ENV_VAR, decryption)
-			if resolver != nil {
-				resolved, err := resolver.ResolveValue(result, cfg.Key, cfg.ValueType, envID, mergedCtx)
-				if err != nil {
-					return nil, false, err
-				}
-				return resolved, true, nil
-			}
-			return result, true, nil
+		evalResult := evaluator.EvaluateConfigResponse(cfg, envID, mergedCtx)
+
+		// Record evaluation for telemetry
+		if telemetry != nil && evalResult != nil {
+			telemetry.RecordEvaluation(evalResult)
 		}
-		return nil, false, nil
+
+		if evalResult == nil || !evalResult.IsMatch || evalResult.Value == nil {
+			return nil, false, nil
+		}
+
+		// Pass through the resolver if available (handles ENV_VAR, decryption)
+		if resolver != nil {
+			resolved, err := resolver.ResolveValue(evalResult.Value, cfg.Key, cfg.ValueType, envID, mergedCtx)
+			if err != nil {
+				return nil, false, err
+			}
+			return resolved, true, nil
+		}
+		return evalResult.Value, true, nil
 	}
 
 	// Fallback: return the first default rule's value (no evaluator available)

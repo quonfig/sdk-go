@@ -16,6 +16,18 @@ const (
 	ReturnZeroValue
 )
 
+// ContextTelemetryMode controls what context data the SDK sends to the telemetry backend.
+type ContextTelemetryMode string
+
+const (
+	// ContextTelemetryNone disables context telemetry.
+	ContextTelemetryNone ContextTelemetryMode = ""
+	// ContextTelemetryShapes sends only context field names and types.
+	ContextTelemetryShapes ContextTelemetryMode = "shapes"
+	// ContextTelemetryPeriodicExample sends context shapes and periodic example values.
+	ContextTelemetryPeriodicExample ContextTelemetryMode = "periodic_example"
+)
+
 // Option is a functional option for configuring the Client.
 type Option func(*Options) error
 
@@ -33,13 +45,28 @@ type Options struct {
 	EnvLookup       EnvLookupFunc
 	RefreshInterval time.Duration
 	HTTPClient      *http.Client
+
+	// Telemetry options
+	CollectEvaluationSummaries bool
+	ContextTelemetryMode       ContextTelemetryMode
+	TelemetrySyncInterval      time.Duration
+	TelemetryURL               string
+}
+
+// TelemetryEnabled returns true if any telemetry collection is enabled.
+func (o *Options) TelemetryEnabled() bool {
+	return o.CollectEvaluationSummaries || o.ContextTelemetryMode != ContextTelemetryNone
 }
 
 func defaultOptions() Options {
 	return Options{
-		APIURL:        "https://api.quonfig.com",
-		InitTimeout:   10 * time.Second,
-		OnInitFailure: ReturnError,
+		APIURL:                     "https://api.quonfig.com",
+		InitTimeout:                10 * time.Second,
+		OnInitFailure:              ReturnError,
+		CollectEvaluationSummaries: true,
+		ContextTelemetryMode:       ContextTelemetryPeriodicExample,
+		TelemetrySyncInterval:      60 * time.Second,
+		TelemetryURL:               "https://telemetry.quonfig.com",
 	}
 }
 
@@ -117,6 +144,53 @@ func WithHTTPClient(client *http.Client) Option {
 			return errors.New("HTTP client must not be nil")
 		}
 		o.HTTPClient = client
+		return nil
+	}
+}
+
+// WithCollectEvaluationSummaries enables or disables evaluation summary telemetry.
+func WithCollectEvaluationSummaries(enabled bool) Option {
+	return func(o *Options) error {
+		o.CollectEvaluationSummaries = enabled
+		return nil
+	}
+}
+
+// WithContextTelemetryMode sets the context telemetry mode.
+func WithContextTelemetryMode(mode ContextTelemetryMode) Option {
+	return func(o *Options) error {
+		o.ContextTelemetryMode = mode
+		return nil
+	}
+}
+
+// WithTelemetrySyncInterval sets how often telemetry is submitted to the backend.
+func WithTelemetrySyncInterval(d time.Duration) Option {
+	return func(o *Options) error {
+		if d <= 0 {
+			return errors.New("telemetry sync interval must be positive")
+		}
+		o.TelemetrySyncInterval = d
+		return nil
+	}
+}
+
+// WithTelemetryURL sets the telemetry ingestion endpoint.
+func WithTelemetryURL(url string) Option {
+	return func(o *Options) error {
+		if url == "" {
+			return errors.New("telemetry URL must not be empty")
+		}
+		o.TelemetryURL = url
+		return nil
+	}
+}
+
+// WithAllTelemetryDisabled disables all telemetry collection.
+func WithAllTelemetryDisabled() Option {
+	return func(o *Options) error {
+		o.CollectEvaluationSummaries = false
+		o.ContextTelemetryMode = ContextTelemetryNone
 		return nil
 	}
 }
