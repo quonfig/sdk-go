@@ -3,6 +3,7 @@ package quonfig
 import (
 	"errors"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -54,8 +55,7 @@ type Options struct {
 }
 
 // TelemetryEnabled returns true if a TelemetryURL is configured and any
-// telemetry collection is enabled.  Without an explicit TelemetryURL telemetry
-// is disabled — the SDK must never send telemetry to the config delivery API.
+// telemetry collection is enabled.
 func (o *Options) TelemetryEnabled() bool {
 	if o.TelemetryURL == "" {
 		return false
@@ -71,8 +71,17 @@ func defaultOptions() Options {
 		CollectEvaluationSummaries: true,
 		ContextTelemetryMode:       ContextTelemetryPeriodicExample,
 		TelemetrySyncInterval:      60 * time.Second,
-		// TelemetryURL intentionally left empty — telemetry is disabled unless a
-		// dedicated telemetry service URL is explicitly provided via WithTelemetryURL.
+		TelemetryURL:               "https://telemetry.quonfig.com",
+	}
+}
+
+// applyTelemetryEnvOverride checks the QUONFIG_TELEMETRY_URL environment
+// variable and, if set, overrides the TelemetryURL option. This is called
+// after all functional options have been applied so the env var takes highest
+// priority.
+func applyTelemetryEnvOverride(o *Options) {
+	if v, ok := os.LookupEnv("QUONFIG_TELEMETRY_URL"); ok {
+		o.TelemetryURL = v
 	}
 }
 

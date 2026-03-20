@@ -79,6 +79,9 @@ func NewClient(opts ...Option) (*Client, error) {
 		}
 	}
 
+	// Env var override takes highest priority, after all options are applied.
+	applyTelemetryEnvOverride(&o)
+
 	client := &Client{
 		opts:               o,
 		initializationDone: make(chan struct{}),
