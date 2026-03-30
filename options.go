@@ -39,7 +39,9 @@ type EnvLookupFunc func(key string) (string, bool)
 // Options holds all client configuration.
 type Options struct {
 	APIKey          string
-	APIURL          string
+	APIURLs         []string
+	DataDir         string
+	Environment     string
 	GlobalContext   *ContextSet
 	InitTimeout     time.Duration
 	OnInitFailure   OnInitFailure
@@ -65,8 +67,11 @@ func (o *Options) TelemetryEnabled() bool {
 
 func defaultOptions() Options {
 	return Options{
-		APIURL:                     "https://api.quonfig.com",
-		InitTimeout:                10 * time.Second,
+		APIURLs: []string{
+			"https://primary.quonfig.com",
+			"https://secondary.quonfig.com",
+		},
+		InitTimeout: 10 * time.Second,
 		OnInitFailure:              ReturnError,
 		CollectEvaluationSummaries: true,
 		ContextTelemetryMode:       ContextTelemetryPeriodicExample,
@@ -96,13 +101,48 @@ func WithAPIKey(key string) Option {
 	}
 }
 
-// WithAPIURL sets the base URL for the Quonfig API.
+// WithAPIURL sets a single base URL for the Quonfig API (replaces the default list).
+// Deprecated: Use WithAPIURLs for primary/secondary failover.
 func WithAPIURL(url string) Option {
 	return func(o *Options) error {
 		if url == "" {
 			return errors.New("API URL must not be empty")
 		}
-		o.APIURL = url
+		o.APIURLs = []string{url}
+		return nil
+	}
+}
+
+// WithAPIURLs sets an ordered list of base URLs for the Quonfig API.
+// The client tries each URL in order, falling back to the next on failure.
+func WithAPIURLs(urls []string) Option {
+	return func(o *Options) error {
+		if len(urls) == 0 {
+			return errors.New("API URLs must not be empty")
+		}
+		o.APIURLs = urls
+		return nil
+	}
+}
+
+// WithDataDir sets the local Quonfig workspace directory to load from disk.
+func WithDataDir(path string) Option {
+	return func(o *Options) error {
+		if path == "" {
+			return errors.New("data dir must not be empty")
+		}
+		o.DataDir = path
+		return nil
+	}
+}
+
+// WithEnvironment sets the environment ID/name used when loading from a local data dir.
+func WithEnvironment(environment string) Option {
+	return func(o *Options) error {
+		if environment == "" {
+			return errors.New("environment must not be empty")
+		}
+		o.Environment = environment
 		return nil
 	}
 }

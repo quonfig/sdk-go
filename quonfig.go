@@ -93,13 +93,26 @@ func NewClient(opts ...Option) (*Client, error) {
 		client.telemetry.Start()
 	}
 
+	if o.DataDir != "" {
+		envelope, err := loadWorkspaceEnvelope(o.DataDir, o.Environment)
+		if err != nil {
+			if client.telemetry != nil {
+				client.telemetry.Stop()
+			}
+			return nil, err
+		}
+		client.installEnvelope(envelope)
+		client.finishInitialization(true)
+		return client, nil
+	}
+
 	if o.APIKey == "" {
 		client.initialized = true
 		close(client.initializationDone)
 		return client, nil
 	}
 
-	client.transport = newRuntimeTransport(o.APIURL, o.APIKey, o.HTTPClient)
+	client.transport = newRuntimeTransport(o.APIURLs, o.APIKey, o.HTTPClient)
 	client.startInitialization()
 
 	return client, nil
@@ -383,24 +396,28 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 		return nil
 	}
 
-	store := newRuntimeStore()
-	store.Update(result.Envelope)
-	evaluator := newRuntimeEvaluator(store)
-	resolver := newRuntimeResolver(store, evaluator, c.opts.EnvLookup)
-
-	c.mu.Lock()
-	c.store = store
-	c.evaluator = evaluator
-	c.resolver = resolver
-	c.envID = result.Envelope.Meta.Environment
-	c.initialized = true
-	c.initializationErr = nil
-	c.mu.Unlock()
+	c.installEnvelope(result.Envelope)
 
 	if initial {
 		c.finishInitialization(true)
 	}
 	return nil
+}
+
+func (c *Client) installEnvelope(envelope *ConfigEnvelope) {
+	store := newRuntimeStore()
+	store.Update(envelope)
+	evaluator := newRuntimeEvaluator(store)
+	resolver := newRuntimeResolver(store, evaluator, c.opts.EnvLookup)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.store = store
+	c.evaluator = evaluator
+	c.resolver = resolver
+	c.envID = envelope.Meta.Environment
+	c.initialized = true
+	c.initializationErr = nil
 }
 
 func (c *Client) finishInitialization(success bool) {
