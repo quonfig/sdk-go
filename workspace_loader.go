@@ -147,14 +147,12 @@ func resolveWorkspaceEnvironment(dir, override string, configs []workspaceConfig
 		return "", fmt.Errorf("environment %q not found in workspace; available environments: %s", override, strings.Join(available, ", "))
 	}
 
-	switch len(available) {
-	case 0:
-		return "", nil
-	case 1:
-		return available[0], nil
-	default:
-		return "", fmt.Errorf("workspace has multiple environments (%s); pass WithEnvironment(...) to select one", strings.Join(available, ", "))
+	// No auto-selection: explicit environment is always required in datadir mode.
+	// Set it via WithEnvironment() or the QUONFIG_ENVIRONMENT env var.
+	if len(available) == 0 {
+		return "", fmt.Errorf("environment required for datadir mode; set WithEnvironment() or QUONFIG_ENVIRONMENT env var")
 	}
+	return "", fmt.Errorf("environment required for datadir mode (available: %s); set WithEnvironment() or QUONFIG_ENVIRONMENT env var", strings.Join(available, ", "))
 }
 
 func workspaceEnvironmentNames(dir string, configs []workspaceConfig) []string {

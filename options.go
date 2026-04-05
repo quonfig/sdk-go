@@ -90,6 +90,18 @@ func applyTelemetryEnvOverride(o *Options) {
 	}
 }
 
+// applyEnvironmentEnvOverride checks the QUONFIG_ENVIRONMENT environment
+// variable and, if set and no explicit WithEnvironment was provided, uses it
+// as the environment. WithEnvironment takes precedence over the env var.
+func applyEnvironmentEnvOverride(o *Options) {
+	if o.Environment != "" {
+		return // explicit option takes precedence
+	}
+	if v, ok := os.LookupEnv("QUONFIG_ENVIRONMENT"); ok && v != "" {
+		o.Environment = v
+	}
+}
+
 // WithAPIKey sets the API key for authentication.
 func WithAPIKey(key string) Option {
 	return func(o *Options) error {

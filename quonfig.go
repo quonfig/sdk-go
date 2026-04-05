@@ -79,8 +79,9 @@ func NewClient(opts ...Option) (*Client, error) {
 		}
 	}
 
-	// Env var override takes highest priority, after all options are applied.
+	// Env var overrides take highest priority, after all options are applied.
 	applyTelemetryEnvOverride(&o)
+	applyEnvironmentEnvOverride(&o)
 
 	client := &Client{
 		opts:               o,

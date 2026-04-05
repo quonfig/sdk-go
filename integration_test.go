@@ -85,6 +85,7 @@ func startTestServer(t *testing.T) string {
 		fmt.Sprintf("PORT=%d", port),
 		fmt.Sprintf("FIXTURE_DIR=%s", fixtureDir),
 		fmt.Sprintf("SDK_KEYS_FILE=%s", keysPath),
+		"QUONFIG_ENVIRONMENT=development",
 	)
 	cmd.Stdout = os.Stderr // let server logs appear in test output
 	cmd.Stderr = os.Stderr

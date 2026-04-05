@@ -11,6 +11,7 @@ import (
 func TestNewClientWithDataDirLoadsWorkspace(t *testing.T) {
 	client, err := NewClient(
 		WithDataDir(workspaceFixtureDir(t)),
+		WithEnvironment("Production"),
 		WithAllTelemetryDisabled(),
 	)
 	if err != nil {
