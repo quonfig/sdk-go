@@ -156,7 +156,7 @@ func resolveWorkspaceEnvironment(dir, override string, configs []workspaceConfig
 }
 
 func workspaceEnvironmentNames(dir string, configs []workspaceConfig) []string {
-	if names := readEnvironmentNames(filepath.Join(dir, "environments.json")); len(names) > 0 {
+	if names := readEnvironmentNames(filepath.Join(dir, "quonfig.json")); len(names) > 0 {
 		return names
 	}
 
@@ -190,20 +190,13 @@ func readEnvironmentNames(path string) []string {
 		return nil
 	}
 
-	var mapped map[string]string
-	if err := json.Unmarshal(data, &mapped); err == nil {
-		names := make([]string, 0, len(mapped))
-		for _, name := range mapped {
-			names = append(names, name)
-		}
-		slices.Sort(names)
-		return names
+	var envelope struct {
+		Environments []string `json:"environments"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return nil
 	}
 
-	var raw []string
-	if err := json.Unmarshal(data, &raw); err == nil {
-		return raw
-	}
-
-	return nil
+	slices.Sort(envelope.Environments)
+	return envelope.Environments
 }
