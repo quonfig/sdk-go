@@ -412,13 +412,18 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope) {
 	resolver := newRuntimeResolver(store, evaluator, c.opts.EnvLookup)
 
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.store = store
 	c.evaluator = evaluator
 	c.resolver = resolver
 	c.envID = envelope.Meta.Environment
 	c.initialized = true
 	c.initializationErr = nil
+	onConfigUpdate := c.opts.OnConfigUpdate
+	c.mu.Unlock()
+
+	if onConfigUpdate != nil {
+		onConfigUpdate()
+	}
 }
 
 func (c *Client) finishInitialization(success bool) {

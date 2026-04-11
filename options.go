@@ -49,6 +49,12 @@ type Options struct {
 	RefreshInterval time.Duration
 	HTTPClient      *http.Client
 
+	// OnConfigUpdate is called whenever the client installs a new config envelope
+	// (i.e. after a successful fetch or data-dir load). It is called with the
+	// client's internal mutex NOT held, so it is safe to call client methods
+	// from within the callback.
+	OnConfigUpdate func()
+
 	// Telemetry options
 	CollectEvaluationSummaries bool
 	ContextTelemetryMode       ContextTelemetryMode
@@ -249,6 +255,16 @@ func WithTelemetryURL(url string) Option {
 			return errors.New("telemetry URL must not be empty")
 		}
 		o.TelemetryURL = url
+		return nil
+	}
+}
+
+// WithOnConfigUpdate sets a callback function that is called whenever the client
+// receives and installs a new config envelope. This is useful for OpenFeature
+// providers and other integrations that need to emit change events.
+func WithOnConfigUpdate(fn func()) Option {
+	return func(o *Options) error {
+		o.OnConfigUpdate = fn
 		return nil
 	}
 }
