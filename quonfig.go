@@ -267,13 +267,25 @@ func (c *Client) Keys() []string {
 	return c.store.Keys()
 }
 
+// EvaluateKey resolves a config key and returns the resolved value, evaluation reason, and ok flag.
+// This is useful for OpenFeature provider integration and anywhere the reason is needed.
+func (c *Client) EvaluateKey(key string, ctx *ContextSet) (*Value, EvalReason, bool, error) {
+	return c.resolveDetail(key, ctx)
+}
+
 // resolve looks up a config and evaluates it against the given context.
 func (c *Client) resolve(key string, ctx *ContextSet) (*Value, bool, error) {
+	val, _, ok, err := c.resolveDetail(key, ctx)
+	return val, ok, err
+}
+
+// resolveDetail is like resolve but also returns the evaluation reason.
+func (c *Client) resolveDetail(key string, ctx *ContextSet) (*Value, EvalReason, bool, error) {
 	if err := c.awaitInitialization(key); err != nil {
 		if c.opts.OnInitFailure == ReturnZeroValue && errors.Is(err, ErrInitializationTimeout) {
-			return nil, false, nil
+			return nil, ReasonDefault, false, nil
 		}
-		return nil, false, err
+		return nil, ReasonError, false, err
 	}
 
 	c.mu.RLock()
@@ -286,11 +298,11 @@ func (c *Client) resolve(key string, ctx *ContextSet) (*Value, bool, error) {
 	c.mu.RUnlock()
 
 	if store == nil {
-		return nil, false, ErrNotFound
+		return nil, ReasonDefault, false, ErrNotFound
 	}
 	cfg, ok := store.Get(key)
 	if !ok {
-		return nil, false, ErrNotFound
+		return nil, ReasonDefault, false, ErrNotFound
 	}
 
 	mergedCtx := Merge(globalContext, ctx)
@@ -310,25 +322,27 @@ func (c *Client) resolve(key string, ctx *ContextSet) (*Value, bool, error) {
 		}
 
 		if evalResult == nil || !evalResult.IsMatch || evalResult.Value == nil {
-			return nil, false, nil
+			return nil, ReasonDefault, false, nil
 		}
+
+		reason := evalResult.Reason
 
 		// Pass through the resolver if available (handles ENV_VAR, decryption)
 		if resolver != nil {
 			resolved, err := resolver.ResolveValue(evalResult.Value, cfg.Key, cfg.ValueType, envID, mergedCtx)
 			if err != nil {
-				return nil, false, err
+				return nil, ReasonError, false, err
 			}
-			return resolved, true, nil
+			return resolved, reason, true, nil
 		}
-		return evalResult.Value, true, nil
+		return evalResult.Value, reason, true, nil
 	}
 
 	// Fallback: return the first default rule's value (no evaluator available)
 	if len(cfg.Default.Rules) > 0 {
-		return &cfg.Default.Rules[0].Value, true, nil
+		return &cfg.Default.Rules[0].Value, ReasonUnknown, true, nil
 	}
-	return nil, false, nil
+	return nil, ReasonDefault, false, nil
 }
 
 func (c *Client) startInitialization() {
