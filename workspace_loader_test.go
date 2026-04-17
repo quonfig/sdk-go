@@ -139,6 +139,58 @@ func TestNewClientWithDataDirSkipsInvalidWorkspaceFilesWhenOthersLoad(t *testing
 	}
 }
 
+func TestLoadWorkspaceEnvelopeForcesSendToClientSdkTrueForFeatureFlag(t *testing.T) {
+	dir := writeWorkspaceFiles(t, `{"prod":"Production"}`, map[string]string{
+		// feature_flag WITHOUT sendToClientSdk on disk
+		"feature-flags/flag-a.json": `{
+			"id":"flag-a",
+			"key":"flag-a",
+			"type":"feature_flag",
+			"valueType":"bool",
+			"default":{"rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"bool","value":true}}]},
+			"environments":[{"id":"Production","rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"bool","value":true}}]}]
+		}`,
+		// feature_flag WITH sendToClientSdk:false — must still be forced true
+		"feature-flags/flag-b.json": `{
+			"id":"flag-b",
+			"key":"flag-b",
+			"type":"feature_flag",
+			"valueType":"bool",
+			"sendToClientSdk":false,
+			"default":{"rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"bool","value":true}}]},
+			"environments":[{"id":"Production","rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"bool","value":true}}]}]
+		}`,
+		// config with sendToClientSdk absent — stays false
+		"configs/cfg-a.json": `{
+			"id":"cfg-a",
+			"key":"cfg-a",
+			"type":"config",
+			"valueType":"string",
+			"default":{"rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"string","value":"x"}}]}
+		}`,
+	})
+
+	envelope, err := loadWorkspaceEnvelope(dir, "Production")
+	if err != nil {
+		t.Fatalf("loadWorkspaceEnvelope returned error: %v", err)
+	}
+
+	byKey := map[string]ConfigResponse{}
+	for _, cfg := range envelope.Configs {
+		byKey[cfg.Key] = cfg
+	}
+
+	if got := byKey["flag-a"].SendToClientSDK; got != true {
+		t.Errorf("flag-a (field absent): want SendToClientSDK=true, got %v", got)
+	}
+	if got := byKey["flag-b"].SendToClientSDK; got != true {
+		t.Errorf("flag-b (field false on disk): want SendToClientSDK=true, got %v", got)
+	}
+	if got := byKey["cfg-a"].SendToClientSDK; got != false {
+		t.Errorf("cfg-a (config, field absent): want SendToClientSDK=false, got %v", got)
+	}
+}
+
 func TestNewClientWithDataDirFailsWhenNoWorkspaceFilesLoad(t *testing.T) {
 	dir := writeWorkspaceFiles(t, `{"prod":"Production"}`, map[string]string{
 		"feature-flags/bad.json": `{"id":`,

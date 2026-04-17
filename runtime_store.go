@@ -39,7 +39,9 @@ func (s *runtimeStore) Update(envelope *ConfigEnvelope) {
 
 	next := make(map[string]*ConfigResponse, len(envelope.Configs))
 	for i := range envelope.Configs {
-		next[envelope.Configs[i].Key] = &envelope.Configs[i]
+		cfg := &envelope.Configs[i]
+		cfg.SendToClientSDK = effectiveSendToClientSdk(cfg.Type, cfg.SendToClientSDK)
+		next[cfg.Key] = cfg
 	}
 
 	s.configs = next

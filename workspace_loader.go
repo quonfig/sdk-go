@@ -57,7 +57,7 @@ func loadWorkspaceEnvelope(dir, environmentOverride string) (*ConfigEnvelope, er
 			Key:             cfg.Key,
 			Type:            cfg.Type,
 			ValueType:       cfg.ValueType,
-			SendToClientSDK: cfg.SendToClientSDK,
+			SendToClientSDK: effectiveSendToClientSdk(cfg.Type, cfg.SendToClientSDK),
 			Default:         cfg.Default,
 			Environment:     cfg.FindEnvironment(environment),
 		})
@@ -182,6 +182,16 @@ func workspaceEnvironmentNames(dir string, configs []workspaceConfig) []string {
 
 	slices.Sort(names)
 	return names
+}
+
+// effectiveSendToClientSdk canonicalizes the SendToClientSDK field at the loader boundary.
+// Feature flags are always sent to client SDKs regardless of what the raw JSON says
+// (the field is being removed from feature_flag JSON on disk).
+func effectiveSendToClientSdk(cfgType ConfigType, raw bool) bool {
+	if cfgType == ConfigTypeFeatureFlag {
+		return true
+	}
+	return raw
 }
 
 func readEnvironmentNames(path string) []string {
