@@ -108,6 +108,18 @@ func applyEnvironmentEnvOverride(o *Options) {
 	}
 }
 
+// applyAPIKeyEnvOverride checks the QUONFIG_BACKEND_SDK_KEY environment
+// variable and, if set and no explicit WithAPIKey was provided, uses it
+// as the API key. WithAPIKey takes precedence over the env var.
+func applyAPIKeyEnvOverride(o *Options) {
+	if o.APIKey != "" {
+		return // explicit option takes precedence
+	}
+	if v, ok := os.LookupEnv("QUONFIG_BACKEND_SDK_KEY"); ok && v != "" {
+		o.APIKey = v
+	}
+}
+
 // WithAPIKey sets the API key for authentication.
 func WithAPIKey(key string) Option {
 	return func(o *Options) error {
