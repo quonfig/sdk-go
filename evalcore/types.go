@@ -47,7 +47,8 @@ type ProvidedData struct {
 //   - int: int64
 //   - double: float64
 //   - string: string
-//   - json: string (stringified JSON)
+//   - json: interface{} (any native JSON value — object, array, number, bool, null).
+//     Stringified JSON is banned and is rejected at unmarshal time.
 //   - string_list: []string
 //   - log_level: string
 //   - weighted_values: *WeightedValuesData
@@ -204,12 +205,21 @@ func (v *Value) UnmarshalJSON(data []byte) error {
 			f = parsed
 		}
 		v.Value = f
-	case ValueTypeString, ValueTypeJSON, ValueTypeLogLevel, ValueTypeDuration:
+	case ValueTypeString, ValueTypeLogLevel, ValueTypeDuration:
 		var s string
 		if err := json.Unmarshal(raw.Value, &s); err != nil {
 			return err
 		}
 		v.Value = s
+	case ValueTypeJSON:
+		var val interface{}
+		if err := json.Unmarshal(raw.Value, &val); err != nil {
+			return err
+		}
+		if _, isString := val.(string); isString {
+			return fmt.Errorf("json value must not be a string (legacy stringified form); decode to native JSON")
+		}
+		v.Value = val
 	case ValueTypeProvided:
 		var pd ProvidedData
 		if err := json.Unmarshal(raw.Value, &pd); err != nil {

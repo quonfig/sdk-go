@@ -172,6 +172,19 @@ func TestGet_JSONTest(t *testing.T) {
 	})
 }
 
+func TestGet_GetReturnsANativeJSONObjectNotAStringifiedPayload(t *testing.T) {
+	cfg := mustLookupConfig(t, "test.json")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertJSONValue(t, match, map[string]interface{}{
+		"a": 1,
+		"b": "c",
+	})
+}
+
 func TestGet_ListOnLeftSideTest1(t *testing.T) {
 	cfg := mustLookupConfig(t, "left.hand.list.test")
 	ctx := buildContextFromMaps(nil, nil, map[string]map[string]interface{}{

@@ -1,7 +1,6 @@
 package fixtures
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -215,19 +214,21 @@ func assertStringListValue(t *testing.T, match *eval.EvalMatch, expected []strin
 	}
 }
 
-// assertJSONValue asserts that the resolved value is valid JSON containing the expected fields.
+// assertJSONValue asserts that the resolved value is a native JSON object
+// containing the expected fields. Values must be stored as native JSON on the
+// Value (map[string]interface{} / []interface{} / number / bool / nil),
+// never as a stringified payload.
 func assertJSONValue(t *testing.T, match *eval.EvalMatch, expected map[string]interface{}) {
 	t.Helper()
 	if !match.IsMatch {
 		t.Fatalf("expected JSON value but got no match")
 	}
-	got := match.Value.StringValue()
-	if got == "" {
-		t.Fatalf("expected JSON value but got empty string")
+	if s, isString := match.Value.Value.(string); isString {
+		t.Fatalf("expected native JSON object but got stringified payload %q", s)
 	}
-	var parsed map[string]interface{}
-	if err := json.Unmarshal([]byte(got), &parsed); err != nil {
-		t.Fatalf("failed to parse JSON value %q: %v", got, err)
+	parsed, ok := match.Value.Value.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected JSON object (map[string]interface{}) but got %T: %v", match.Value.Value, match.Value.Value)
 	}
 	for k, v := range expected {
 		pv, ok := parsed[k]

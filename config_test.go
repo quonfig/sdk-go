@@ -2,6 +2,7 @@ package quonfig
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
@@ -60,6 +61,51 @@ func TestValueUnmarshalString(t *testing.T) {
 	}
 	if v.StringValue() != "hello" {
 		t.Errorf("expected hello, got %s", v.StringValue())
+	}
+}
+
+func TestValueUnmarshalJSONObject(t *testing.T) {
+	raw := `{"type":"json","value":{"a":1,"b":"c"}}`
+	var v Value
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.Type != ValueTypeJSON {
+		t.Errorf("expected type json, got %s", v.Type)
+	}
+	m, ok := v.Value.(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected map[string]interface{}, got %T", v.Value)
+	}
+	if fmt.Sprintf("%v", m["a"]) != "1" {
+		t.Errorf("expected a=1, got %v", m["a"])
+	}
+	if m["b"] != "c" {
+		t.Errorf("expected b=c, got %v", m["b"])
+	}
+}
+
+func TestValueUnmarshalJSONArray(t *testing.T) {
+	raw := `{"type":"json","value":[1,2,3]}`
+	var v Value
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		t.Fatal(err)
+	}
+	arr, ok := v.Value.([]interface{})
+	if !ok {
+		t.Fatalf("expected []interface{}, got %T", v.Value)
+	}
+	if len(arr) != 3 {
+		t.Errorf("expected 3 elements, got %d", len(arr))
+	}
+}
+
+func TestValueUnmarshalJSONRejectsString(t *testing.T) {
+	raw := `{"type":"json","value":"{\"a\":1}"}`
+	var v Value
+	err := json.Unmarshal([]byte(raw), &v)
+	if err == nil {
+		t.Fatal("expected error for stringified json, got nil")
 	}
 }
 

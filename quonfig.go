@@ -3,7 +3,6 @@ package quonfig
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -227,17 +226,14 @@ func (c *Client) GetDurationValue(key string, ctx *ContextSet) (time.Duration, b
 }
 
 // GetJSONValue returns the parsed JSON value for a config key.
+// Values are stored natively (object/array/number/boolean/null); this is a
+// direct pass-through of Value.Value.
 func (c *Client) GetJSONValue(key string, ctx *ContextSet) (interface{}, bool, error) {
 	val, ok, err := c.resolve(key, ctx)
 	if err != nil || !ok {
 		return nil, false, err
 	}
-	s := val.StringValue()
-	var result interface{}
-	if jsonErr := json.Unmarshal([]byte(s), &result); jsonErr != nil {
-		return nil, true, fmt.Errorf("parsing JSON: %w", jsonErr)
-	}
-	return result, true, nil
+	return val.Value, true, nil
 }
 
 // FeatureIsOn returns whether a feature flag is on. Returns false if the key is not found.
