@@ -60,12 +60,12 @@ func startTestServer(t *testing.T) string {
 
 	fixtureDir := integrationTestDataDir()
 	if _, err := os.Stat(fixtureDir); err != nil {
-		t.Skip("integration-test-data not available; skipping integration test")
+		t.Fatalf("integration-test-data fixtures not found at %s: %v — this directory is required for integration tests; ensure the integration-test-data repo (and its nested data/integration-tests) is populated", fixtureDir, err)
 	}
 
 	keysPath := fixtureSDKKeysPath()
 	if _, err := os.Stat(keysPath); err != nil {
-		t.Skipf("fixture SDK keys not available at %s; skipping integration test", keysPath)
+		t.Fatalf("fixture SDK keys not found at %s: %v — this file is required for integration tests", keysPath, err)
 	}
 
 	// Build the api-delivery binary
