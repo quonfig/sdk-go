@@ -1,0 +1,34 @@
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sdk-go
+        uses: actions/checkout@v4
+        with:
+          path: sdk-go
+
+      - name: Checkout integration-test-data
+        uses: actions/checkout@v4
+        with:
+          repository: quonfig/integration-test-data
+          path: integration-test-data
+          ref: main
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: sdk-go/go.sum
+
+      - name: Vet
+        working-directory: sdk-go
+        run: go vet ./...
+
+      - name: Test
+        working-directory: sdk-go
+        run: go test -race -short ./...
