@@ -1,0 +1,58 @@
+{
+  "id": "17600209440833336",
+  "projectId": "2354",
+  "key": "segway",
+  "type": "segment",
+  "valueType": "bool",
+  "sendToClientSdk": false,
+  "default": {
+    "rules": [
+      {
+        "criteria": [
+          {
+            "propertyName": "user.email",
+            "operator": "PROP_IS_ONE_OF",
+            "valueToMatch": {
+              "type": "string_list",
+              "value": [
+                "foo@bar.com"
+              ]
+            }
+          }
+        ],
+        "value": {
+          "type": "bool",
+          "value": true
+        }
+      },
+      {
+        "criteria": [
+          {
+            "propertyName": "reforge.current-time",
+            "operator": "PROP_BEFORE",
+            "valueToMatch": {
+              "type": "int",
+              "value": "1761192000000"
+            }
+          }
+        ],
+        "value": {
+          "type": "bool",
+          "value": true
+        }
+      },
+      {
+        "criteria": [
+          {
+            "propertyName": "",
+            "operator": "ALWAYS_TRUE"
+          }
+        ],
+        "value": {
+          "type": "bool",
+          "value": false
+        }
+      }
+    ]
+  }
+}

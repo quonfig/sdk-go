@@ -1,0 +1,92 @@
+{
+  "id": "17600231656424267",
+  "projectId": "2354",
+  "key": "a-new-flag",
+  "type": "feature_flag",
+  "valueType": "bool",
+  "sendToClientSdk": false,
+  "default": {
+    "rules": [
+      {
+        "criteria": [
+          {
+            "propertyName": "",
+            "operator": "ALWAYS_TRUE"
+          }
+        ],
+        "value": {
+          "type": "bool",
+          "value": false
+        }
+      }
+    ]
+  },
+  "environments": [
+    {
+      "id": "Production",
+      "rules": [
+        {
+          "criteria": [
+            {
+              "propertyName": "",
+              "operator": "ALWAYS_TRUE"
+            }
+          ],
+          "value": {
+            "type": "weighted_values",
+            "value": {
+              "weightedValues": [
+                {
+                  "weight": 59000,
+                  "value": {
+                    "type": "bool",
+                    "value": false
+                  }
+                },
+                {
+                  "weight": 41000,
+                  "value": {
+                    "type": "bool",
+                    "value": true
+                  }
+                }
+              ],
+              "hashByPropertyName": "user.key"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "Development",
+      "rules": [
+        {
+          "criteria": [
+            {
+              "propertyName": "",
+              "operator": "ALWAYS_TRUE"
+            }
+          ],
+          "value": {
+            "type": "bool",
+            "value": true
+          }
+        }
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "value": {
+        "type": "bool",
+        "value": false
+      }
+    },
+    {
+      "value": {
+        "type": "bool",
+        "value": true
+      }
+    }
+  ]
+}

@@ -39,8 +39,7 @@ func loadConfig(t *testing.T, path string) *Config {
 }
 
 func testdataPath(parts ...string) string {
-	base := filepath.Join("..", "..", "api-delivery", "testdata")
-	return filepath.Join(append([]string{base}, parts...)...)
+	return filepath.Join(append([]string{"testdata"}, parts...)...)
 }
 
 // --- Basic evaluation tests ---

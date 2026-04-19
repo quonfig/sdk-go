@@ -1,0 +1,75 @@
+{
+  "id": "17652867406626327",
+  "projectId": "2354",
+  "key": "ben-test-1",
+  "type": "feature_flag",
+  "valueType": "bool",
+  "sendToClientSdk": false,
+  "default": {
+    "rules": [
+      {
+        "criteria": [
+          {
+            "propertyName": "identity.id",
+            "operator": "PROP_IS_ONE_OF",
+            "valueToMatch": {
+              "type": "string_list",
+              "value": [
+                "ben"
+              ]
+            }
+          }
+        ],
+        "value": {
+          "type": "bool",
+          "value": false
+        }
+      },
+      {
+        "criteria": [
+          {
+            "propertyName": "",
+            "operator": "ALWAYS_TRUE"
+          }
+        ],
+        "value": {
+          "type": "bool",
+          "value": true
+        }
+      }
+    ]
+  },
+  "environments": [
+    {
+      "id": "Production",
+      "rules": [
+        {
+          "criteria": [
+            {
+              "propertyName": "",
+              "operator": "ALWAYS_TRUE"
+            }
+          ],
+          "value": {
+            "type": "bool",
+            "value": true
+          }
+        }
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "value": {
+        "type": "bool",
+        "value": false
+      }
+    },
+    {
+      "value": {
+        "type": "bool",
+        "value": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "id": "17652870158831668",
+  "projectId": "2354",
+  "key": "feature.new-ui",
+  "type": "feature_flag",
+  "valueType": "bool",
+  "sendToClientSdk": false,
+  "default": {
+    "rules": [
+      {
+        "criteria": [
+          {
+            "propertyName": "",
+            "operator": "ALWAYS_TRUE"
+          }
+        ],
+        "value": {
+          "type": "bool",
+          "value": false
+        }
+      }
+    ]
+  },
+  "environments": [
+    {
+      "id": "Production",
+      "rules": [
+        {
+          "criteria": [
+            {
+              "propertyName": "",
+              "operator": "ALWAYS_TRUE"
+            }
+          ],
+          "value": {
+            "type": "bool",
+            "value": true
+          }
+        }
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "value": {
+        "type": "bool",
+        "value": false
+      }
+    },
+    {
+      "value": {
+        "type": "bool",
+        "value": true
+      }
+    }
+  ],
+  "name": "New UI Feature",
+  "description": "Feature flag for new UI testing"
+}

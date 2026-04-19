@@ -1,0 +1,60 @@
+{
+  "id": "17604479160190278",
+  "projectId": "2354",
+  "key": "flag-with-variant",
+  "type": "feature_flag",
+  "valueType": "string",
+  "sendToClientSdk": false,
+  "default": {
+    "rules": [
+      {
+        "criteria": [
+          {
+            "propertyName": "",
+            "operator": "ALWAYS_TRUE"
+          }
+        ],
+        "value": {
+          "type": "string",
+          "value": "a"
+        }
+      }
+    ]
+  },
+  "environments": [
+    {
+      "id": "Production",
+      "rules": [
+        {
+          "criteria": [
+            {
+              "propertyName": "",
+              "operator": "ALWAYS_TRUE"
+            }
+          ],
+          "value": {
+            "type": "string",
+            "value": "a"
+          }
+        }
+      ]
+    },
+    {
+      "id": "Staging2",
+      "rules": [
+        {
+          "criteria": [
+            {
+              "propertyName": "",
+              "operator": "ALWAYS_TRUE"
+            }
+          ],
+          "value": {
+            "type": "string",
+            "value": "other"
+          }
+        }
+      ]
+    }
+  ]
+}

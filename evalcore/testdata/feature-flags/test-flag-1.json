@@ -1,0 +1,38 @@
+{
+  "id": "17600206300929610",
+  "projectId": "2354",
+  "key": "test-flag-1",
+  "type": "feature_flag",
+  "valueType": "bool",
+  "sendToClientSdk": false,
+  "default": {
+    "rules": [
+      {
+        "criteria": [
+          {
+            "propertyName": "",
+            "operator": "ALWAYS_TRUE"
+          }
+        ],
+        "value": {
+          "type": "bool",
+          "value": false
+        }
+      }
+    ]
+  },
+  "variants": [
+    {
+      "value": {
+        "type": "bool",
+        "value": false
+      }
+    },
+    {
+      "value": {
+        "type": "bool",
+        "value": true
+      }
+    }
+  ]
+}

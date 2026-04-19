@@ -1,0 +1,88 @@
+{
+  "id": "17600232098593618",
+  "projectId": "2354",
+  "key": "exp-example",
+  "type": "feature_flag",
+  "valueType": "string",
+  "sendToClientSdk": false,
+  "default": {
+    "rules": [
+      {
+        "criteria": [
+          {
+            "propertyName": "",
+            "operator": "ALWAYS_TRUE"
+          }
+        ],
+        "value": {
+          "type": "string",
+          "value": "control"
+        }
+      }
+    ]
+  },
+  "environments": [
+    {
+      "id": "Production",
+      "rules": [
+        {
+          "criteria": [
+            {
+              "propertyName": "",
+              "operator": "ALWAYS_TRUE"
+            }
+          ],
+          "value": {
+            "type": "weighted_values",
+            "value": {
+              "weightedValues": [
+                {
+                  "weight": 1,
+                  "value": {
+                    "type": "string",
+                    "value": "control"
+                  }
+                },
+                {
+                  "weight": 1,
+                  "value": {
+                    "type": "string",
+                    "value": "arm-1"
+                  }
+                },
+                {
+                  "weight": 1,
+                  "value": {
+                    "type": "string",
+                    "value": "arm-2"
+                  }
+                }
+              ],
+              "hashByPropertyName": "user.key"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "value": {
+        "type": "string",
+        "value": "control"
+      }
+    },
+    {
+      "value": {
+        "type": "string",
+        "value": "arm-1"
+      }
+    },
+    {
+      "value": {
+        "type": "string",
+        "value": "arm-2"
+      }
+    }
+  ]
+}
