@@ -55,6 +55,19 @@ type Options struct {
 	// from within the callback.
 	OnConfigUpdate func()
 
+	// SSEEnabled controls whether a background SSE streamer is opened after
+	// initialization. Default true. Set false for pure HTTP-poll behavior.
+	// When DataDir is set (local dev) or no APIKey is configured, SSE is a
+	// no-op regardless of this flag.
+	SSEEnabled bool
+
+	// OnSSEStateChange, if non-nil, is invoked whenever the background SSE
+	// connection transitions between connected=true and connected=false.
+	// Useful for emitting accurate "stream is up" metrics on the caller's
+	// side (see load-gen's load_gen.sse_connected gauge). The callback may
+	// run on any goroutine and should be cheap / non-blocking.
+	OnSSEStateChange func(connected bool)
+
 	// Telemetry options
 	CollectEvaluationSummaries bool
 	ContextTelemetryMode       ContextTelemetryMode
@@ -87,6 +100,7 @@ func defaultOptions() Options {
 		},
 		InitTimeout:                10 * time.Second,
 		OnInitFailure:              ReturnError,
+		SSEEnabled:                 true,
 		CollectEvaluationSummaries: true,
 		ContextTelemetryMode:       ContextTelemetryPeriodicExample,
 		TelemetrySyncInterval:      60 * time.Second,
@@ -282,6 +296,38 @@ func WithAllTelemetryDisabled() Option {
 	return func(o *Options) error {
 		o.CollectEvaluationSummaries = false
 		o.ContextTelemetryMode = ContextTelemetryNone
+		return nil
+	}
+}
+
+// WithSSE enables or disables the background SSE streaming client.
+// Default is true. When disabled, the SDK relies on the initial HTTP fetch
+// plus any polling configured via WithRefreshInterval.
+func WithSSE(enabled bool) Option {
+	return func(o *Options) error {
+		o.SSEEnabled = enabled
+		return nil
+	}
+}
+
+// WithSSEStateCallback registers a function that is invoked whenever the
+// background SSE stream transitions between connected and disconnected.
+// The callback receives true when a stream is live and false when it is not.
+// Useful for emitting accurate connection-health metrics.
+func WithSSEStateCallback(fn func(connected bool)) Option {
+	return func(o *Options) error {
+		o.OnSSEStateChange = fn
+		return nil
+	}
+}
+
+// withTestStreamURLOverride is a test-only option that forces the SSE client
+// to dial the given URL verbatim instead of deriving it from APIURLs. It is
+// unexported so production callers cannot set it. See
+// Options.testStreamURLOverride for rationale.
+func withTestStreamURLOverride(url string) Option {
+	return func(o *Options) error {
+		o.testStreamURLOverride = url
 		return nil
 	}
 }

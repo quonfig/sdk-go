@@ -55,6 +55,7 @@ type Client struct {
 
 	transport *runtimeTransport
 	telemetry *telemetrySubmitter
+	sse       *sseClient
 
 	mu                     sync.RWMutex
 	initializationDone     chan struct{}
@@ -155,10 +156,14 @@ func (c *Client) Refresh() error {
 	return c.fetchAndInstall(context.Background(), false)
 }
 
-// Close stops any background refresh loop and flushes pending telemetry.
+// Close stops any background refresh loop, shuts down the SSE stream, and
+// flushes pending telemetry.
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
 		close(c.closeCh)
+		if c.sse != nil {
+			c.sse.Stop()
+		}
 		if c.telemetry != nil {
 			c.telemetry.Stop()
 		}
@@ -361,10 +366,43 @@ func (c *Client) startInitialization() {
 
 		_ = c.fetchAndInstall(ctx, true)
 
+		if c.opts.SSEEnabled {
+			c.startSSE()
+		}
+
 		if c.opts.RefreshInterval > 0 {
 			c.startRefreshLoop()
 		}
 	}()
+}
+
+// startSSE opens the long-lived SSE stream to streamURLFor(0) and installs
+// received envelopes via the same path as HTTP polling. Called from the
+// init goroutine so the initial HTTP fetch always wins the race on startup
+// (a cold SDK with nothing in the store is the one case where we really
+// need the fetch to land first; after that, either path can overwrite).
+func (c *Client) startSSE() {
+	if c.transport == nil {
+		return
+	}
+	url := c.transport.streamURLFor(0)
+	if url == "" {
+		return
+	}
+	c.sse = newSSEClient(sseClientConfig{
+		URL:       url,
+		APIKey:    c.opts.APIKey,
+		UserAgent: "go-" + sdkVersion,
+		Client:    c.opts.HTTPClient,
+		OnEnvelope: func(env *ConfigEnvelope) {
+			// Serialize with polled installs via refreshMu so we don't race.
+			c.refreshMu.Lock()
+			c.installEnvelope(env)
+			c.refreshMu.Unlock()
+		},
+		OnStateChange: c.opts.OnSSEStateChange,
+	})
+	c.sse.Start()
 }
 
 func (c *Client) startRefreshLoop() {

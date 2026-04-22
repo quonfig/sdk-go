@@ -72,6 +72,11 @@ func TestNewClientInitializesAndUsesEnvLookup(t *testing.T) {
 		WithAPIKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
+		// Disable SSE and telemetry so this test isolates the initial HTTP
+		// poll count — both background paths would otherwise share this
+		// HTTP client and inflate the counter.
+		WithSSE(false),
+		WithAllTelemetryDisabled(),
 		WithEnvLookup(func(key string) (string, bool) {
 			if key == "IS_A_NUMBER" {
 				return "1234", true
