@@ -19,23 +19,62 @@ type fetchResult struct {
 type runtimeTransport struct {
 	httpClient *http.Client
 	baseURLs   []string
+	// streamURLs is parallel to baseURLs: streamURLs[i] is the SSE URL derived
+	// from baseURLs[i] by prepending "stream." to the hostname. If
+	// testStreamURLOverride was set, every entry in streamURLs is that single
+	// override value — this is a test-only escape hatch because an
+	// httptest.NewServer cannot provide a stream.* hostname.
+	streamURLs []string
 	apiKey     string
 	etag       string
 }
 
 func newRuntimeTransport(baseURLs []string, apiKey string, httpClient *http.Client) *runtimeTransport {
+	return newRuntimeTransportWithStreamOverride(baseURLs, apiKey, httpClient, "")
+}
+
+// newRuntimeTransportWithStreamOverride is the internal constructor. If
+// streamOverride is non-empty it is used verbatim for every SSE URL, bypassing
+// stream.* derivation. Tests pass Options.testStreamURLOverride through here.
+func newRuntimeTransportWithStreamOverride(baseURLs []string, apiKey string, httpClient *http.Client, streamOverride string) *runtimeTransport {
 	if httpClient == nil {
 		httpClient = &http.Client{}
 	}
 	trimmed := make([]string, len(baseURLs))
+	streamURLs := make([]string, len(baseURLs))
 	for i, u := range baseURLs {
-		trimmed[i] = strings.TrimRight(u, "/")
+		t := strings.TrimRight(u, "/")
+		trimmed[i] = t
+		if streamOverride != "" {
+			streamURLs[i] = strings.TrimRight(streamOverride, "/")
+			continue
+		}
+		// Best-effort derivation. If a caller passes garbage it will surface
+		// later when the SSE client actually tries to dial — we don't want to
+		// block HTTP polling over a bad stream derivation, so fall back to the
+		// base URL unmodified if derive fails.
+		if s, err := deriveStreamURL(t); err == nil {
+			streamURLs[i] = s
+		} else {
+			streamURLs[i] = t
+		}
 	}
 	return &runtimeTransport{
 		httpClient: httpClient,
 		baseURLs:   trimmed,
+		streamURLs: streamURLs,
 		apiKey:     apiKey,
 	}
+}
+
+// streamURLFor returns the SSE URL (with the /api/v2/sse/config path appended)
+// corresponding to baseURLs[i]. Used by the SSE client when it opens the
+// long-lived connection.
+func (c *runtimeTransport) streamURLFor(i int) string {
+	if i < 0 || i >= len(c.streamURLs) {
+		return ""
+	}
+	return c.streamURLs[i] + "/api/v2/sse/config"
 }
 
 // FetchConfigs tries each base URL in order, returning the first successful result.

@@ -113,7 +113,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		return client, nil
 	}
 
-	client.transport = newRuntimeTransport(o.APIURLs, o.APIKey, o.HTTPClient)
+	client.transport = newRuntimeTransportWithStreamOverride(o.APIURLs, o.APIKey, o.HTTPClient, o.testStreamURLOverride)
 	client.startInitialization()
 
 	return client, nil

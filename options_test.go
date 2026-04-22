@@ -38,7 +38,7 @@ func TestApplyAPIKeyEnvOverride(t *testing.T) {
 
 func TestNewClientReadsAPIKeyFromEnv(t *testing.T) {
 	t.Setenv("QUONFIG_BACKEND_SDK_KEY", "env-key-xyz")
-	client, err := NewClient(WithAPIURL("https://example.test"))
+	client, err := NewClient(WithAPIURLs([]string{"https://example.test"}))
 	if err != nil {
 		t.Fatalf("NewClient returned error: %v", err)
 	}

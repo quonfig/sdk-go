@@ -60,6 +60,15 @@ type Options struct {
 	ContextTelemetryMode       ContextTelemetryMode
 	TelemetrySyncInterval      time.Duration
 	TelemetryURL               string
+
+	// testStreamURLOverride, if non-empty, is used verbatim for the SSE stream
+	// connection instead of the URL derived from APIURLs. This is a test-only
+	// escape hatch: no public With* accessor is exposed, so production callers
+	// cannot set it. Tests that exercise the stream path against an
+	// httptest.NewServer (which cannot provide a stream.* hostname) set this
+	// field directly on Options after calling defaultOptions or after applying
+	// their functional options.
+	testStreamURLOverride string
 }
 
 // TelemetryEnabled returns true if a TelemetryURL is configured and any
@@ -75,9 +84,8 @@ func defaultOptions() Options {
 	return Options{
 		APIURLs: []string{
 			"https://primary.quonfig.com",
-			"https://secondary.quonfig.com",
 		},
-		InitTimeout: 10 * time.Second,
+		InitTimeout:                10 * time.Second,
 		OnInitFailure:              ReturnError,
 		CollectEvaluationSummaries: true,
 		ContextTelemetryMode:       ContextTelemetryPeriodicExample,
@@ -127,18 +135,6 @@ func WithAPIKey(key string) Option {
 			return errors.New("API key must not be empty")
 		}
 		o.APIKey = key
-		return nil
-	}
-}
-
-// WithAPIURL sets a single base URL for the Quonfig API (replaces the default list).
-// Deprecated: Use WithAPIURLs for primary/secondary failover.
-func WithAPIURL(url string) Option {
-	return func(o *Options) error {
-		if url == "" {
-			return errors.New("API URL must not be empty")
-		}
-		o.APIURLs = []string{url}
 		return nil
 	}
 }

@@ -70,7 +70,7 @@ func TestNewClientInitializesAndUsesEnvLookup(t *testing.T) {
 
 	client, err := NewClient(
 		WithAPIKey("test-key"),
-		WithAPIURL("https://example.test"),
+		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithEnvLookup(func(key string) (string, bool) {
 			if key == "IS_A_NUMBER" {
@@ -127,7 +127,7 @@ func TestNewClientInitTimeoutHonorsFailurePolicy(t *testing.T) {
 
 	errorClient, err := NewClient(
 		WithAPIKey("test-key"),
-		WithAPIURL("https://example.test"),
+		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithInitTimeout(25*time.Millisecond),
 		WithOnInitFailure(ReturnError),
@@ -143,7 +143,7 @@ func TestNewClientInitTimeoutHonorsFailurePolicy(t *testing.T) {
 
 	zeroClient, err := NewClient(
 		WithAPIKey("test-key"),
-		WithAPIURL("https://example.test"),
+		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithInitTimeout(25*time.Millisecond),
 		WithOnInitFailure(ReturnZeroValue),
@@ -202,7 +202,7 @@ func TestClientRefreshUsesETagAndUpdatesStore(t *testing.T) {
 
 	client, err := NewClient(
 		WithAPIKey("test-key"),
-		WithAPIURL("https://example.test"),
+		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 	)
 	if err != nil {
