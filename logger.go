@@ -2,9 +2,6 @@ package quonfig
 
 import "strings"
 
-// LogLevelPrefix is the key namespace for log level configs.
-const LogLevelPrefix = "log-level."
-
 // LogLevel is the type for log level names.
 type LogLevel string
 
@@ -18,11 +15,12 @@ const (
 )
 
 // ShouldLog returns true if a message at desiredLevel should be logged for the
-// given loggerName, based on the config key "log-level.<loggerName>".
+// given configKey. The caller must pass the full stored key (e.g.
+// "log-level.my-app") — the SDK does not auto-prefix "log-level.".
 // desiredLevel is case-insensitive (e.g. "debug", "INFO"). Returns true if no
 // config is found (log everything by default).
-func (c *Client) ShouldLog(loggerName string, desiredLevel string, ctx *ContextSet) bool {
-	configured, ok, err := c.GetStringValue(LogLevelPrefix+loggerName, ctx)
+func (c *Client) ShouldLog(configKey string, desiredLevel string, ctx *ContextSet) bool {
+	configured, ok, err := c.GetStringValue(configKey, ctx)
 	if err != nil || !ok {
 		return true
 	}
@@ -30,9 +28,9 @@ func (c *Client) ShouldLog(loggerName string, desiredLevel string, ctx *ContextS
 }
 
 // ShouldLog returns true if a message at desiredLevel should be logged for the
-// given loggerName, using the bound context.
-func (cb *ContextBoundClient) ShouldLog(loggerName string, desiredLevel string) bool {
-	return cb.client.ShouldLog(loggerName, desiredLevel, cb.ctx)
+// given configKey, using the bound context.
+func (cb *ContextBoundClient) ShouldLog(configKey string, desiredLevel string) bool {
+	return cb.client.ShouldLog(configKey, desiredLevel, cb.ctx)
 }
 
 func logLevelOrder(level string) int {
