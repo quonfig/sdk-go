@@ -68,6 +68,14 @@ type Options struct {
 	// run on any goroutine and should be cheap / non-blocking.
 	OnSSEStateChange func(connected bool)
 
+	// LoggerKey is the config key used by Client.ShouldLogPath to look up a
+	// per-logger level rule (e.g. "log-level.my-app"). When set, callers can
+	// use the higher-level ShouldLogPath(loggerPath, ...) convenience, which
+	// injects loggerPath into the evaluation context as
+	// contexts["quonfig-sdk-logging"] = { "key": loggerPath } so a single
+	// log-level config can drive per-logger overrides.
+	LoggerKey string
+
 	// Telemetry options
 	CollectEvaluationSummaries bool
 	ContextTelemetryMode       ContextTelemetryMode
@@ -287,6 +295,22 @@ func WithTelemetryURL(url string) Option {
 func WithOnConfigUpdate(fn func()) Option {
 	return func(o *Options) error {
 		o.OnConfigUpdate = fn
+		return nil
+	}
+}
+
+// WithLoggerKey sets the config key used by ShouldLogPath to look up a
+// per-logger level rule (e.g. "log-level.my-app"). When set, callers can use
+// ShouldLogPath(loggerPath, desiredLevel, ctx) and the SDK evaluates
+// LoggerKey with contexts["quonfig-sdk-logging"] = { "key": loggerPath }
+// merged into ctx. The existing ShouldLog(configKey, ...) primitive does not
+// require this option.
+func WithLoggerKey(key string) Option {
+	return func(o *Options) error {
+		if key == "" {
+			return errors.New("logger key must not be empty")
+		}
+		o.LoggerKey = key
 		return nil
 	}
 }
