@@ -33,24 +33,14 @@ func TestGet_GetReturnsNilIfValueNotFound(t *testing.T) {
 
 // get returns a default for a missing value if a default is given
 func TestGet_GetReturnsADefaultForAMissingValueIfADefaultIsGiven(t *testing.T) {
-	cfg := mustLookupConfig(t, "my-missing-key")
 	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "DEFAULT")
+	assertGetWithDefault(t, "my-missing-key", ctx, "DEFAULT", "DEFAULT")
 }
 
 // get ignores a provided default if the key is found
 func TestGet_GetIgnoresAProvidedDefaultIfTheKeyIsFound(t *testing.T) {
-	cfg := mustLookupConfig(t, "my-test-key")
 	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "my-test-value")
+	assertGetWithDefault(t, "my-test-key", ctx, "DEFAULT", "my-test-value")
 }
 
 // get can return a double

@@ -19,21 +19,13 @@ func TestGetOrRaise_GetOrRaiseCanRaiseAnErrorIfValueNotFound(t *testing.T) {
 
 // get_or_raise returns a default value instead of raising
 func TestGetOrRaise_GetOrRaiseReturnsADefaultValueInsteadOfRaising(t *testing.T) {
-	cfg := mustLookupConfig(t, "my-missing-key")
 	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "DEFAULT")
+	assertGetWithDefault(t, "my-missing-key", ctx, "DEFAULT", "DEFAULT")
 }
 
 // get_or_raise raises the correct error if it doesn't raise on init timeout
 func TestGetOrRaise_GetOrRaiseRaisesTheCorrectErrorIfItDoesnTRaiseOnInitTimeout(t *testing.T) {
-	_, ok := configStore.GetConfig("any-key")
-	if ok {
-		t.Fatalf("expected config %q to be missing for missing_default case", "any-key")
-	}
+	assertClientConstructionMissingDefault(t, "any-key", 0.01, "https://app.staging-prefab.cloud", "return", "get_or_raise")
 }
 
 // get_or_raise can raise an error if the client does not initialize in time

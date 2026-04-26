@@ -4,9 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	quonfig "github.com/quonfig/sdk-go"
 	"github.com/quonfig/sdk-go/internal/eval"
@@ -79,11 +81,12 @@ func buildContextSet(contextMap map[string]map[string]interface{}) *quonfig.Cont
 	return cs
 }
 
-// mustLookupConfig looks up a config by key. When the key is missing it returns
-// a synthetic empty config whose evaluation produces a no-match. The downstream
-// assertion helpers (assertNilValue, assertStringValue, etc.) treat "no match"
-// as the SDK-default-fallback case, which is what the YAML cases for
-// "my-missing-key" / "any-key" actually exercise.
+// mustLookupConfig looks up a config by key. With the generator now routing
+// `input.default` through assertGetWithDefault, no production case should
+// reach this helper with a missing key — but the missing-key path is still
+// exercised by raise-style YAML cases (missing_default), so we return a
+// synthetic no-match config instead of t.Fatal'ing. The synthetic config is
+// shaped so downstream assertions can detect "no match" cleanly.
 func mustLookupConfig(t *testing.T, key string) *eval.FullConfig {
 	t.Helper()
 	cfg, ok := configStore.GetConfig(key)
@@ -96,6 +99,146 @@ func mustLookupConfig(t *testing.T, key string) *eval.FullConfig {
 		}
 	}
 	return cfg
+}
+
+// assertGetWithDefault drives the get-with-default semantic without using
+// the synthetic-config workaround in mustLookupConfig. If the key resolves
+// to a real value, that wins; otherwise the YAML-supplied default kicks in.
+// Goes through the resolver (not Client) because the Go SDK exposes
+// (value, ok, err) triples rather than a default-arg API; the helper
+// implements the equivalent contract.
+func assertGetWithDefault(t *testing.T, key string, ctx eval.ContextValueGetter, defaultValue, expected interface{}) {
+	t.Helper()
+	cfg, ok := configStore.GetConfig(key)
+	var actual interface{}
+	if !ok {
+		actual = defaultValue
+	} else {
+		match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+		if !match.IsMatch || match.Value == nil {
+			actual = defaultValue
+		} else {
+			resolved, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+			if err != nil {
+				t.Fatalf("resolver error: %v", err)
+			}
+			actual = resolved.Value
+		}
+	}
+	if !valuesEqual(actual, expected) {
+		t.Errorf("%s: expected %v (default=%v), got %v", key, expected, defaultValue, actual)
+	}
+}
+
+// valuesEqual is a small numeric/string-tolerant comparator used by
+// assertGetWithDefault. Doesn't care about array/map; happy-path defaults
+// are scalars.
+func valuesEqual(a, b interface{}) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	return fmt.Sprintf("%v", a) == fmt.Sprintf("%v", b)
+}
+
+// assertClientConstructionRaises constructs a real quonfig.NewClient(...)
+// with init-timeout / fake api URL overrides, then exercises it and asserts
+// the expected error class. Used for the on_init_failure: :return path.
+func assertClientConstructionRaises(t *testing.T, key string, initTimeoutSec float64, apiURL string, onInitFailure string, fn string, expectedErr error) {
+	t.Helper()
+	timeout := time.Duration(initTimeoutSec * float64(time.Second))
+	if timeout <= 0 {
+		timeout = 1 * time.Millisecond
+	}
+	httpClient := &http.Client{Transport: blockingRoundTripper(timeout * 50)}
+	policy := quonfig.ReturnZeroValue
+	if onInitFailure == "raise" {
+		policy = quonfig.ReturnError
+	}
+	client, err := quonfig.NewClient(
+		quonfig.WithAPIKey("test-unused"),
+		quonfig.WithAPIURLs([]string{apiURL}),
+		quonfig.WithHTTPClient(httpClient),
+		quonfig.WithInitTimeout(timeout),
+		quonfig.WithOnInitFailure(policy),
+	)
+	if err != nil {
+		// Construction itself raised — accept if it matches.
+		if errors.Is(err, expectedErr) {
+			return
+		}
+		t.Fatalf("NewClient unexpected error: %v", err)
+	}
+	defer client.Close()
+	_, _, gerr := client.GetStringValue(key, nil)
+	if !errors.Is(gerr, expectedErr) {
+		t.Errorf("expected %v, got %v (fn=%s)", expectedErr, gerr, fn)
+	}
+}
+
+// assertClientConstructionMissingDefault asserts that a real Client
+// constructed with init-timeout / fake api URL / on_init_failure: :return
+// returns ok=false (the Go SDK's stand-in for missing_default) for the
+// given key. Mirrors the Ruby/Python "init returns zero, then raise on
+// missing default" pattern.
+func assertClientConstructionMissingDefault(t *testing.T, key string, initTimeoutSec float64, apiURL string, onInitFailure string, fn string) {
+	t.Helper()
+	timeout := time.Duration(initTimeoutSec * float64(time.Second))
+	if timeout <= 0 {
+		timeout = 1 * time.Millisecond
+	}
+	httpClient := &http.Client{Transport: blockingRoundTripper(timeout * 50)}
+	policy := quonfig.ReturnZeroValue
+	if onInitFailure == "raise" {
+		policy = quonfig.ReturnError
+	}
+	client, err := quonfig.NewClient(
+		quonfig.WithAPIKey("test-unused"),
+		quonfig.WithAPIURLs([]string{apiURL}),
+		quonfig.WithHTTPClient(httpClient),
+		quonfig.WithInitTimeout(timeout),
+		quonfig.WithOnInitFailure(policy),
+	)
+	if err != nil {
+		t.Fatalf("NewClient error: %v", err)
+	}
+	defer client.Close()
+	_, ok, _ := client.GetStringValue(key, nil)
+	if ok {
+		t.Errorf("expected ok=false for missing key %q (fn=%s), got ok=true", key, fn)
+	}
+}
+
+// assertClientConstructionValue is the happy-path counterpart; rare in the
+// YAML but emitted by the generator for symmetry.
+func assertClientConstructionValue(t *testing.T, key string, initTimeoutSec float64, apiURL string, onInitFailure string, fn string, expected interface{}) {
+	t.Helper()
+	timeout := time.Duration(initTimeoutSec * float64(time.Second))
+	if timeout <= 0 {
+		timeout = 1 * time.Millisecond
+	}
+	httpClient := &http.Client{Transport: blockingRoundTripper(timeout * 50)}
+	policy := quonfig.ReturnZeroValue
+	if onInitFailure == "raise" {
+		policy = quonfig.ReturnError
+	}
+	client, err := quonfig.NewClient(
+		quonfig.WithAPIKey("test-unused"),
+		quonfig.WithAPIURLs([]string{apiURL}),
+		quonfig.WithHTTPClient(httpClient),
+		quonfig.WithInitTimeout(timeout),
+		quonfig.WithOnInitFailure(policy),
+	)
+	if err != nil {
+		t.Fatalf("NewClient error: %v", err)
+	}
+	defer client.Close()
+	val, _, gerr := client.GetStringValue(key, nil)
+	if gerr != nil {
+		t.Fatalf("Get error: %v (fn=%s)", gerr, fn)
+	}
+	if fmt.Sprintf("%v", val) != fmt.Sprintf("%v", expected) {
+		t.Errorf("expected %v, got %v", expected, val)
+	}
 }
 
 // evaluateAndResolve evaluates a config and resolves the result through the resolver.
@@ -115,13 +258,12 @@ func evaluateAndResolve(t *testing.T, cfg *eval.FullConfig, ctx eval.ContextValu
 }
 
 // assertStringValue asserts that the resolved value is the expected string.
-// When the eval produced no match, the test is exercising the SDK's
-// default-fallback behavior: the user-supplied default is whatever the test
-// expects, and the SDK would return it untouched.
+// With the generator now routing input.default cases through
+// assertGetWithDefault, no-match here is a real failure.
 func assertStringValue(t *testing.T, match *eval.EvalMatch, expected string) {
 	t.Helper()
 	if !match.IsMatch {
-		// no-match → SDK returns the user-supplied default unchanged. Pass.
+		t.Errorf("expected string %q but got no match", expected)
 		return
 	}
 	got := match.Value.StringValue()

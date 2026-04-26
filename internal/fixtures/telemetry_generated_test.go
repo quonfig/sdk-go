@@ -13,63 +13,63 @@ import (
 func TestTelemetry_ReasonIsSTATICForConfigWithNoTargetingRules(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
 	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"brand.new.string"}}, nil)
-	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "brand.new.string", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 1, "reason": 1, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "brand.new.string", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"string": "hello.world"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
 }
 
 // reason is STATIC for feature flag with only ALWAYS_TRUE rules
 func TestTelemetry_ReasonIsSTATICForFeatureFlagWithOnlyALWAYSTRUERules(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
 	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"always.true"}}, nil)
-	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "always.true", "type": "FEATURE_FLAG", "value": true, "value_type": "bool", "count": 1, "reason": 1, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "always.true", "type": "FEATURE_FLAG", "value": true, "value_type": "bool", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"bool": true}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
 }
 
 // reason is TARGETING_MATCH when config has targeting rules but evaluation falls through
 func TestTelemetry_ReasonIsTARGETINGMATCHWhenConfigHasTargetingRulesButEvaluationFallsThrough(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
 	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"my-test-key"}}, nil)
-	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "my-test-key", "type": "CONFIG", "value": "my-test-value", "value_type": "string", "count": 1, "reason": 2, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 1}}}, "/api/v1/telemetry")
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "my-test-key", "type": "CONFIG", "value": "my-test-value", "value_type": "string", "count": 1, "reason": 2, "selected_value": map[string]interface{}{"string": "my-test-value"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 1}}}, "/api/v1/telemetry")
 }
 
 // reason is TARGETING_MATCH when a targeting rule matches
 func TestTelemetry_ReasonIsTARGETINGMATCHWhenATargetingRuleMatches(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
 	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"feature-flag.integer"}}, map[string]map[string]interface{}{"user": {"key": "michael"}})
-	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.integer", "type": "FEATURE_FLAG", "value": 5, "value_type": "int", "count": 1, "reason": 2, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.integer", "type": "FEATURE_FLAG", "value": 5, "value_type": "int", "count": 1, "reason": 2, "selected_value": map[string]interface{}{"int": 5}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
 }
 
 // reason is SPLIT for weighted value evaluation
 func TestTelemetry_ReasonIsSPLITForWeightedValueEvaluation(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
 	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"feature-flag.weighted"}}, map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}})
-	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.weighted", "type": "FEATURE_FLAG", "value": 2, "value_type": "int", "count": 1, "reason": 3, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0, "weighted_value_index": 2}}}, "/api/v1/telemetry")
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.weighted", "type": "FEATURE_FLAG", "value": 2, "value_type": "int", "count": 1, "reason": 3, "selected_value": map[string]interface{}{"int": 2}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0, "weighted_value_index": 2}}}, "/api/v1/telemetry")
 }
 
 // reason is TARGETING_MATCH for feature flag fallthrough with targeting rules
 func TestTelemetry_ReasonIsTARGETINGMATCHForFeatureFlagFallthroughWithTargetingRules(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
 	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"feature-flag.integer"}}, nil)
-	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.integer", "type": "FEATURE_FLAG", "value": 3, "value_type": "int", "count": 1, "reason": 2, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 1}}}, "/api/v1/telemetry")
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.integer", "type": "FEATURE_FLAG", "value": 3, "value_type": "int", "count": 1, "reason": 2, "selected_value": map[string]interface{}{"int": 3}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 1}}}, "/api/v1/telemetry")
 }
 
 // evaluation summary deduplicates identical evaluations
 func TestTelemetry_EvaluationSummaryDeduplicatesIdenticalEvaluations(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
 	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"brand.new.string", "brand.new.string", "brand.new.string", "brand.new.string", "brand.new.string"}}, nil)
-	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "brand.new.string", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 5, "reason": 1, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "brand.new.string", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 5, "reason": 1, "selected_value": map[string]interface{}{"string": "hello.world"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
 }
 
 // evaluation summary creates separate counters for different rules of same config
 func TestTelemetry_EvaluationSummaryCreatesSeparateCountersForDifferentRulesOfSameConfig(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
 	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"feature-flag.integer"}, "keys_without_context": []interface{}{"feature-flag.integer"}}, map[string]map[string]interface{}{"user": {"key": "michael"}})
-	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.integer", "type": "FEATURE_FLAG", "value": 5, "value_type": "int", "count": 1, "reason": 2, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}, map[string]interface{}{"key": "feature-flag.integer", "type": "FEATURE_FLAG", "value": 3, "value_type": "int", "count": 1, "reason": 2, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 1}}}, "/api/v1/telemetry")
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.integer", "type": "FEATURE_FLAG", "value": 5, "value_type": "int", "count": 1, "reason": 2, "selected_value": map[string]interface{}{"int": 5}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}, map[string]interface{}{"key": "feature-flag.integer", "type": "FEATURE_FLAG", "value": 3, "value_type": "int", "count": 1, "reason": 2, "selected_value": map[string]interface{}{"int": 3}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 1}}}, "/api/v1/telemetry")
 }
 
 // evaluation summary groups by config key
 func TestTelemetry_EvaluationSummaryGroupsByConfigKey(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
 	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"brand.new.string", "always.true"}}, nil)
-	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "brand.new.string", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 1, "reason": 1, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}, map[string]interface{}{"key": "always.true", "type": "FEATURE_FLAG", "value": true, "value_type": "bool", "count": 1, "reason": 1, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "brand.new.string", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"string": "hello.world"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}, map[string]interface{}{"key": "always.true", "type": "FEATURE_FLAG", "value": true, "value_type": "bool", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"bool": true}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
 }
 
 // selectedValue wraps string correctly

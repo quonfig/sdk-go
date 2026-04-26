@@ -875,12 +875,9 @@ func mustJSON(v interface{}) string {
 // --- log-level type guard -------------------------------------------------
 
 // isLogLevelConfig reports whether the config is a log-level config. Log-level
-// evaluations are intentionally excluded from telemetry. Both "log_level" and
-// "log_level_v2" are accepted because the fixture data uses the v1 string and
-// the SDK constant uses the v2 string.
+// evaluations are intentionally excluded from telemetry.
 func isLogLevelConfig(cfg *eval.FullConfig) bool {
-	switch cfg.Type {
-	case quonfig.ConfigTypeLogLevel, "log_level":
+	if cfg.Type == quonfig.ConfigTypeLogLevel {
 		return true
 	}
 	return cfg.ValueType == quonfig.ValueTypeLogLevel

@@ -36,7 +36,7 @@ const (
 	ConfigTypeFeatureFlag ConfigType = "feature_flag"
 	ConfigTypeConfig      ConfigType = "config"
 	ConfigTypeSegment     ConfigType = "segment"
-	ConfigTypeLogLevel    ConfigType = "log_level_v2"
+	ConfigTypeLogLevel    ConfigType = "log_level"
 	ConfigTypeSchema      ConfigType = "schema"
 )
 
