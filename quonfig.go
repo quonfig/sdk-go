@@ -170,8 +170,15 @@ func (c *Client) Refresh() error {
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
 		close(c.closeCh)
-		if c.sse != nil {
-			c.sse.Stop()
+		// Read c.sse under the lock so we synchronize with startSSE, which
+		// runs asynchronously from the init goroutine and may not yet have
+		// installed the SSE client. If startSSE runs after Close, it sees
+		// closeCh closed and skips installation.
+		c.mu.Lock()
+		sse := c.sse
+		c.mu.Unlock()
+		if sse != nil {
+			sse.Stop()
 		}
 		if c.telemetry != nil {
 			c.telemetry.Stop()
@@ -398,7 +405,7 @@ func (c *Client) startSSE() {
 	if url == "" {
 		return
 	}
-	c.sse = newSSEClient(sseClientConfig{
+	sse := newSSEClient(sseClientConfig{
 		URL:       url,
 		APIKey:    c.opts.APIKey,
 		UserAgent: "go-" + sdkVersion,
@@ -411,7 +418,20 @@ func (c *Client) startSSE() {
 		},
 		OnStateChange: c.opts.OnSSEStateChange,
 	})
-	c.sse.Start()
+
+	// If Close ran before we got here, don't install or start the SSE
+	// client — Close has already finished and would not stop us.
+	c.mu.Lock()
+	select {
+	case <-c.closeCh:
+		c.mu.Unlock()
+		return
+	default:
+	}
+	c.sse = sse
+	c.mu.Unlock()
+
+	sse.Start()
 }
 
 func (c *Client) startRefreshLoop() {
