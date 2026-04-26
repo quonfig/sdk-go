@@ -83,6 +83,15 @@ func NewClient(opts ...Option) (*Client, error) {
 	applyTelemetryEnvOverride(&o)
 	applyEnvironmentEnvOverride(&o)
 	applyAPIKeyEnvOverride(&o)
+	applyDevContextEnvOverride(&o)
+
+	if o.EnableQuonfigUserContext {
+		if devCtx := loadQuonfigUserContext(); devCtx != nil {
+			// Customer-supplied GlobalContext wins on collision because
+			// Merge replaces by named-context name and the second arg wins.
+			o.GlobalContext = Merge(devCtx, o.GlobalContext)
+		}
+	}
 
 	client := &Client{
 		opts:               o,

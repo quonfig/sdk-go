@@ -76,6 +76,14 @@ type Options struct {
 	// log-level config can drive per-logger overrides.
 	LoggerKey string
 
+	// EnableQuonfigUserContext, when true, makes NewClient read
+	// ~/.quonfig/tokens.json (written by `qfg login`) and merge
+	// { "quonfig-user": { "email": <userEmail> } } into GlobalContext under
+	// any caller-supplied keys. Default false. The env var
+	// QUONFIG_DEV_CONTEXT=true also enables it. Production servers do not
+	// have the tokens file, so this is a no-op there by construction.
+	EnableQuonfigUserContext bool
+
 	// Telemetry options
 	CollectEvaluationSummaries bool
 	ContextTelemetryMode       ContextTelemetryMode
@@ -135,6 +143,18 @@ func applyEnvironmentEnvOverride(o *Options) {
 	}
 	if v, ok := os.LookupEnv("QUONFIG_ENVIRONMENT"); ok && v != "" {
 		o.Environment = v
+	}
+}
+
+// applyDevContextEnvOverride enables quonfig-user.email injection when
+// QUONFIG_DEV_CONTEXT=true and no explicit WithQuonfigUserContext was set.
+// An explicit option (true OR false) wins over the env var.
+func applyDevContextEnvOverride(o *Options) {
+	if o.EnableQuonfigUserContext {
+		return
+	}
+	if v, ok := os.LookupEnv("QUONFIG_DEV_CONTEXT"); ok && v == "true" {
+		o.EnableQuonfigUserContext = true
 	}
 }
 
@@ -199,6 +219,18 @@ func WithEnvironment(environment string) Option {
 func WithGlobalContext(ctx *ContextSet) Option {
 	return func(o *Options) error {
 		o.GlobalContext = ctx
+		return nil
+	}
+}
+
+// WithQuonfigUserContext enables (or disables) injecting
+// quonfig-user.email from ~/.quonfig/tokens.json into GlobalContext on
+// NewClient. Customer-supplied GlobalContext keys win on collision.
+// Default off; the env var QUONFIG_DEV_CONTEXT=true also enables it when
+// no explicit option is set.
+func WithQuonfigUserContext(enabled bool) Option {
+	return func(o *Options) error {
+		o.EnableQuonfigUserContext = enabled
 		return nil
 	}
 }
