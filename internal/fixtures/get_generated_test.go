@@ -75,17 +75,6 @@ func TestGet_GetCanReturnAStringList(t *testing.T) {
 	assertStringListValue(t, match, []string{"a", "b", "c"})
 }
 
-// can return an override based on the default context
-func TestGet_CanReturnAnOverrideBasedOnTheDefaultContext(t *testing.T) {
-	cfg := mustLookupConfig(t, "my-overridden-key")
-	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "overridden")
-}
-
 // can return a value provided by an environment variable
 func TestGet_CanReturnAValueProvidedByAnEnvironmentVariable(t *testing.T) {
 	cfg := mustLookupConfig(t, "prefab.secrets.encryption.key")

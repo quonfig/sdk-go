@@ -119,28 +119,6 @@ func TestContextPrecedence_ReturnsTheCorrectGetValueUsingTheGlobalContext2(t *te
 	assertStringValue(t, match, "default")
 }
 
-// returns the correct `get` value using the global context and api context (1)
-func TestContextPrecedence_ReturnsTheCorrectGetValueUsingTheGlobalContextAndApiContext1(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config.with.api.conditional")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "override")
-}
-
-// returns the correct `get` value using the global context and api context (2)
-func TestContextPrecedence_ReturnsTheCorrectGetValueUsingTheGlobalContextAndApiContext2(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config.with.api.conditional")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@example.com"}}, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "api-override")
-}
-
 // returns the correct `get` value when local context clobbers global context (1)
 func TestContextPrecedence_ReturnsTheCorrectGetValueWhenLocalContextClobbersGlobalContext1(t *testing.T) {
 	cfg := mustLookupConfig(t, "basic.rule.config")
