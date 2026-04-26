@@ -1,6 +1,10 @@
 package quonfig
 
-import "testing"
+import (
+	"net/http"
+	"sync"
+	"testing"
+)
 
 // memStore is a simple in-memory store for testing.
 type memStore struct {
@@ -227,4 +231,43 @@ func TestClientKeys(t *testing.T) {
 	if len(keys) != 2 {
 		t.Errorf("expected 2 keys, got %d", len(keys))
 	}
+}
+
+// TestNewClientTransportRaceFreeUnderConcurrency is a regression guard for
+// c.transport. The field is set during NewClient and never mutated again;
+// readers (Refresh, fetchAndInstall, awaitInitialization, startSSE) include
+// goroutines spawned during init, so any future change that moves the
+// assignment after the goroutine spawn must be caught by -race. Hammers
+// Refresh from many goroutines while Close runs on the main goroutine.
+func TestNewClientTransportRaceFreeUnderConcurrency(t *testing.T) {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			return jsonResponse(http.StatusOK, map[string]string{"Content-Type": "application/json"}, ConfigEnvelope{
+				Configs: []ConfigResponse{},
+				Meta:    Meta{Version: "v1", Environment: "Production"},
+			}), nil
+		}),
+	}
+
+	client, err := NewClient(
+		WithAPIKey("test-key"),
+		WithAPIURLs([]string{"https://example.test"}),
+		WithHTTPClient(httpClient),
+		WithSSE(false),
+		WithAllTelemetryDisabled(),
+	)
+	if err != nil {
+		t.Fatalf("NewClient returned error: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = client.Refresh()
+		}()
+	}
+	client.Close()
+	wg.Wait()
 }

@@ -93,8 +93,19 @@ func NewClient(opts ...Option) (*Client, error) {
 		}
 	}
 
+	// Build transport before struct construction so c.transport is set
+	// exactly once in the struct literal and is effectively immutable for
+	// the lifetime of the Client. Readers (Refresh, fetchAndInstall,
+	// awaitInitialization, startSSE) — including ones running in the init
+	// goroutine — can therefore read the field without synchronization.
+	var transport *runtimeTransport
+	if o.DataDir == "" && o.APIKey != "" {
+		transport = newRuntimeTransportWithStreamOverride(o.APIURLs, o.APIKey, o.HTTPClient, o.testStreamURLOverride)
+	}
+
 	client := &Client{
 		opts:               o,
+		transport:          transport,
 		initializationDone: make(chan struct{}),
 		closeCh:            make(chan struct{}),
 	}
@@ -123,7 +134,6 @@ func NewClient(opts ...Option) (*Client, error) {
 		return client, nil
 	}
 
-	client.transport = newRuntimeTransportWithStreamOverride(o.APIURLs, o.APIKey, o.HTTPClient, o.testStreamURLOverride)
 	client.startInitialization()
 
 	return client, nil
