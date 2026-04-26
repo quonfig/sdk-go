@@ -105,31 +105,6 @@ func evaluateAndResolve(t *testing.T, cfg *eval.FullConfig, ctx eval.ContextValu
 	return match, nil
 }
 
-// configUsesAPIContext returns true if the config has rules that reference
-// prefab-api-key.* properties (API-injected context not available in local eval).
-func configUsesAPIContext(cfg *eval.FullConfig) bool {
-	allRules := append([]quonfig.Rule{}, cfg.Default.Rules...)
-	for _, env := range cfg.Environments {
-		allRules = append(allRules, env.Rules...)
-	}
-
-	for _, rule := range allRules {
-		for _, c := range rule.Criteria {
-			if strings.HasPrefix(c.PropertyName, "prefab-api-key.") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// shouldSkipAPIContextTest checks whether the test should be skipped because
-// the config uses API-injected context that we can't provide locally, AND the
-// fallback evaluation would not produce the expected result.
-func shouldSkipAPIContextTest(cfg *eval.FullConfig) bool {
-	return configUsesAPIContext(cfg)
-}
-
 // assertStringValue asserts that the resolved value is the expected string.
 func assertStringValue(t *testing.T, match *eval.EvalMatch, expected string) {
 	t.Helper()

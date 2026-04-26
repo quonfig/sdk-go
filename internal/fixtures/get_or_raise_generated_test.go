@@ -1,4 +1,7 @@
 // Code generated from integration-test-data/tests/eval/get_or_raise.yaml. DO NOT EDIT.
+// Regenerate with:
+//   cd integration-test-data/generators && npm run generate -- --target=go
+// Source: integration-test-data/generators/src/targets/go.ts
 
 package fixtures
 
@@ -6,67 +9,69 @@ import (
 	"testing"
 )
 
-func TestGetOrRaise_CanRaiseAnErrorIfValueNotFound(t *testing.T) {
+// get_or_raise can raise an error if value not found
+func TestGetOrRaise_GetOrRaiseCanRaiseAnErrorIfValueNotFound(t *testing.T) {
 	_, ok := configStore.GetConfig("my-missing-key")
 	if ok {
-		t.Fatal("expected config 'my-missing-key' to be missing")
+		t.Fatalf("expected config %q to be missing for missing_default case", "my-missing-key")
 	}
-	// Config not found with no default: this is the expected missing_default error
 }
 
-func TestGetOrRaise_ReturnsADefaultValueInsteadOfRaising(t *testing.T) {
-	_, ok := configStore.GetConfig("my-missing-key")
-	if ok {
-		t.Fatal("expected config 'my-missing-key' to be missing")
+// get_or_raise returns a default value instead of raising
+func TestGetOrRaise_GetOrRaiseReturnsADefaultValueInsteadOfRaising(t *testing.T) {
+	cfg := mustLookupConfig(t, "my-missing-key")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
 	}
-	// Config not found but default "DEFAULT" is provided, so that is the result
-	assertDefaultStringValue(t, "my-missing-key", "DEFAULT", "DEFAULT")
+	assertStringValue(t, match, "DEFAULT")
 }
 
-func TestGetOrRaise_RaisesTheCorrectErrorIfItDoesntRaiseOnInitTimeout(t *testing.T) {
-	// This test has client_overrides that simulate init failure with on_init_failure: :return.
-	// With a staging URL and 0.01s timeout, the client returns empty config store.
-	// Then get_or_raise for "any-key" with no default should raise missing_default.
-	// We simulate this by verifying the key is not in our config store.
+// get_or_raise raises the correct error if it doesn't raise on init timeout
+func TestGetOrRaise_GetOrRaiseRaisesTheCorrectErrorIfItDoesnTRaiseOnInitTimeout(t *testing.T) {
 	_, ok := configStore.GetConfig("any-key")
 	if ok {
-		t.Fatal("expected config 'any-key' to be missing (simulating init timeout with :return)")
+		t.Fatalf("expected config %q to be missing for missing_default case", "any-key")
 	}
-	// Config not found with no default: missing_default is expected
 }
 
-func TestGetOrRaise_CanRaiseAnErrorIfTheClientDoesNotInitializeInTime(t *testing.T) {
-	t.Skip("Skipping: initialization_timeout requires network timing behavior")
+// get_or_raise can raise an error if the client does not initialize in time
+func TestGetOrRaise_GetOrRaiseCanRaiseAnErrorIfTheClientDoesNotInitializeInTime(t *testing.T) {
+	assertInitializationTimeoutError(t, "any-key", 0.01, "https://app.staging-prefab.cloud", "raise")
 }
 
+// raises an error if a config is provided by a missing environment variable
 func TestGetOrRaise_RaisesAnErrorIfAConfigIsProvidedByAMissingEnvironmentVariable(t *testing.T) {
 	cfg := mustLookupConfig(t, "provided.by.missing.env.var")
 	ctx := buildContextFromMaps(nil, nil, nil)
 	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
 	if !match.IsMatch || match.Value == nil {
-		t.Fatal("expected a match for provided.by.missing.env.var")
+		t.Fatalf("expected a match for %q", "provided.by.missing.env.var")
 	}
 	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
 	assertResolveError(t, err, "missing_env_var")
 }
 
+// raises an error if an env-var-provided config cannot be coerced to configured type
 func TestGetOrRaise_RaisesAnErrorIfAnEnvVarProvidedConfigCannotBeCoercedToConfiguredType(t *testing.T) {
 	cfg := mustLookupConfig(t, "provided.not.a.number")
 	ctx := buildContextFromMaps(nil, nil, nil)
 	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
 	if !match.IsMatch || match.Value == nil {
-		t.Fatal("expected a match for provided.not.a.number")
+		t.Fatalf("expected a match for %q", "provided.not.a.number")
 	}
 	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
 	assertResolveError(t, err, "unable_to_coerce_env_var")
 }
 
+// raises an error for decryption failure
 func TestGetOrRaise_RaisesAnErrorForDecryptionFailure(t *testing.T) {
 	cfg := mustLookupConfig(t, "a.broken.secret.config")
 	ctx := buildContextFromMaps(nil, nil, nil)
 	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
 	if !match.IsMatch || match.Value == nil {
-		t.Fatal("expected a match for a.broken.secret.config")
+		t.Fatalf("expected a match for %q", "a.broken.secret.config")
 	}
 	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
 	assertResolveError(t, err, "unable_to_decrypt")

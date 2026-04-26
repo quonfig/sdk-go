@@ -1,6 +1,9 @@
-package fixtures
-
 // Code generated from integration-test-data/tests/eval/datadir_environment.yaml. DO NOT EDIT.
+// Regenerate with:
+//   cd integration-test-data/generators && npm run generate -- --target=go
+// Source: integration-test-data/generators/src/targets/go.ts
+
+package fixtures
 
 import (
 	"testing"
@@ -10,13 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testDataDir = "../../../integration-test-data/data/integration-tests"
-
+// datadir with environment option gets environment-specific value
 func TestDatadirEnvironment_DatadirWithEnvironmentOptionGetsEnvironmentSpecificValue(t *testing.T) {
-	client, err := quonfig.NewClient(
-		quonfig.WithDataDir(testDataDir),
-		quonfig.WithEnvironment("Production"),
-	)
+	client, err := quonfig.NewClient(quonfig.WithDataDir(dataDir), quonfig.WithEnvironment("Production"))
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -26,12 +25,10 @@ func TestDatadirEnvironment_DatadirWithEnvironmentOptionGetsEnvironmentSpecificV
 	assert.Equal(t, "test4", val)
 }
 
-func TestDatadirEnvironment_DatadirWithQuonfigEnvironmentEnvVarGetsEnvironmentSpecificValue(t *testing.T) {
+// datadir with QUONFIG_ENVIRONMENT env var gets environment-specific value
+func TestDatadirEnvironment_DatadirWithQUONFIGENVIRONMENTEnvVarGetsEnvironmentSpecificValue(t *testing.T) {
 	t.Setenv("QUONFIG_ENVIRONMENT", "Production")
-
-	client, err := quonfig.NewClient(
-		quonfig.WithDataDir(testDataDir),
-	)
+	client, err := quonfig.NewClient(quonfig.WithDataDir(dataDir))
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -41,13 +38,10 @@ func TestDatadirEnvironment_DatadirWithQuonfigEnvironmentEnvVarGetsEnvironmentSp
 	assert.Equal(t, "test4", val)
 }
 
-func TestDatadirEnvironment_EnvironmentOptionSupersedesQuonfigEnvironmentEnvVar(t *testing.T) {
+// environment option supersedes QUONFIG_ENVIRONMENT env var
+func TestDatadirEnvironment_EnvironmentOptionSupersedesQUONFIGENVIRONMENTEnvVar(t *testing.T) {
 	t.Setenv("QUONFIG_ENVIRONMENT", "nonexistent")
-
-	client, err := quonfig.NewClient(
-		quonfig.WithDataDir(testDataDir),
-		quonfig.WithEnvironment("Production"),
-	)
+	client, err := quonfig.NewClient(quonfig.WithDataDir(dataDir), quonfig.WithEnvironment("Production"))
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -57,11 +51,9 @@ func TestDatadirEnvironment_EnvironmentOptionSupersedesQuonfigEnvironmentEnvVar(
 	assert.Equal(t, "test4", val)
 }
 
+// config without environment override returns default value
 func TestDatadirEnvironment_ConfigWithoutEnvironmentOverrideReturnsDefaultValue(t *testing.T) {
-	client, err := quonfig.NewClient(
-		quonfig.WithDataDir(testDataDir),
-		quonfig.WithEnvironment("Production"),
-	)
+	client, err := quonfig.NewClient(quonfig.WithDataDir(dataDir), quonfig.WithEnvironment("Production"))
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -71,19 +63,16 @@ func TestDatadirEnvironment_ConfigWithoutEnvironmentOverrideReturnsDefaultValue(
 	assert.Equal(t, "hello from no env row", val)
 }
 
+// datadir without environment fails to init
 func TestDatadirEnvironment_DatadirWithoutEnvironmentFailsToInit(t *testing.T) {
-	_, err := quonfig.NewClient(
-		quonfig.WithDataDir(testDataDir),
-	)
+	_, err := quonfig.NewClient(quonfig.WithDataDir(dataDir))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "environment")
 }
 
+// datadir with invalid environment fails to init
 func TestDatadirEnvironment_DatadirWithInvalidEnvironmentFailsToInit(t *testing.T) {
-	_, err := quonfig.NewClient(
-		quonfig.WithDataDir(testDataDir),
-		quonfig.WithEnvironment("nonexistent"),
-	)
+	_, err := quonfig.NewClient(quonfig.WithDataDir(dataDir), quonfig.WithEnvironment("nonexistent"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "nonexistent")
 }
