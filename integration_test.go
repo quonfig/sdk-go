@@ -68,11 +68,15 @@ func startTestServer(t *testing.T) string {
 		t.Fatalf("fixture SDK keys not found at %s: %v — this file is required for integration tests", keysPath, err)
 	}
 
-	// Build the api-delivery binary
+	// Build the api-delivery binary.
+	// GOWORK=off so this build is independent of the monorepo's go.work — api-delivery
+	// is intentionally not a workspace member (it pins a released sdk-go via go.mod),
+	// and a developer-side go.work that doesn't list it would otherwise fail the build.
 	serverDir := filepath.Join(projectRoot(), "api-delivery")
 	binary := filepath.Join(t.TempDir(), "api-delivery")
 	build := exec.Command("go", "build", "-o", binary, "./cmd/server")
 	build.Dir = serverDir
+	build.Env = append(os.Environ(), "GOWORK=off")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("failed to build api-delivery: %v\n%s", err, out)
 	}
