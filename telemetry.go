@@ -1,11 +1,39 @@
 package quonfig
 
 import (
+	"crypto/md5"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/quonfig/sdk-go/internal/telemetry"
 )
+
+// reportableValuePrefix is the redaction prefix for confidential values in
+// telemetry payloads. The full form is "*****<first-5-hex-chars-of-md5(raw)>".
+const reportableValuePrefix = "*****"
+
+// reportableValueFor returns the redacted form of a value for telemetry
+// reporting, or nil if the value is not confidential and does not require
+// decryption. The hash is computed over the raw stored string value (the
+// ciphertext for decryptWith values, the plaintext for plain confidential
+// values) -- not over the decrypted plaintext.
+func reportableValueFor(val *Value) *string {
+	if val == nil {
+		return nil
+	}
+	if !val.Confidential && val.DecryptWith == "" {
+		return nil
+	}
+	raw := val.StringValue()
+	sum := md5.Sum([]byte(raw))
+	h := hex.EncodeToString(sum[:])
+	if len(h) < 5 {
+		return nil
+	}
+	out := reportableValuePrefix + h[:5]
+	return &out
+}
 
 // telemetrySubmitter wraps the internal telemetry.Submitter and
 // provides the bridge between quonfig types and telemetry types.
@@ -56,6 +84,7 @@ func (t *telemetrySubmitter) RecordEvaluation(result *EvalResult) {
 		RuleIndex:          result.RuleIndex,
 		WeightedValueIndex: result.WeightedValueIndex,
 		SelectedValue:      selectedValue,
+		ReportableValue:    reportableValueFor(result.Value),
 		Reason:             int(result.Reason),
 	})
 }

@@ -12,6 +12,7 @@ import (
 
 	quonfig "github.com/quonfig/sdk-go"
 	"github.com/quonfig/sdk-go/internal/eval"
+	"github.com/quonfig/sdk-go/internal/resolver"
 	"github.com/quonfig/sdk-go/internal/telemetry"
 )
 
@@ -263,8 +264,14 @@ func evalKeysAndRecord(t *testing.T, agg *telemetry.EvalSummaryAggregator, keys 
 		match := evaluator.EvaluateConfig(cfg, "Production", contextValueGetter)
 
 		var selectedValue interface{}
+		var reportableValue *string
 		reason := 4 // DEFAULT
 		if match.IsMatch && match.Value != nil {
+			// Compute the redacted reportable form BEFORE resolving, since
+			// the resolver replaces the ciphertext with the decrypted
+			// plaintext for decryptWith values.
+			reportableValue = resolver.ReportableValueFor(match.Value)
+
 			resolved, err := testResolver.Resolve(match.Value, cfg, "Production", contextValueGetter)
 			if err != nil {
 				t.Fatalf("evaluation_summary resolve failed for %s: %v", key, err)
@@ -287,6 +294,7 @@ func evalKeysAndRecord(t *testing.T, agg *telemetry.EvalSummaryAggregator, keys 
 			RuleIndex:          match.RuleIndex,
 			WeightedValueIndex: match.WeightedValueIndex,
 			SelectedValue:      selectedValue,
+			ReportableValue:    reportableValue,
 			Reason:             reason,
 		})
 	}
@@ -726,10 +734,16 @@ func evalSummaryRowEqual(got, want map[string]interface{}) bool {
 	if intish(gs["weighted_value_index"]) != intish(ws["weighted_value_index"]) {
 		return false
 	}
-	// value match (number-tolerant), only when expected sets "value"
+	// value match (number-tolerant), only when expected sets "value".
+	// Skip when the wire selected_value is a confidential redaction
+	// ("*****<5-hex>"): in that case `value` in the YAML is the un-redacted
+	// documentation form, while `selected_value` is the authoritative wire
+	// payload.
 	if wv, has := want["value"]; has {
-		if !looseEqual(got["value"], wv) {
-			return false
+		if !isRedactedSelectedValue(got["selected_value"]) {
+			if !looseEqual(got["value"], wv) {
+				return false
+			}
 		}
 	}
 	// value_type match
@@ -745,6 +759,20 @@ func evalSummaryRowEqual(got, want map[string]interface{}) bool {
 		}
 	}
 	return true
+}
+
+// isRedactedSelectedValue reports whether the wire selected_value is a
+// confidential redaction (starts with "*****"). Used to skip the `value`
+// match in evalSummaryRowEqual since the YAML's documentary `value` field
+// holds the un-redacted form while `selected_value` holds the wire form.
+func isRedactedSelectedValue(sv interface{}) bool {
+	m, _ := sv.(map[string]interface{})
+	if m == nil {
+		return false
+	}
+	s, _ := m["string"].(string)
+	const prefix = "*****"
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
 }
 
 func selectedValueEqual(a, b interface{}) bool {

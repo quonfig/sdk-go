@@ -16,7 +16,11 @@ type EvalMatch struct {
 	RuleIndex          int
 	WeightedValueIndex int
 	SelectedValue      interface{}
-	Reason             int
+	// ReportableValue, when non-nil, is used in place of SelectedValue when
+	// emitting telemetry. This is set for confidential / decryptWith values so
+	// the redacted "*****<5-hex>" form is reported instead of the plaintext.
+	ReportableValue *string
+	Reason          int
 }
 
 // EvalSummaryAggregator accumulates evaluation counts grouped by
@@ -45,7 +49,13 @@ func (a *EvalSummaryAggregator) Record(match EvalMatch) {
 		a.dataStart = time.Now().UnixMilli()
 	}
 
-	key := fmt.Sprintf("%s-%d-%d-%v", match.ConfigID, match.RuleIndex, match.WeightedValueIndex, match.SelectedValue)
+	// Group by reportable form when present so confidential values dedup on
+	// the redacted hash rather than the plaintext.
+	groupValue := match.SelectedValue
+	if match.ReportableValue != nil {
+		groupValue = *match.ReportableValue
+	}
+	key := fmt.Sprintf("%s-%d-%d-%v", match.ConfigID, match.RuleIndex, match.WeightedValueIndex, groupValue)
 
 	if _, ok := a.data[key]; !ok {
 		a.data[key] = match
@@ -72,7 +82,15 @@ func (a *EvalSummaryAggregator) GetAndClear() *TelemetryEvent {
 	grouped := make(map[counterKey][]EvalCounter)
 
 	for groupingKey, match := range a.data {
-		selectedValueJSON, _ := json.Marshal(marshalSelectedValue(match.SelectedValue))
+		// For confidential / decryptWith values, the reportable redacted form
+		// (e.g. "*****abc12") is sent over the wire instead of the actual
+		// value. The wire shape is always {"string": "<redacted>"} regardless
+		// of the original value type.
+		valueForWire := match.SelectedValue
+		if match.ReportableValue != nil {
+			valueForWire = *match.ReportableValue
+		}
+		selectedValueJSON, _ := json.Marshal(marshalSelectedValue(valueForWire))
 
 		counter := EvalCounter{
 			ConfigID:              match.ConfigID,

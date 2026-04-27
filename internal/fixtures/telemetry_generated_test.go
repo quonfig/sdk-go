@@ -148,3 +148,17 @@ func TestTelemetry_EmptyContextProducesNoContextTelemetry(t *testing.T) {
 	FeedAggregator(t, agg, "context_shape", map[string]interface{}{}, nil)
 	AssertAggregatorPost(t, agg, "context_shape", nil, "/api/v1/context-shapes")
 }
+
+// confidential plain string is redacted in selectedValue
+func TestTelemetry_ConfidentialPlainStringIsRedactedInSelectedValue(t *testing.T) {
+	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
+	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"confidential.new.string"}}, nil)
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "confidential.new.string", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"string": "*****18aa7"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+}
+
+// confidential encrypted string is redacted using ciphertext hash
+func TestTelemetry_ConfidentialEncryptedStringIsRedactedUsingCiphertextHash(t *testing.T) {
+	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
+	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"a.secret.config"}}, nil)
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "a.secret.config", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"string": "*****936c9"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+}

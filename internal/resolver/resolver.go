@@ -3,6 +3,8 @@
 package resolver
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +14,32 @@ import (
 	"github.com/quonfig/sdk-go/internal/encryption"
 	"github.com/quonfig/sdk-go/internal/eval"
 )
+
+// ReportableValuePrefix is the redaction prefix for confidential values in
+// telemetry payloads. The full form is "*****<first-5-hex-chars-of-md5(raw)>".
+const ReportableValuePrefix = "*****"
+
+// ReportableValueFor returns the redacted form of a value for telemetry
+// reporting, or nil if the value is not confidential and does not require
+// decryption. The hash is computed over the raw stored string value (the
+// ciphertext for decryptWith values, the plaintext for plain confidential
+// values) -- not over the decrypted plaintext.
+func ReportableValueFor(val *quonfig.Value) *string {
+	if val == nil {
+		return nil
+	}
+	if !val.Confidential && val.DecryptWith == "" {
+		return nil
+	}
+	raw := val.StringValue()
+	sum := md5.Sum([]byte(raw))
+	h := hex.EncodeToString(sum[:])
+	if len(h) < 5 {
+		return nil
+	}
+	out := ReportableValuePrefix + h[:5]
+	return &out
+}
 
 // Error types for resolver failures.
 var (
