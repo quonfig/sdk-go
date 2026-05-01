@@ -9,7 +9,7 @@ import (
 	quonfig "github.com/quonfig/sdk-go"
 )
 
-const sdkVersion = "0.1.1"
+const sdkVersion = "0.0.14"
 
 // Client fetches configs from the Quonfig API.
 type Client struct {
