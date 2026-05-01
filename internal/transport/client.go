@@ -7,9 +7,8 @@ import (
 	"net/http"
 
 	quonfig "github.com/quonfig/sdk-go"
+	"github.com/quonfig/sdk-go/internal/version"
 )
-
-const sdkVersion = "0.0.14"
 
 // Client fetches configs from the Quonfig API.
 type Client struct {
@@ -46,7 +45,7 @@ func (c *Client) FetchConfigs() (*FetchResult, error) {
 	}
 
 	req.SetBasicAuth("1", c.apiKey)
-	req.Header.Set("X-Quonfig-SDK-Version", "go-"+sdkVersion)
+	req.Header.Set("X-Quonfig-SDK-Version", version.Header())
 	req.Header.Set("Accept", "application/json")
 
 	if c.etag != "" {

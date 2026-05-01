@@ -7,9 +7,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
-)
 
-const sdkVersion = "0.0.14"
+	"github.com/quonfig/sdk-go/internal/version"
+)
 
 type fetchResult struct {
 	Envelope   *ConfigEnvelope
@@ -103,7 +103,7 @@ func (c *runtimeTransport) fetchFromURL(ctx context.Context, baseURL string) (*f
 	}
 
 	req.SetBasicAuth("1", c.apiKey)
-	req.Header.Set("X-Quonfig-SDK-Version", "go-"+sdkVersion)
+	req.Header.Set("X-Quonfig-SDK-Version", version.Header())
 	req.Header.Set("Accept", "application/json")
 	if c.etag != "" {
 		req.Header.Set("If-None-Match", c.etag)

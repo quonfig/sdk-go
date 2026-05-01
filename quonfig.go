@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/quonfig/sdk-go/internal/version"
 )
 
 // ErrNotFound is returned when a config key does not exist.
@@ -420,7 +422,7 @@ func (c *Client) startSSE() {
 	sse := newSSEClient(sseClientConfig{
 		URL:       url,
 		APIKey:    c.opts.APIKey,
-		UserAgent: "go-" + sdkVersion,
+		UserAgent: version.Header(),
 		Client:    c.opts.HTTPClient,
 		OnEnvelope: func(env *ConfigEnvelope) {
 			// Serialize with polled installs via refreshMu so we don't race.

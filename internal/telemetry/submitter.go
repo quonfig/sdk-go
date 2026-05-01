@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/quonfig/sdk-go/internal/version"
 )
 
 const (
 	queueCapacity = 10000
 	maxRetries    = 5
-	sdkVersion    = "go-0.0.14"
 )
 
 // queueItem is either an EvalMatch or a ContextData.
@@ -219,7 +220,7 @@ func (s *Submitter) postWithRetry(url string, data []byte) {
 		}
 
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("X-Quonfig-SDK-Version", sdkVersion)
+		req.Header.Set("X-Quonfig-SDK-Version", version.Header())
 
 		encodedAuth := base64.StdEncoding.EncodeToString([]byte("1:" + s.apiKey))
 		req.Header.Set("Authorization", "Basic "+encodedAuth)
