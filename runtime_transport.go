@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-const sdkVersion = "0.1.0"
+const sdkVersion = "0.1.1"
 
 type fetchResult struct {
 	Envelope   *ConfigEnvelope

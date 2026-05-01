@@ -79,8 +79,10 @@ func NewClient(opts ...Option) (*Client, error) {
 		}
 	}
 
-	// Env var overrides take highest priority, after all options are applied.
-	applyTelemetryEnvOverride(&o)
+	// Env var overrides apply after explicit options. Explicit With*
+	// options always win — the override functions check the *explicit
+	// flags and skip fields the caller already set.
+	applyDomainEnvOverride(&o)
 	applyEnvironmentEnvOverride(&o)
 	applyAPIKeyEnvOverride(&o)
 	applyDevContextEnvOverride(&o)

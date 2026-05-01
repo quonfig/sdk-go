@@ -36,6 +36,10 @@ type Option func(*Options) error
 // Returns the value and whether it was found.
 type EnvLookupFunc func(key string) (string, bool)
 
+// DefaultDomain is the production domain used when QUONFIG_DOMAIN is unset
+// and no explicit URL options are provided.
+const DefaultDomain = "quonfig.com"
+
 // Options holds all client configuration.
 type Options struct {
 	APIKey          string
@@ -48,6 +52,12 @@ type Options struct {
 	EnvLookup       EnvLookupFunc
 	RefreshInterval time.Duration
 	HTTPClient      *http.Client
+
+	// apiURLsExplicit and telemetryURLExplicit track whether the caller set
+	// the corresponding field via With* options. When true, applyDomainEnvOverride
+	// leaves the field alone — explicit options always win over QUONFIG_DOMAIN.
+	apiURLsExplicit      bool
+	telemetryURLExplicit bool
 
 	// OnConfigUpdate is called whenever the client installs a new config envelope
 	// (i.e. after a successful fetch or data-dir load). It is called with the
@@ -111,26 +121,54 @@ func (o *Options) TelemetryEnabled() bool {
 
 func defaultOptions() Options {
 	return Options{
-		APIURLs: []string{
-			"https://primary.quonfig.com",
-		},
+		APIURLs:                    apiURLsForDomain(DefaultDomain),
 		InitTimeout:                10 * time.Second,
 		OnInitFailure:              ReturnError,
 		SSEEnabled:                 true,
 		CollectEvaluationSummaries: true,
 		ContextTelemetryMode:       ContextTelemetryPeriodicExample,
 		TelemetrySyncInterval:      60 * time.Second,
-		TelemetryURL:               "https://telemetry.quonfig.com",
+		TelemetryURL:               telemetryURLForDomain(DefaultDomain),
 	}
 }
 
-// applyTelemetryEnvOverride checks the QUONFIG_TELEMETRY_URL environment
-// variable and, if set, overrides the TelemetryURL option. This is called
-// after all functional options have been applied so the env var takes highest
-// priority.
-func applyTelemetryEnvOverride(o *Options) {
-	if v, ok := os.LookupEnv("QUONFIG_TELEMETRY_URL"); ok {
-		o.TelemetryURL = v
+// apiURLsForDomain returns the ordered list of api base URLs derived from
+// the given domain (e.g. "quonfig-staging.com" ->
+// ["https://primary.quonfig-staging.com", "https://secondary.quonfig-staging.com"]).
+func apiURLsForDomain(domain string) []string {
+	return []string{
+		"https://primary." + domain,
+		"https://secondary." + domain,
+	}
+}
+
+// telemetryURLForDomain returns the telemetry ingestion URL for the given
+// domain (e.g. "quonfig-staging.com" -> "https://telemetry.quonfig-staging.com").
+func telemetryURLForDomain(domain string) string {
+	return "https://telemetry." + domain
+}
+
+// applyDomainEnvOverride checks the QUONFIG_DOMAIN environment variable and,
+// if set to a non-empty value, derives APIURLs and TelemetryURL from it.
+// Explicit With* options take precedence: if the caller set APIURLs via
+// WithAPIURLs (apiURLsExplicit=true), the env var has no effect on APIURLs.
+// Same for TelemetryURL. Resolution order is therefore:
+//
+//	explicit With* options > QUONFIG_DOMAIN env var > DefaultDomain
+//
+// This mirrors the CLI's QUONFIG_DOMAIN convention (cli/src/util/domain-urls.ts)
+// and replaces the older per-URL env vars (QUONFIG_TELEMETRY_URL, etc.) which
+// were removed in alpha — there is no backward-compat path.
+func applyDomainEnvOverride(o *Options) {
+	v, ok := os.LookupEnv("QUONFIG_DOMAIN")
+	if !ok || v == "" {
+		return
+	}
+	if !o.apiURLsExplicit {
+		o.APIURLs = apiURLsForDomain(v)
+	}
+	if !o.telemetryURLExplicit {
+		o.TelemetryURL = telemetryURLForDomain(v)
 	}
 }
 
@@ -183,12 +221,15 @@ func WithAPIKey(key string) Option {
 
 // WithAPIURLs sets an ordered list of base URLs for the Quonfig API.
 // The client tries each URL in order, falling back to the next on failure.
+// Setting this option is treated as an explicit override and takes precedence
+// over the QUONFIG_DOMAIN env var.
 func WithAPIURLs(urls []string) Option {
 	return func(o *Options) error {
 		if len(urls) == 0 {
 			return errors.New("API URLs must not be empty")
 		}
 		o.APIURLs = urls
+		o.apiURLsExplicit = true
 		return nil
 	}
 }
@@ -311,12 +352,15 @@ func WithTelemetrySyncInterval(d time.Duration) Option {
 }
 
 // WithTelemetryURL sets the telemetry ingestion endpoint.
+// Setting this option is treated as an explicit override and takes
+// precedence over the QUONFIG_DOMAIN env var.
 func WithTelemetryURL(url string) Option {
 	return func(o *Options) error {
 		if url == "" {
 			return errors.New("telemetry URL must not be empty")
 		}
 		o.TelemetryURL = url
+		o.telemetryURLExplicit = true
 		return nil
 	}
 }

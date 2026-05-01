@@ -12,7 +12,7 @@ import (
 const (
 	queueCapacity = 10000
 	maxRetries    = 5
-	sdkVersion    = "go-0.1.0"
+	sdkVersion    = "go-0.1.1"
 )
 
 // queueItem is either an EvalMatch or a ContextData.
