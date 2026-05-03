@@ -33,7 +33,7 @@ func TestClientGetStringValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.SetStore(newMemStore(map[string]*ConfigResponse{
+	client.setStore(newMemStore(map[string]*ConfigResponse{
 		"app.name": {
 			Key:       "app.name",
 			ValueType: ValueTypeString,
@@ -62,7 +62,7 @@ func TestClientGetBoolValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.SetStore(newMemStore(map[string]*ConfigResponse{
+	client.setStore(newMemStore(map[string]*ConfigResponse{
 		"feature.on": {
 			Key:       "feature.on",
 			ValueType: ValueTypeBool,
@@ -88,7 +88,7 @@ func TestClientGetIntValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.SetStore(newMemStore(map[string]*ConfigResponse{
+	client.setStore(newMemStore(map[string]*ConfigResponse{
 		"max.retries": {
 			Key:       "max.retries",
 			ValueType: ValueTypeInt,
@@ -114,7 +114,7 @@ func TestClientGetFloatValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.SetStore(newMemStore(map[string]*ConfigResponse{
+	client.setStore(newMemStore(map[string]*ConfigResponse{
 		"rate.limit": {
 			Key:       "rate.limit",
 			ValueType: ValueTypeDouble,
@@ -140,7 +140,7 @@ func TestClientFeatureIsOn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.SetStore(newMemStore(map[string]*ConfigResponse{
+	client.setStore(newMemStore(map[string]*ConfigResponse{
 		"feature.dark-mode": {
 			Key:       "feature.dark-mode",
 			ValueType: ValueTypeBool,
@@ -168,7 +168,7 @@ func TestClientNotFound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.SetStore(newMemStore(map[string]*ConfigResponse{}))
+	client.setStore(newMemStore(map[string]*ConfigResponse{}))
 
 	_, _, err = client.GetStringValue("missing", nil)
 	if err != ErrNotFound {
@@ -193,7 +193,7 @@ func TestContextBoundClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.SetStore(newMemStore(map[string]*ConfigResponse{
+	client.setStore(newMemStore(map[string]*ConfigResponse{
 		"app.name": {
 			Key:       "app.name",
 			ValueType: ValueTypeString,
@@ -222,7 +222,7 @@ func TestClientKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.SetStore(newMemStore(map[string]*ConfigResponse{
+	client.setStore(newMemStore(map[string]*ConfigResponse{
 		"a": {},
 		"b": {},
 	}))

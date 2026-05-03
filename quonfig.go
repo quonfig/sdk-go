@@ -148,29 +148,29 @@ func NewClient(opts ...Option) (*Client, error) {
 	return client, nil
 }
 
-// SetStore sets the config store (used internally for wiring).
-func (c *Client) SetStore(s configStore) {
+// setStore sets the config store (internal wiring).
+func (c *Client) setStore(s configStore) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.store = s
 }
 
-// SetEvaluator sets the config evaluator.
-func (c *Client) SetEvaluator(e ConfigEvaluator) {
+// setEvaluator sets the config evaluator (internal wiring).
+func (c *Client) setEvaluator(e ConfigEvaluator) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.evaluator = e
 }
 
-// SetResolver sets the value resolver for ENV_VAR and decryption support.
-func (c *Client) SetResolver(r ValueResolver) {
+// setResolver sets the value resolver for ENV_VAR and decryption support (internal wiring).
+func (c *Client) setResolver(r ValueResolver) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.resolver = r
 }
 
-// SetEnvironmentID sets the environment ID used for config evaluation.
-func (c *Client) SetEnvironmentID(envID string) {
+// setEnvironmentID sets the environment ID used for config evaluation (internal wiring).
+func (c *Client) setEnvironmentID(envID string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.envID = envID
