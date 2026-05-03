@@ -454,8 +454,18 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 	result, err := c.transport.FetchConfigs(ctx)
 	if err != nil {
 		if initial {
+			storedErr := err
+			// Normalize a context.DeadlineExceeded that came from our own
+			// init timeout into ErrInitializationTimeout. Otherwise the
+			// caller's errors.Is(err, ErrInitializationTimeout) check is
+			// non-deterministic: it succeeds when awaitInitialization's
+			// timer fires first, but fails when the fetch context's
+			// deadline fires first and stores the raw context error.
+			if c.opts.InitTimeout > 0 && errors.Is(err, context.DeadlineExceeded) {
+				storedErr = c.initializationTimeoutError("")
+			}
 			c.mu.Lock()
-			c.initializationErr = err
+			c.initializationErr = storedErr
 			c.mu.Unlock()
 			c.finishInitialization(false)
 		}

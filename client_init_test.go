@@ -166,6 +166,45 @@ func TestNewClientInitTimeoutHonorsFailurePolicy(t *testing.T) {
 	}
 }
 
+// TestNewClientInitTimeoutWrapsContextDeadline exercises the path where the
+// init goroutine's HTTP context fires before awaitInitialization's timer:
+// the transport returns context.DeadlineExceeded, fetchAndInstall stores
+// that error, and a subsequent GetStringValue must still see
+// ErrInitializationTimeout. Without the normalization in fetchAndInstall the
+// caller sees a bare context.DeadlineExceeded -- the flake first observed in
+// GitHub Actions run 25276703014 (qfg-2jzw).
+func TestNewClientInitTimeoutWrapsContextDeadline(t *testing.T) {
+	httpClient := &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		}),
+	}
+
+	client, err := NewClient(
+		WithAPIKey("test-key"),
+		WithAPIURLs([]string{"https://example.test"}),
+		WithHTTPClient(httpClient),
+		WithInitTimeout(10*time.Millisecond),
+		WithOnInitFailure(ReturnError),
+	)
+	if err != nil {
+		t.Fatalf("NewClient returned error: %v", err)
+	}
+
+	// Wait long enough that the init goroutine has definitely lost its
+	// context to the deadline and stored the resulting error. This forces
+	// awaitInitialization down the "initErr already set" branch, which is
+	// the path that previously leaked context.DeadlineExceeded out to the
+	// caller.
+	time.Sleep(80 * time.Millisecond)
+
+	_, _, err = client.GetStringValue("app.name", nil)
+	if !errors.Is(err, ErrInitializationTimeout) {
+		t.Fatalf("expected ErrInitializationTimeout, got %v", err)
+	}
+}
+
 func TestClientRefreshUsesETagAndUpdatesStore(t *testing.T) {
 	var revision atomic.Int32
 	revision.Store(1)
