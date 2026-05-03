@@ -55,7 +55,10 @@ func deriveDomainFromAPIURLs(apiURLs []string) string {
 // The attribute is dev-only by construction: production servers do not run
 // `qfg login` and therefore have no tokens file. Rules keyed on
 // quonfig-user.email are dead code in prod.
-func loadQuonfigUserContext(apiURLs []string) *ContextSet {
+func loadQuonfigUserContext(apiURLs []string, logger *slog.Logger) *ContextSet {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return nil
@@ -67,7 +70,7 @@ func loadQuonfigUserContext(apiURLs []string) *ContextSet {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
-		slog.Warn("quonfig dev-context: could not read tokens file; skipping injection",
+		logger.Warn("quonfig dev-context: could not read tokens file; skipping injection",
 			"path", path, "err", err.Error())
 		return nil
 	}
@@ -76,7 +79,7 @@ func loadQuonfigUserContext(apiURLs []string) *ContextSet {
 		UserEmail string `json:"userEmail"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
-		slog.Warn("quonfig dev-context: could not parse tokens file; skipping injection",
+		logger.Warn("quonfig dev-context: could not parse tokens file; skipping injection",
 			"path", path, "err", err.Error())
 		return nil
 	}

@@ -2,6 +2,7 @@ package quonfig
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -52,6 +53,13 @@ type Options struct {
 	EnvLookup       EnvLookupFunc
 	RefreshInterval time.Duration
 	HTTPClient      *http.Client
+
+	// Logger is the *slog.Logger used by the SDK to emit warnings (e.g. the
+	// dev-context tokens loader). Defaults to slog.Default() when not set via
+	// WithLogger. Internal helpers/goroutines that may emit warnings should
+	// read from this field rather than calling slog.Default() directly so a
+	// host app can route SDK output through its own handler.
+	Logger *slog.Logger
 
 	// apiURLsExplicit and telemetryURLExplicit track whether the caller set
 	// the corresponding field via With* options. When true, applyDomainEnvOverride
@@ -320,6 +328,23 @@ func WithHTTPClient(client *http.Client) Option {
 			return errors.New("HTTP client must not be nil")
 		}
 		o.HTTPClient = client
+		return nil
+	}
+}
+
+// WithLogger sets the *slog.Logger the SDK uses to emit warnings. When unset,
+// the SDK falls back to slog.Default(). Symmetric with WithHTTPClient: pass
+// the highest-level convenience type so callers who want a custom handler
+// can do slog.New(myHandler) themselves.
+//
+// Note: this is distinct from WithLoggerKey, which configures the per-logger
+// log-level config key consumed by ShouldLogPath.
+func WithLogger(logger *slog.Logger) Option {
+	return func(o *Options) error {
+		if logger == nil {
+			return errors.New("logger must not be nil")
+		}
+		o.Logger = logger
 		return nil
 	}
 }

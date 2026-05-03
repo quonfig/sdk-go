@@ -65,7 +65,7 @@ func TestLoadQuonfigUserContext_StagingAPIURLReadsSuffixedFile(t *testing.T) {
 	writeTokensFileNamed(t, home, "tokens-quonfig-staging-com.json", `{"userEmail":"jeff@quonfig.com"}`)
 	// Plain tokens.json deliberately absent — staging dev should not fall back to prod file.
 
-	cs := loadQuonfigUserContext([]string{"https://app.quonfig-staging.com"})
+	cs := loadQuonfigUserContext([]string{"https://app.quonfig-staging.com"}, nil)
 	got, ok := quonfigUserEmail(t, cs)
 	if !ok || got != "jeff@quonfig.com" {
 		t.Fatalf("expected jeff@quonfig.com from tokens-quonfig-staging-com.json, got %q ok=%v", got, ok)
@@ -76,7 +76,7 @@ func TestLoadQuonfigUserContext_ProductionAPIURLReadsTokensJson(t *testing.T) {
 	home := withTmpHome(t)
 	writeTokensFile(t, home, `{"userEmail":"prod@example.com"}`)
 
-	cs := loadQuonfigUserContext([]string{"https://app.quonfig.com"})
+	cs := loadQuonfigUserContext([]string{"https://app.quonfig.com"}, nil)
 	got, ok := quonfigUserEmail(t, cs)
 	if !ok || got != "prod@example.com" {
 		t.Fatalf("expected prod@example.com from tokens.json, got %q ok=%v", got, ok)
@@ -87,7 +87,7 @@ func TestLoadQuonfigUserContext_DefaultPrimaryQuonfigComReadsTokensJson(t *testi
 	home := withTmpHome(t)
 	writeTokensFile(t, home, `{"userEmail":"prod@example.com"}`)
 
-	cs := loadQuonfigUserContext([]string{"https://primary.quonfig.com"})
+	cs := loadQuonfigUserContext([]string{"https://primary.quonfig.com"}, nil)
 	got, ok := quonfigUserEmail(t, cs)
 	if !ok || got != "prod@example.com" {
 		t.Fatalf("expected prod@example.com via default primary URL, got %q ok=%v", got, ok)
@@ -98,7 +98,7 @@ func TestLoadQuonfigUserContext_NoAPIURLBackCompatTokensJson(t *testing.T) {
 	home := withTmpHome(t)
 	writeTokensFile(t, home, `{"userEmail":"bob@foo.com"}`)
 
-	cs := loadQuonfigUserContext(nil)
+	cs := loadQuonfigUserContext(nil, nil)
 	got, ok := quonfigUserEmail(t, cs)
 	if !ok || got != "bob@foo.com" {
 		t.Fatalf("expected back-compat read of tokens.json, got %q ok=%v", got, ok)
@@ -110,7 +110,7 @@ func TestLoadQuonfigUserContext_StagingMissingFileNoOp(t *testing.T) {
 	// Only the prod file exists; the staging-suffixed file is absent.
 	writeTokensFile(t, home, `{"userEmail":"prod@example.com"}`)
 
-	cs := loadQuonfigUserContext([]string{"https://app.quonfig-staging.com"})
+	cs := loadQuonfigUserContext([]string{"https://app.quonfig-staging.com"}, nil)
 	if cs != nil {
 		t.Fatalf("expected nil ContextSet when staging tokens file missing, got %+v", cs)
 	}

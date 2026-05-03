@@ -55,7 +55,7 @@ func TestLoadQuonfigUserContext_InjectsWhenFilePresent(t *testing.T) {
 	home := withTmpHome(t)
 	writeTokensFile(t, home, `{"userEmail":"bob@foo.com"}`)
 
-	cs := loadQuonfigUserContext(nil)
+	cs := loadQuonfigUserContext(nil, nil)
 	got, ok := quonfigUserEmail(t, cs)
 	if !ok {
 		t.Fatalf("expected quonfig-user.email to be present, ContextSet=%+v", cs)
@@ -68,7 +68,7 @@ func TestLoadQuonfigUserContext_InjectsWhenFilePresent(t *testing.T) {
 func TestLoadQuonfigUserContext_NoOpWhenFileMissing(t *testing.T) {
 	withTmpHome(t)
 
-	cs := loadQuonfigUserContext(nil)
+	cs := loadQuonfigUserContext(nil, nil)
 	if cs != nil {
 		t.Fatalf("expected nil ContextSet when file missing, got %+v", cs)
 	}
@@ -83,7 +83,7 @@ func TestLoadQuonfigUserContext_NoOpWhenUnparseable(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	cs := loadQuonfigUserContext(nil)
+	cs := loadQuonfigUserContext(nil, nil)
 	if cs != nil {
 		t.Fatalf("expected nil ContextSet on unparseable file, got %+v", cs)
 	}
@@ -97,7 +97,7 @@ func TestLoadQuonfigUserContext_NoOpWhenNoEmail(t *testing.T) {
 	home := withTmpHome(t)
 	writeTokensFile(t, home, `{"accessToken":"x"}`)
 
-	cs := loadQuonfigUserContext(nil)
+	cs := loadQuonfigUserContext(nil, nil)
 	if cs != nil {
 		t.Fatalf("expected nil ContextSet when no userEmail, got %+v", cs)
 	}
