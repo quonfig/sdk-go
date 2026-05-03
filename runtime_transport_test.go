@@ -54,12 +54,19 @@ func TestRuntimeTransportStreamURLOverride(t *testing.T) {
 	}
 }
 
-func TestDefaultOptionsSingleAPIURL(t *testing.T) {
+func TestDefaultOptionsAPIURLs(t *testing.T) {
+	// Defaults derive from QUONFIG_DOMAIN (default "quonfig.com") and
+	// include both primary and secondary hosts. See options.go
+	// apiURLsForDomain. Explicit WithAPIURLs is the escape hatch for
+	// callers that want a single host.
 	o := defaultOptions()
-	if got, want := len(o.APIURLs), 1; got != want {
+	if got, want := len(o.APIURLs), 2; got != want {
 		t.Fatalf("defaultOptions().APIURLs len = %d, want %d (%v)", got, want, o.APIURLs)
 	}
 	if got, want := o.APIURLs[0], "https://primary.quonfig.com"; got != want {
 		t.Fatalf("defaultOptions().APIURLs[0] = %q, want %q", got, want)
+	}
+	if got, want := o.APIURLs[1], "https://secondary.quonfig.com"; got != want {
+		t.Fatalf("defaultOptions().APIURLs[1] = %q, want %q", got, want)
 	}
 }
