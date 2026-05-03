@@ -615,3 +615,20 @@ func assertEvalSummaryCounterFull(t *testing.T, event *telemetry.TelemetryEvent,
 	t.Errorf("counter not found: key=%s type=%s count=%d reason=%d configRowIndex=%d conditionalValueIndex=%d weightedValueIndex=%d",
 		expectedKey, expectedType, expectedCount, expectedReason, expectedConfigRowIndex, expectedConditionalValueIndex, expectedWeightedValueIndex)
 }
+
+
+// Helpers below are emitted into generated tests by
+// integration-test-data/generators/src/targets/go.ts. The current YAML
+// fixtures don't exercise every code path, so to keep these helpers
+// available (and the staticcheck unused linter happy), reference them
+// here. Removing this block will reintroduce U1000 warnings the moment
+// the generator falls back to one of these unexercised paths.
+var (
+	_ = assertClientConstructionRaises
+	_ = assertClientConstructionValue
+	_ = assertBoolValue
+	_ = assertDefaultStringValue
+	_ = evaluateForTelemetry
+	_ = assertEvalSummaryCounter
+	_ = assertEvalSummaryCounterFull
+)

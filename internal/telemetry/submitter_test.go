@@ -164,7 +164,7 @@ func TestSubmitter_StopFlushesData(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		var payload TelemetryEvents
-		json.Unmarshal(body, &payload)
+		_ = json.Unmarshal(body, &payload)
 		mu.Lock()
 		received = append(received, payload)
 		mu.Unlock()

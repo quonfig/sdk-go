@@ -605,12 +605,10 @@ func flattenEvalSummaries(summaries []telemetry.EvalSummary) []map[string]interf
 				_ = json.Unmarshal(c.SelectedValue, &wrapper)
 			}
 			row["selected_value"] = wrapper
-			if wrapper != nil {
-				for k, v := range wrapper {
-					row["value_type"] = wrapperKeyToValueType(k)
-					row["value"] = v
-					break
-				}
+			for k, v := range wrapper {
+				row["value_type"] = wrapperKeyToValueType(k)
+				row["value"] = v
+				break
 			}
 			out = append(out, row)
 		}

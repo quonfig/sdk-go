@@ -227,7 +227,7 @@ func (s *Submitter) postWithRetry(url string, data []byte) {
 
 		resp, err := s.httpClient.Do(req)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return
 			}

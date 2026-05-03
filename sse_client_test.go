@@ -16,7 +16,7 @@ import (
 // (id: <version>\ndata: <json>\n\n). Matches api-delivery/internal/serve/sse.go.
 func writeSSEEnvelope(w http.ResponseWriter, f http.Flusher, env ConfigEnvelope) {
 	b, _ := json.Marshal(env)
-	fmt.Fprintf(w, "id: %s\ndata: %s\n\n", env.Meta.Version, b)
+	_, _ = fmt.Fprintf(w, "id: %s\ndata: %s\n\n", env.Meta.Version, b)
 	f.Flush()
 }
 
@@ -176,12 +176,12 @@ func TestSSEClientIgnoresKeepaliveComments(t *testing.T) {
 		flusher := w.(http.Flusher)
 		w.WriteHeader(http.StatusOK)
 
-		fmt.Fprint(w, ": keepalive\n\n")
+		_, _ = fmt.Fprint(w, ": keepalive\n\n")
 		flusher.Flush()
-		fmt.Fprint(w, ": another keepalive\n\n")
+		_, _ = fmt.Fprint(w, ": another keepalive\n\n")
 		flusher.Flush()
 		writeSSEEnvelope(w, flusher, makeEnvelope("v1", "flag.k", "real"))
-		fmt.Fprint(w, ": keepalive\n\n")
+		_, _ = fmt.Fprint(w, ": keepalive\n\n")
 		flusher.Flush()
 
 		<-r.Context().Done()
@@ -265,7 +265,7 @@ func TestNewClientWithSSEDisabled(t *testing.T) {
 		httpCalls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("ETag", "v1")
-		json.NewEncoder(w).Encode(makeEnvelope("v1", "flag.x", "off"))
+		_ = json.NewEncoder(w).Encode(makeEnvelope("v1", "flag.x", "off"))
 	}))
 	defer httpServer.Close()
 
@@ -316,7 +316,7 @@ func TestNewClientWithSSEEnabledConnects(t *testing.T) {
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("ETag", "v1")
-		json.NewEncoder(w).Encode(makeEnvelope("v1", "flag.x", "polled"))
+		_ = json.NewEncoder(w).Encode(makeEnvelope("v1", "flag.x", "polled"))
 	}))
 	defer httpServer.Close()
 

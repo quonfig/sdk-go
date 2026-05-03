@@ -46,11 +46,9 @@ jobs:
       - name: Install staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
 
-      # -S1031,-U1000 mirror the .golangci.yml opt-outs (qfg-vkfm). Drop the
-      # exclusion when the source fixes land.
       - name: Run staticcheck
         working-directory: sdk-go
-        run: staticcheck -checks=inherit,-S1031,-U1000 ./...
+        run: staticcheck ./...
 
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest

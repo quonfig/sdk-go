@@ -113,7 +113,7 @@ func (c *runtimeTransport) fetchFromURL(ctx context.Context, baseURL string) (*f
 	if err != nil {
 		return nil, fmt.Errorf("fetching configs from %s: %w", baseURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotModified {
 		return &fetchResult{NotChanged: true}, nil

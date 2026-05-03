@@ -165,7 +165,7 @@ func TestExampleContexts_JSONFormat(t *testing.T) {
 
 	// Verify the JSON contains expected structure
 	var raw map[string]interface{}
-	json.Unmarshal(data, &raw)
+	_ = json.Unmarshal(data, &raw)
 
 	events := raw["events"].([]interface{})
 	event := events[0].(map[string]interface{})

@@ -155,27 +155,6 @@ func (c *Client) setStore(s configStore) {
 	c.store = s
 }
 
-// setEvaluator sets the config evaluator (internal wiring).
-func (c *Client) setEvaluator(e ConfigEvaluator) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.evaluator = e
-}
-
-// setResolver sets the value resolver for ENV_VAR and decryption support (internal wiring).
-func (c *Client) setResolver(r ValueResolver) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.resolver = r
-}
-
-// setEnvironmentID sets the environment ID used for config evaluation (internal wiring).
-func (c *Client) setEnvironmentID(envID string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.envID = envID
-}
-
 // Refresh performs a manual poll of GET /api/v2/configs using ETag caching.
 func (c *Client) Refresh() error {
 	if c.transport == nil {

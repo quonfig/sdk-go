@@ -47,7 +47,7 @@ func getFreePort(t *testing.T) int {
 		t.Fatalf("failed to find free port: %v", err)
 	}
 	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
+	_ = l.Close()
 	return port
 }
 
@@ -99,8 +99,8 @@ func startTestServer(t *testing.T) string {
 	}
 
 	t.Cleanup(func() {
-		cmd.Process.Kill()
-		cmd.Wait()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
 	})
 
 	// Wait for the server to become healthy
@@ -108,7 +108,7 @@ func startTestServer(t *testing.T) string {
 	for time.Now().Before(deadline) {
 		conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 100*time.Millisecond)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			// Give server a moment to finish startup
 			time.Sleep(100 * time.Millisecond)
 			return baseURL
@@ -116,7 +116,7 @@ func startTestServer(t *testing.T) string {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	cmd.Process.Kill()
+	_ = cmd.Process.Kill()
 	t.Fatal("api-delivery server did not start within 10 seconds")
 	return ""
 }

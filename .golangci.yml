@@ -1,15 +1,4 @@
 # golangci-lint config — v2 schema.
-#
-# Starter config landed by qfg-mol-8jg.2. The v2 default linter set
-# (errcheck + govet + ineffassign + staticcheck + unused) surfaces 24 real
-# issues in existing sdk-go source — out of scope for the CI scaffolding bead.
-#
-# Source fixes are tracked in qfg-vkfm. Once that bead lands, delete the
-# linters.disable block below to run the full default set.
 version: "2"
 linters:
   default: standard
-  disable:
-    - errcheck     # 16 unchecked errors (mostly test files, a few resp.Body.Close in src) — qfg-vkfm
-    - staticcheck  # 1 issue (S1031 unnecessary nil check) — qfg-vkfm
-    - unused       # 7 unused helpers in internal/fixtures/test_helpers_test.go — qfg-vkfm
