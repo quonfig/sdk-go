@@ -11,7 +11,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ['1.22', '1.23', '1.24']
+        # Only versions covered by Go's security backport policy
+        # (the two most recent majors). Older versions are EOL — their
+        # stdlib CVEs no longer receive fixes, so govulncheck cannot
+        # go green on them. Bump as new majors release.
+        go-version: ['1.25', '1.26']
     steps:
       - name: Checkout sdk-go
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -53,12 +57,6 @@ jobs:
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
-      # Soft-fail: the matrix Go versions (1.22/1.23/1.24) ship stdlib CVEs
-      # that are only patched in 1.25.8+/1.25.9+. Go's security policy only
-      # backports to the two most recent majors, so these versions cannot
-      # be made vuln-clean without bumping the matrix. Tracked in qfg-am6m —
-      # remove continue-on-error once that resolves.
       - name: Run govulncheck
         working-directory: sdk-go
-        continue-on-error: true
         run: govulncheck ./...
