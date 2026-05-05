@@ -43,10 +43,10 @@ func ReportableValueFor(val *quonfig.Value) *string {
 
 // Error types for resolver failures.
 var (
-	ErrMissingEnvVar     = errors.New("missing_env_var")
-	ErrUnableToCoerce    = errors.New("unable_to_coerce_env_var")
-	ErrUnableToDecrypt   = errors.New("unable_to_decrypt")
-	ErrMissingDefault    = errors.New("missing_default")
+	ErrMissingEnvVar   = errors.New("missing_env_var")
+	ErrUnableToCoerce  = errors.New("unable_to_coerce_env_var")
+	ErrUnableToDecrypt = errors.New("unable_to_decrypt")
+	ErrMissingDefault  = errors.New("missing_default")
 )
 
 // EnvLookup is a function that looks up environment variables.

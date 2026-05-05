@@ -34,6 +34,16 @@ jobs:
           go-version: ${{ matrix.go-version }}
           cache-dependency-path: sdk-go/go.sum
 
+      - name: Check formatting
+        working-directory: sdk-go
+        run: |
+          fmt_out=$(gofmt -l .)
+          if [ -n "$fmt_out" ]; then
+            echo "Files need gofmt:"
+            echo "$fmt_out"
+            exit 1
+          fi
+
       - name: Vet
         working-directory: sdk-go
         run: go vet ./...

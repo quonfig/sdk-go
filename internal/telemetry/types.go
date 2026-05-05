@@ -10,8 +10,8 @@ type TelemetryEvents struct {
 
 // TelemetryEvent is a single event in the envelope. Exactly one field is set.
 type TelemetryEvent struct {
-	Summaries       *EvalSummaries  `json:"summaries,omitempty"`
-	ContextShapes   *ContextShapes  `json:"contextShapes,omitempty"`
+	Summaries       *EvalSummaries      `json:"summaries,omitempty"`
+	ContextShapes   *ContextShapes      `json:"contextShapes,omitempty"`
 	ExampleContexts *ExampleContextList `json:"exampleContexts,omitempty"`
 }
 
@@ -19,9 +19,9 @@ type TelemetryEvent struct {
 
 // EvalSummaries is a time-windowed batch of evaluation counters.
 type EvalSummaries struct {
-	Start     int64                `json:"start"`
-	End       int64                `json:"end"`
-	Summaries []EvalSummary        `json:"summaries"`
+	Start     int64         `json:"start"`
+	End       int64         `json:"end"`
+	Summaries []EvalSummary `json:"summaries"`
 }
 
 // EvalSummary groups evaluation counters for a single config key.

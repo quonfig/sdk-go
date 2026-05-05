@@ -30,8 +30,8 @@ var (
 // These simulate the environment that the SDK would run in.
 var testEnvVars = map[string]string{
 	"PREFAB_INTEGRATION_TEST_ENCRYPTION_KEY": "c87ba22d8662282abe8a0e4651327b579cb64a454ab0f4c170b45b15f049a221",
-	"IS_A_NUMBER": "1234",
-	"NOT_A_NUMBER": "not_a_number",
+	"IS_A_NUMBER":                            "1234",
+	"NOT_A_NUMBER":                           "not_a_number",
 	// MISSING_ENV_VAR is intentionally NOT set
 }
 
@@ -615,7 +615,6 @@ func assertEvalSummaryCounterFull(t *testing.T, event *telemetry.TelemetryEvent,
 	t.Errorf("counter not found: key=%s type=%s count=%d reason=%d configRowIndex=%d conditionalValueIndex=%d weightedValueIndex=%d",
 		expectedKey, expectedType, expectedCount, expectedReason, expectedConfigRowIndex, expectedConditionalValueIndex, expectedWeightedValueIndex)
 }
-
 
 // Helpers below are emitted into generated tests by
 // integration-test-data/generators/src/targets/go.ts. The current YAML

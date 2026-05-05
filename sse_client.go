@@ -61,13 +61,13 @@ type sseClientConfig struct {
 // sseClient runs a long-lived goroutine that keeps an SSE connection open,
 // parses events, and invokes OnEnvelope with each parsed ConfigEnvelope.
 type sseClient struct {
-	cfg        sseClientConfig
-	ctx        context.Context
-	cancel     context.CancelFunc
-	done       chan struct{}
-	startOnce  sync.Once
-	stopOnce   sync.Once
-	connected  bool
+	cfg         sseClientConfig
+	ctx         context.Context
+	cancel      context.CancelFunc
+	done        chan struct{}
+	startOnce   sync.Once
+	stopOnce    sync.Once
+	connected   bool
 	connectedMu sync.Mutex
 }
 

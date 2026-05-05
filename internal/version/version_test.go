@@ -24,10 +24,10 @@ func TestHeader_HasGoPrefix(t *testing.T) {
 
 func TestTrimV(t *testing.T) {
 	cases := map[string]string{
-		"v1.2.3":     "1.2.3",
-		"1.2.3":      "1.2.3",
-		"":           "",
-		"vfoo":       "foo",
+		"v1.2.3": "1.2.3",
+		"1.2.3":  "1.2.3",
+		"":       "",
+		"vfoo":   "foo",
 	}
 	for in, want := range cases {
 		if got := trimV(in); got != want {
