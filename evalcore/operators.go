@@ -38,6 +38,8 @@ const (
 	OpPropSemverGreaterThan     = "PROP_SEMVER_GREATER_THAN"
 	OpInSeg                     = "IN_SEG"
 	OpNotInSeg                  = "NOT_IN_SEG"
+	OpIsPresent                 = "IS_PRESENT"
+	OpIsNotPresent              = "IS_NOT_PRESENT"
 )
 
 // SegmentResolver is the callback for resolving IN_SEG / NOT_IN_SEG operators.
@@ -181,6 +183,14 @@ func EvaluateCriterion(contextValue interface{}, contextExists bool, criterion C
 			}
 		}
 		return false
+
+	case OpIsPresent, OpIsNotPresent:
+		// Type-agnostic presence check: a property is "present" iff the
+		// context resolver finds the (possibly dotted) path AND the
+		// resolved value is non-nil. Empty string "", 0, and false are
+		// intentionally treated as present.
+		present := contextExists && contextValue != nil
+		return present == (criterion.Operator == OpIsPresent)
 
 	case OpInSeg, OpNotInSeg:
 		if matchValue != nil && segmentResolver != nil {

@@ -757,6 +757,149 @@ func TestEnabled_ReturnsFalseForPROPDOESNOTMATCHRuleWhenTheGivenPropMatchesTheRe
 	assertEnabledValue(t, match, false)
 }
 
+// returns true for IS_PRESENT rule when the given prop is a non-empty string
+func TestEnabled_ReturnsTrueForISPRESENTRuleWhenTheGivenPropIsANonEmptyString(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"id": "abc"}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, true)
+}
+
+// returns true for IS_PRESENT rule when the given prop is an empty string
+func TestEnabled_ReturnsTrueForISPRESENTRuleWhenTheGivenPropIsAnEmptyString(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"id": ""}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, true)
+}
+
+// returns true for IS_PRESENT rule when the given prop is the integer zero
+func TestEnabled_ReturnsTrueForISPRESENTRuleWhenTheGivenPropIsTheIntegerZero(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"id": 0}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, true)
+}
+
+// returns true for IS_PRESENT rule when the given prop is boolean false
+func TestEnabled_ReturnsTrueForISPRESENTRuleWhenTheGivenPropIsBooleanFalse(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"id": false}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, true)
+}
+
+// returns false for IS_PRESENT rule when the given prop is null
+func TestEnabled_ReturnsFalseForISPRESENTRuleWhenTheGivenPropIsNull(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"id": nil}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, false)
+}
+
+// returns false for IS_PRESENT rule when the given prop key is missing from the context
+func TestEnabled_ReturnsFalseForISPRESENTRuleWhenTheGivenPropKeyIsMissingFromTheContext(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"name": "bob"}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, false)
+}
+
+// returns false for IS_PRESENT rule when no contexts are provided at all
+func TestEnabled_ReturnsFalseForISPRESENTRuleWhenNoContextsAreProvidedAtAll(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, false)
+}
+
+// returns false for IS_NOT_PRESENT rule when the given prop is a non-empty string
+func TestEnabled_ReturnsFalseForISNOTPRESENTRuleWhenTheGivenPropIsANonEmptyString(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-not-present")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"id": "abc"}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, false)
+}
+
+// returns true for IS_NOT_PRESENT rule when the given prop is null
+func TestEnabled_ReturnsTrueForISNOTPRESENTRuleWhenTheGivenPropIsNull(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-not-present")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"id": nil}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, true)
+}
+
+// returns true for IS_NOT_PRESENT rule when the given prop key is missing from the context
+func TestEnabled_ReturnsTrueForISNOTPRESENTRuleWhenTheGivenPropKeyIsMissingFromTheContext(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-not-present")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"name": "bob"}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, true)
+}
+
+// returns true for IS_PRESENT rule on a nested path when the nested prop is set
+func TestEnabled_ReturnsTrueForISPRESENTRuleOnANestedPathWhenTheNestedPropIsSet(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present-nested")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"organization": {"domain": "example.com"}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, true)
+}
+
+// returns false for IS_PRESENT rule on a nested path when the nested key is missing but the parent context exists
+func TestEnabled_ReturnsFalseForISPRESENTRuleOnANestedPathWhenTheNestedKeyIsMissingButTheParentContextExists(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present-nested")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"organization": {"name": "Acme Inc"}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, false)
+}
+
+// returns false for IS_PRESENT rule on a nested path when the parent context is entirely absent
+func TestEnabled_ReturnsFalseForISPRESENTRuleOnANestedPathWhenTheParentContextIsEntirelyAbsent(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.is-present-nested")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"id": "abc"}}, nil)
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, false)
+}
+
 // returns true for PROP_SEMVER_EQUAL rule when the given prop equals the version
 func TestEnabled_ReturnsTrueForPROPSEMVEREQUALRuleWhenTheGivenPropEqualsTheVersion(t *testing.T) {
 	cfg := mustLookupConfig(t, "feature-flag.semver-equal")

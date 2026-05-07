@@ -1162,6 +1162,76 @@ func TestEvaluateConfig_PropDoesNotMatch(t *testing.T) {
 	}
 }
 
+// TestEvaluateConfig_IsPresent covers the IS_PRESENT / IS_NOT_PRESENT operator
+// pair (qfg-7jnb.4). The operators take only PropertyName -- no ValueToMatch --
+// and return true iff the (possibly dotted) property resolves AND the resolved
+// value is non-nil. Empty string, 0, and false are intentionally "present".
+func TestEvaluateConfig_IsPresent(t *testing.T) {
+	makeConfig := func(op string) *Config {
+		return &Config{
+			Key:       "is-present-test",
+			Type:      ConfigTypeFeatureFlag,
+			ValueType: ValueTypeBool,
+			Default: RuleSet{
+				Rules: []Rule{
+					{
+						Criteria: []Criterion{{
+							PropertyName: "user.id",
+							Operator:     op,
+						}},
+						Value: Value{Type: ValueTypeBool, Value: true},
+					},
+					{
+						Criteria: []Criterion{{Operator: OpAlwaysTrue}},
+						Value:    Value{Type: ValueTypeBool, Value: false},
+					},
+				},
+			},
+		}
+	}
+
+	makeCtx := func(data map[string]interface{}) ContextValueGetter {
+		return NewContextSet().WithNamedContext(NewNamedContext("user", data))
+	}
+
+	cases := []struct {
+		name     string
+		op       string
+		ctx      ContextValueGetter
+		expected bool
+	}{
+		// IS_PRESENT — present path
+		{"IS_PRESENT non-empty string", OpIsPresent, makeCtx(map[string]interface{}{"id": "abc"}), true},
+		{"IS_PRESENT empty string", OpIsPresent, makeCtx(map[string]interface{}{"id": ""}), true},
+		{"IS_PRESENT int zero", OpIsPresent, makeCtx(map[string]interface{}{"id": 0}), true},
+		{"IS_PRESENT float zero", OpIsPresent, makeCtx(map[string]interface{}{"id": 0.0}), true},
+		{"IS_PRESENT bool false", OpIsPresent, makeCtx(map[string]interface{}{"id": false}), true},
+		// IS_PRESENT — absent path
+		{"IS_PRESENT nil value", OpIsPresent, makeCtx(map[string]interface{}{"id": nil}), false},
+		{"IS_PRESENT missing key", OpIsPresent, makeCtx(map[string]interface{}{"name": "bob"}), false},
+		{"IS_PRESENT missing parent context", OpIsPresent, NewContextSet().WithNamedContext(NewNamedContext("device", map[string]interface{}{"id": "x"})), false},
+		{"IS_PRESENT no contexts", OpIsPresent, EmptyContext{}, false},
+		// IS_NOT_PRESENT — negation
+		{"IS_NOT_PRESENT non-empty string", OpIsNotPresent, makeCtx(map[string]interface{}{"id": "abc"}), false},
+		{"IS_NOT_PRESENT nil value", OpIsNotPresent, makeCtx(map[string]interface{}{"id": nil}), true},
+		{"IS_NOT_PRESENT missing key", OpIsNotPresent, makeCtx(map[string]interface{}{"name": "bob"}), true},
+		{"IS_NOT_PRESENT no contexts", OpIsNotPresent, EmptyContext{}, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := makeConfig(tc.op)
+			store := newTestConfigStore()
+			store.addConfig(cfg)
+			eval := NewEvaluatorWithSeed(store, 42)
+			got := eval.EvaluateConfig(cfg, "", tc.ctx).Value.BoolValue()
+			if got != tc.expected {
+				t.Errorf("op=%s: expected %v, got %v", tc.op, tc.expected, got)
+			}
+		})
+	}
+}
+
 func TestEvaluateConfig_NoRulesMatch(t *testing.T) {
 	cfg := &Config{
 		Key:       "no-match-test",
