@@ -283,25 +283,58 @@ func (c *Client) Keys() []string {
 	return c.store.Keys()
 }
 
-// EvaluateKey resolves a config key and returns the resolved value, evaluation reason, and ok flag.
-// This is useful for OpenFeature provider integration and anywhere the reason is needed.
+// EvaluateKey resolves a config key and returns the resolved value, evaluation
+// reason, and ok flag. Retained for backward compatibility; new code should
+// prefer EvaluateDetails which returns the full EvaluationDetails record
+// (typed ErrorCode, Variant, FlagMetadata).
 func (c *Client) EvaluateKey(key string, ctx *ContextSet) (*Value, EvalReason, bool, error) {
-	return c.resolveDetail(key, ctx)
+	d, err := c.resolveDetail(key, ctx)
+	found := err == nil && d.Value != nil
+	reason := d.Reason
+	// Preserve original semantics: not-found returns ReasonDefault (not
+	// ReasonError) so existing callers (load-gen, OpenFeature provider mapping)
+	// keep working unchanged.
+	if errors.Is(err, ErrNotFound) {
+		reason = ReasonDefault
+	}
+	return d.Value, reason, found, err
+}
+
+// EvaluateDetails resolves a config key and returns a full EvaluationDetails
+// record including typed ErrorCode, ErrorMessage, Variant, and FlagMetadata.
+// This is the recommended API for OpenFeature providers and any caller that
+// needs structured evaluation metadata.
+func (c *Client) EvaluateDetails(key string, ctx *ContextSet) EvaluationDetails {
+	d, _ := c.resolveDetail(key, ctx)
+	return d
 }
 
 // resolve looks up a config and evaluates it against the given context.
 func (c *Client) resolve(key string, ctx *ContextSet) (*Value, bool, error) {
-	val, _, ok, err := c.resolveDetail(key, ctx)
-	return val, ok, err
+	d, err := c.resolveDetail(key, ctx)
+	found := err == nil && d.Value != nil
+	return d.Value, found, err
 }
 
-// resolveDetail is like resolve but also returns the evaluation reason.
-func (c *Client) resolveDetail(key string, ctx *ContextSet) (*Value, EvalReason, bool, error) {
+// resolveDetail returns both an EvaluationDetails record (the public-API view)
+// and the underlying Go error (preserving error identity for errors.Is checks
+// in EvaluateKey and other backward-compatible callers).
+func (c *Client) resolveDetail(key string, ctx *ContextSet) (EvaluationDetails, error) {
 	if err := c.awaitInitialization(key); err != nil {
 		if c.opts.OnInitFailure == ReturnZeroValue && errors.Is(err, ErrInitializationTimeout) {
-			return nil, ReasonDefault, false, nil
+			return EvaluationDetails{
+				Reason:       ReasonDefault,
+				Variant:      "default",
+				FlagMetadata: map[string]any{},
+			}, nil
 		}
-		return nil, ReasonError, false, err
+		return EvaluationDetails{
+			Reason:       ReasonError,
+			ErrorCode:    errorCodeFor(err),
+			ErrorMessage: err.Error(),
+			Variant:      "default",
+			FlagMetadata: map[string]any{},
+		}, err
 	}
 
 	c.mu.RLock()
@@ -313,12 +346,22 @@ func (c *Client) resolveDetail(key string, ctx *ContextSet) (*Value, EvalReason,
 	telemetry := c.telemetry
 	c.mu.RUnlock()
 
+	notFound := func() (EvaluationDetails, error) {
+		return EvaluationDetails{
+			Reason:       ReasonError,
+			ErrorCode:    ErrorCodeFlagNotFound,
+			ErrorMessage: ErrNotFound.Error(),
+			Variant:      "default",
+			FlagMetadata: map[string]any{},
+		}, ErrNotFound
+	}
+
 	if store == nil {
-		return nil, ReasonDefault, false, ErrNotFound
+		return notFound()
 	}
 	cfg, ok := store.Get(key)
 	if !ok {
-		return nil, ReasonDefault, false, ErrNotFound
+		return notFound()
 	}
 
 	mergedCtx := Merge(globalContext, ctx)
@@ -328,7 +371,7 @@ func (c *Client) resolveDetail(key string, ctx *ContextSet) (*Value, EvalReason,
 		telemetry.RecordContext(mergedCtx)
 	}
 
-	// If we have an evaluator, use it for full rule evaluation with context
+	// If we have an evaluator, use it for full rule evaluation with context.
 	if evaluator != nil {
 		evalResult := evaluator.EvaluateConfigResponse(cfg, envID, mergedCtx)
 
@@ -338,27 +381,91 @@ func (c *Client) resolveDetail(key string, ctx *ContextSet) (*Value, EvalReason,
 		}
 
 		if evalResult == nil || !evalResult.IsMatch || evalResult.Value == nil {
-			return nil, ReasonDefault, false, nil
+			return EvaluationDetails{
+				Reason:       ReasonDefault,
+				Variant:      "default",
+				FlagMetadata: flagMetadataForConfig(cfg, envID),
+			}, nil
 		}
 
-		reason := evalResult.Reason
-
-		// Pass through the resolver if available (handles ENV_VAR, decryption)
+		// Pass through the resolver if available (handles ENV_VAR, decryption).
+		value := evalResult.Value
 		if resolver != nil {
 			resolved, err := resolver.ResolveValue(evalResult.Value, cfg.Key, cfg.ValueType, envID, mergedCtx)
 			if err != nil {
-				return nil, ReasonError, false, err
+				return EvaluationDetails{
+					Reason:       ReasonError,
+					ErrorCode:    errorCodeFor(err),
+					ErrorMessage: err.Error(),
+					Variant:      "default",
+					FlagMetadata: flagMetadataFor(evalResult, envID),
+				}, err
 			}
-			return resolved, reason, true, nil
+			value = resolved
 		}
-		return evalResult.Value, reason, true, nil
+		return EvaluationDetails{
+			Value:        value,
+			Reason:       evalResult.Reason,
+			Variant:      variantFor(evalResult.Reason, evalResult.RuleIndex, evalResult.WeightedValueIndex),
+			FlagMetadata: flagMetadataFor(evalResult, envID),
+		}, nil
 	}
 
-	// Fallback: return the first default rule's value (no evaluator available)
+	// Fallback: return the first default rule's value (no evaluator available).
 	if len(cfg.Default.Rules) > 0 {
-		return &cfg.Default.Rules[0].Value, ReasonUnknown, true, nil
+		val := cfg.Default.Rules[0].Value
+		return EvaluationDetails{
+			Value:        &val,
+			Reason:       ReasonUnknown,
+			Variant:      "default",
+			FlagMetadata: flagMetadataForConfig(cfg, envID),
+		}, nil
 	}
-	return nil, ReasonDefault, false, nil
+	return EvaluationDetails{
+		Reason:       ReasonDefault,
+		Variant:      "default",
+		FlagMetadata: flagMetadataForConfig(cfg, envID),
+	}, nil
+}
+
+// flagMetadataForConfig builds flagMetadata from a ConfigResponse alone (no
+// rule match). Used for the default / no-match path so consumers still see
+// configId / configType / environment.
+func flagMetadataForConfig(cfg *ConfigResponse, envID string) map[string]any {
+	md := make(map[string]any)
+	if cfg == nil {
+		return md
+	}
+	if cfg.ID != "" {
+		md["configId"] = cfg.ID
+	}
+	if upper := configTypeUpper(cfg.Type); upper != "" {
+		md["configType"] = upper
+	}
+	if envID != "" {
+		md["environment"] = envID
+	}
+	return md
+}
+
+// errorCodeFor maps a Go error to an OpenFeature-shaped ErrorCode. The mapping
+// is keyed off sentinel errors (errors.Is) -- not message text -- so error
+// message wording can change without breaking downstream provider semantics.
+func errorCodeFor(err error) ErrorCode {
+	switch {
+	case err == nil:
+		return ErrorCodeNone
+	case errors.Is(err, ErrNotFound):
+		return ErrorCodeFlagNotFound
+	case errors.Is(err, ErrInitializationTimeout):
+		return ErrorCodeProviderNotReady
+	case errors.Is(err, ErrUnableToCoerce):
+		return ErrorCodeTypeMismatch
+	case errors.Is(err, ErrMissingEnvVar), errors.Is(err, ErrUnableToDecrypt):
+		return ErrorCodeGeneral
+	default:
+		return ErrorCodeGeneral
+	}
 }
 
 func (c *Client) startInitialization() {
