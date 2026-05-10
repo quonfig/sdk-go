@@ -10,12 +10,17 @@ import (
 	"strings"
 )
 
+// workspaceSubdirectories lists the subdirs under a datadir workspace whose
+// JSON files are Quonfig Configs.
+//
+// schemas/ is intentionally excluded: those files are raw JSON Schema documents,
+// not Configs, and SDKs do not consume them. Including them caused empty-Key
+// stub rows in the in-memory store. Mirrors api-delivery (qfg-uzsl).
 var workspaceSubdirectories = []string{
 	"configs",
 	"feature-flags",
 	"segments",
 	"log-levels",
-	"schemas",
 }
 
 type workspaceConfig struct {
@@ -133,6 +138,13 @@ func loadWorkspaceConfigFile(path string) (*workspaceConfig, error) {
 	var cfg workspaceConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal: %w", err)
+	}
+
+	// Defense-in-depth: a zero-valued Key means we unmarshalled something that
+	// isn't actually a Config (e.g. a JSON Schema doc). Reject rather than
+	// silently produce an empty-key stub (qfg-uzsl).
+	if cfg.Key == "" {
+		return nil, fmt.Errorf("config has empty key — file is not a Quonfig Config")
 	}
 
 	return &cfg, nil

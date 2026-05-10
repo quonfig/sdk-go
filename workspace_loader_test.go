@@ -191,6 +191,44 @@ func TestLoadWorkspaceEnvelopeForcesSendToClientSdkTrueForFeatureFlag(t *testing
 	}
 }
 
+func TestLoadWorkspaceConfigsExcludesSchemasDirectory(t *testing.T) {
+	dir := writeWorkspaceFiles(t, `{"prod":"Production"}`, map[string]string{
+		"feature-flags/flag.json": `{
+			"id":"cfg-1",
+			"key":"flag",
+			"type":"feature_flag",
+			"valueType":"bool",
+			"sendToClientSdk":false,
+			"default":{"rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"bool","value":false}}]},
+			"environments":[{"id":"Production","rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"bool","value":true}}]}]
+		}`,
+		"schemas/my-schema.json": `{
+			"$schema":"https://json-schema.org/draft/2020-12/schema",
+			"$id":"my-schema",
+			"type":"object",
+			"properties":{"name":{"type":"string"}}
+		}`,
+	})
+
+	configs, err := loadWorkspaceConfigs(dir)
+	if err != nil {
+		t.Fatalf("loadWorkspaceConfigs returned error: %v", err)
+	}
+
+	for _, cfg := range configs {
+		if cfg.Key == "" {
+			t.Fatalf("loadWorkspaceConfigs returned a config with empty Key (likely a schema file): %+v", cfg)
+		}
+	}
+
+	if len(configs) != 1 {
+		t.Fatalf("expected exactly 1 config (the feature flag), got %d: %+v", len(configs), configs)
+	}
+	if configs[0].Key != "flag" {
+		t.Fatalf("expected the feature flag, got key=%q", configs[0].Key)
+	}
+}
+
 func TestNewClientWithDataDirFailsWhenNoWorkspaceFilesLoad(t *testing.T) {
 	dir := writeWorkspaceFiles(t, `{"prod":"Production"}`, map[string]string{
 		"feature-flags/bad.json": `{"id":`,
