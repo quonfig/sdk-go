@@ -83,33 +83,9 @@ type ExampleContextSet struct {
 }
 
 // NamedContextData is a single named context with its properties.
+// Values are emitted as a flat JSON map (e.g. {"key":"user-123","age":30}),
+// matching every other SDK's wire format. They are NOT wrapped in a type tag.
 type NamedContextData struct {
-	Type   string                       `json:"type"`
-	Values map[string]TypedContextValue `json:"values"`
-}
-
-// TypedContextValue wraps a context value with its type tag for JSON.
-type TypedContextValue struct {
-	value interface{}
-}
-
-func NewTypedContextValue(v interface{}) TypedContextValue {
-	return TypedContextValue{value: v}
-}
-
-func (tv TypedContextValue) MarshalJSON() ([]byte, error) {
-	switch v := tv.value.(type) {
-	case bool:
-		return json.Marshal(map[string]interface{}{"bool": v})
-	case int, int32, int64:
-		return json.Marshal(map[string]interface{}{"int": v})
-	case float32, float64:
-		return json.Marshal(map[string]interface{}{"double": v})
-	case string:
-		return json.Marshal(map[string]interface{}{"string": v})
-	case []string:
-		return json.Marshal(map[string]interface{}{"stringList": v})
-	default:
-		return json.Marshal(map[string]interface{}{"string": v})
-	}
+	Type   string                 `json:"type"`
+	Values map[string]interface{} `json:"values"`
 }

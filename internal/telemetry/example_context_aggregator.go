@@ -81,9 +81,9 @@ func contextGroupKey(ctx ContextData) string {
 func contextDataToExampleContextSet(ctx ContextData) ExampleContextSet {
 	contexts := make([]NamedContextData, 0, len(ctx.Contexts))
 	for name, props := range ctx.Contexts {
-		values := make(map[string]TypedContextValue, len(props))
+		values := make(map[string]interface{}, len(props))
 		for k, v := range props {
-			values[k] = NewTypedContextValue(v)
+			values[k] = v
 		}
 		contexts = append(contexts, NamedContextData{
 			Type:   name,

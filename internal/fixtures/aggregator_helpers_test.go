@@ -417,6 +417,12 @@ func intish(v interface{}) int64 {
 }
 
 // --- example_contexts assertion --------------------------------------------
+//
+// The harness asserts against the marshaled JSON wire bytes, NOT the
+// in-memory struct. This was changed after qfg-wire-bug-2026-05-11: the
+// previous version read ctx.Values directly and unwrapped via the SDK's own
+// MarshalJSON, which silently bridged a wire-format wrap/unwrap impedance in
+// sdk-go. Comparing wire-bytes-to-expected catches that whole class of bug.
 
 func assertExampleContextsPost(t *testing.T, h *aggregatorHandle, expected interface{}, endpoint string) {
 	t.Helper()
@@ -442,43 +448,47 @@ func assertExampleContextsPost(t *testing.T, h *aggregatorHandle, expected inter
 		t.Fatalf("expected map[string]interface{} for example_contexts expected_data, got %T", expected)
 	}
 
-	// Take the first example for comparison; YAML expects a single match.
-	example := event.ExampleContexts.Examples[0]
-	gotMap := exampleContextToMap(example)
+	gotMap, err := wireExampleContextToMap(event)
+	if err != nil {
+		t.Fatalf("could not parse wire-form example_contexts: %v", err)
+	}
 
 	if !exampleContextsEqual(gotMap, wantMap) {
-		t.Errorf("example_contexts mismatch:\n  got:  %s\n  want: %s", mustJSON(gotMap), mustJSON(wantMap))
+		t.Errorf("example_contexts wire-format mismatch:\n  got:  %s\n  want: %s", mustJSON(gotMap), mustJSON(wantMap))
 	}
 }
 
-func exampleContextToMap(ex telemetry.ExampleContext) map[string]interface{} {
-	out := make(map[string]interface{}, len(ex.ContextSet.Contexts))
-	for _, ctx := range ex.ContextSet.Contexts {
-		props := make(map[string]interface{}, len(ctx.Values))
-		for k, v := range ctx.Values {
-			props[k] = unwrapTypedContextValue(v)
-		}
-		out[ctx.Type] = props
-	}
-	return out
-}
-
-// unwrapTypedContextValue extracts the raw value from a TypedContextValue by
-// round-tripping through JSON. The serialized form looks like
-// {"int": N} / {"string": "x"} / {"bool": b} / {"double": d}.
-func unwrapTypedContextValue(v telemetry.TypedContextValue) interface{} {
-	raw, err := v.MarshalJSON()
+// wireExampleContextToMap marshals the TelemetryEvent to JSON, unmarshals
+// into a generic map, and reshapes the first example's contexts into the
+// flat {type: {props}} map that the YAML expected_data uses.
+//
+// Marshaling through the SDK's own MarshalJSON guarantees the comparison
+// reflects the bytes that would actually go on the wire to api-telemetry.
+func wireExampleContextToMap(event *telemetry.TelemetryEvent) (map[string]interface{}, error) {
+	raw, err := json.Marshal(event)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	var wrapper map[string]interface{}
-	if err := json.Unmarshal(raw, &wrapper); err != nil {
-		return nil
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil, err
 	}
-	for _, val := range wrapper {
-		return val
+	ec, _ := decoded["exampleContexts"].(map[string]interface{})
+	examples, _ := ec["examples"].([]interface{})
+	if len(examples) == 0 {
+		return nil, fmt.Errorf("no examples in wire payload")
 	}
-	return nil
+	first, _ := examples[0].(map[string]interface{})
+	contextSet, _ := first["contextSet"].(map[string]interface{})
+	contexts, _ := contextSet["contexts"].([]interface{})
+	out := make(map[string]interface{}, len(contexts))
+	for _, c := range contexts {
+		cm, _ := c.(map[string]interface{})
+		typ, _ := cm["type"].(string)
+		values, _ := cm["values"].(map[string]interface{})
+		out[typ] = values
+	}
+	return out, nil
 }
 
 func exampleContextsEqual(got, want map[string]interface{}) bool {

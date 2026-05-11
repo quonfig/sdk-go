@@ -65,33 +65,6 @@ func TestTelemetryEvents_JSONFormat(t *testing.T) {
 	}
 }
 
-func TestTypedContextValue_MarshalJSON(t *testing.T) {
-	tests := []struct {
-		name     string
-		value    interface{}
-		expected string
-	}{
-		{"string", "hello", `{"string":"hello"}`},
-		{"bool", true, `{"bool":true}`},
-		{"int", int64(42), `{"int":42}`},
-		{"double", 3.14, `{"double":3.14}`},
-		{"stringList", []string{"a", "b"}, `{"stringList":["a","b"]}`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			tv := NewTypedContextValue(tt.value)
-			data, err := json.Marshal(tv)
-			if err != nil {
-				t.Fatalf("marshal failed: %v", err)
-			}
-			if string(data) != tt.expected {
-				t.Errorf("expected %s, got %s", tt.expected, string(data))
-			}
-		})
-	}
-}
-
 func TestContextShapes_JSONFormat(t *testing.T) {
 	payload := TelemetryEvents{
 		InstanceHash: "uuid-of-sdk-instance",
@@ -131,6 +104,11 @@ func TestContextShapes_JSONFormat(t *testing.T) {
 	}
 }
 
+// TestExampleContexts_JSONFormat locks in the wire shape that every other
+// Quonfig SDK emits: values are a flat map, NOT wrapped in {"<type>": v}.
+// Previously sdk-go wrapped each value, which broke the ClickHouse MV's
+// JSONExtractString(values, 'key') unwrap and rendered properties as
+// "[object Object]" in the search-context UI.
 func TestExampleContexts_JSONFormat(t *testing.T) {
 	payload := TelemetryEvents{
 		InstanceHash: "uuid-of-sdk-instance",
@@ -144,9 +122,10 @@ func TestExampleContexts_JSONFormat(t *testing.T) {
 								Contexts: []NamedContextData{
 									{
 										Type: "user",
-										Values: map[string]TypedContextValue{
-											"key":   NewTypedContextValue("user-123"),
-											"email": NewTypedContextValue("alice@acme.com"),
+										Values: map[string]interface{}{
+											"key":   "user-123",
+											"email": "alice@acme.com",
+											"age":   30,
 										},
 									},
 								},
@@ -163,9 +142,10 @@ func TestExampleContexts_JSONFormat(t *testing.T) {
 		t.Fatalf("marshal failed: %v", err)
 	}
 
-	// Verify the JSON contains expected structure
 	var raw map[string]interface{}
-	_ = json.Unmarshal(data, &raw)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal failed: %v", err)
+	}
 
 	events := raw["events"].([]interface{})
 	event := events[0].(map[string]interface{})
@@ -183,8 +163,39 @@ func TestExampleContexts_JSONFormat(t *testing.T) {
 	}
 
 	values := ctx["values"].(map[string]interface{})
-	keyVal := values["key"].(map[string]interface{})
-	if keyVal["string"].(string) != "user-123" {
-		t.Errorf("key value mismatch")
+
+	// String value must be a plain string, not {"string": "..."}.
+	if got, ok := values["key"].(string); !ok || got != "user-123" {
+		t.Errorf("values.key: expected plain string \"user-123\", got %T %v", values["key"], values["key"])
 	}
+	if got, ok := values["email"].(string); !ok || got != "alice@acme.com" {
+		t.Errorf("values.email: expected plain string, got %T %v", values["email"], values["email"])
+	}
+	// Int value must be a number, not {"int": N}.
+	if got, ok := values["age"].(float64); !ok || got != 30 {
+		t.Errorf("values.age: expected numeric 30, got %T %v", values["age"], values["age"])
+	}
+
+	// Belt-and-suspenders: assert the literal JSON bytes do NOT contain
+	// type-tag wrappers anywhere in the values block. If anyone adds a
+	// MarshalJSON that re-introduces wrapping, this catches it.
+	jsonStr := string(data)
+	for _, wrapperKey := range []string{`{"string":`, `{"int":`, `{"bool":`, `{"double":`, `{"stringList":`} {
+		if containsInValues(jsonStr, wrapperKey) {
+			t.Errorf("wire format regressed to wrapped values: found %q in JSON %s", wrapperKey, jsonStr)
+		}
+	}
+}
+
+// containsInValues reports whether needle appears in the JSON output inside
+// the "values":{...} block of an example context. We do a coarse substring
+// check — the test data has no other place a {"string": ... pattern could
+// legitimately appear, so any match means a regression.
+func containsInValues(haystack, needle string) bool {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return true
+		}
+	}
+	return false
 }
