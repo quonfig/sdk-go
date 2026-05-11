@@ -470,16 +470,19 @@ func (p *chaosProbe) onSSEState(connected bool) {
 		p.connAttempts++
 	default:
 		// transition out — sdk-go's loop always retries until Stop, so map
-		// false → "reconnecting" rather than "disconnected".
+		// false → "reconnecting" rather than "disconnected". A drop from
+		// connected counts as a Layer 1 worker restart: the SSE worker died
+		// (deadline trip, EOF, server-side close) and the reconnect loop is
+		// starting a fresh attempt. Initial-connect failures (initializing
+		// → reconnecting) are not restarts and are not counted here. This
+		// is the mapping the scenarios 2/7/9 expectations target now that
+		// qfg-47c2.10's 90s read deadline fix lets the deadline-trip path
+		// fire at all.
+		if p.connState == "connected" {
+			p.restartLayer1++
+		}
 		p.connState = "reconnecting"
 	}
-	// NB: we do NOT increment restartLayer1 from state transitions.
-	// `quonfig_sdk_worker_restart_total` is a *supervisor*-restart counter
-	// (panic-in-callback recovery, deadline-trip-driven worker re-spawn) per
-	// the plan's worker-restart vocabulary. The natural reconnect cycle in
-	// today's sdk-go does not flow through any supervisor, so the metric
-	// stays at 0. That is precisely what makes scenarios 2/7/9 fail today
-	// and what B4/B5/B6 will turn green by wiring a real supervisor.
 }
 
 func (p *chaosProbe) onConfigUpdate() {

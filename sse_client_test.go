@@ -295,6 +295,149 @@ func TestNewClientWithSSEDisabled(t *testing.T) {
 	}
 }
 
+// TestSSEClientReadTimeoutDropsStalledConnection verifies the SSE client
+// drops a silently-stalled connection within the configured read deadline and
+// reconnects. The "silent stall" failure mode (NAT timeout, LB half-close)
+// previously left the SDK wedged forever — see qfg-47c2.10 / sse_client.go.
+func TestSSEClientReadTimeoutDropsStalledConnection(t *testing.T) {
+	var connAttempts atomic.Int32
+	reconnected := make(chan struct{}, 1)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		w.WriteHeader(http.StatusOK)
+
+		attempt := connAttempts.Add(1)
+		if attempt == 1 {
+			// First conn: send one event, then stop writing — silent stall.
+			writeSSEEnvelope(w, flusher, makeEnvelope("v1", "flag.s", "first"))
+			<-r.Context().Done()
+			return
+		}
+		// Subsequent conn: signal that the client reconnected.
+		select {
+		case reconnected <- struct{}{}:
+		default:
+		}
+		writeSSEEnvelope(w, flusher, makeEnvelope("v2", "flag.s", "after-reconnect"))
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	c := newSSEClient(sseClientConfig{
+		URL:          server.URL,
+		APIKey:       "test-key",
+		OnEnvelope:   func(*ConfigEnvelope) {},
+		ReadTimeout:  100 * time.Millisecond,
+		InitialDelay: 1 * time.Millisecond,
+		MaxDelay:     10 * time.Millisecond,
+	})
+	c.Start()
+	defer c.Stop()
+
+	select {
+	case <-reconnected:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("client did not reconnect after silent stall; connAttempts=%d", connAttempts.Load())
+	}
+
+	if got := connAttempts.Load(); got < 2 {
+		t.Fatalf("expected >= 2 connection attempts after stall, got %d", got)
+	}
+}
+
+// TestSSEClientReadTimeoutDoesNotFireOnSteadyKeepalives verifies that a
+// stream which keeps emitting bytes within the read window stays alive — the
+// deadline is per-read, not absolute. Anchors the "reset on each read"
+// behavior so a future refactor doesn't silently make the deadline absolute.
+func TestSSEClientReadTimeoutDoesNotFireOnSteadyKeepalives(t *testing.T) {
+	var connAttempts atomic.Int32
+	stop := make(chan struct{})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		w.WriteHeader(http.StatusOK)
+		connAttempts.Add(1)
+		ticker := time.NewTicker(30 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				_, _ = fmt.Fprint(w, ": keepalive\n\n")
+				flusher.Flush()
+			case <-r.Context().Done():
+				return
+			case <-stop:
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	defer close(stop)
+
+	c := newSSEClient(sseClientConfig{
+		URL:          server.URL,
+		APIKey:       "test-key",
+		OnEnvelope:   func(*ConfigEnvelope) {},
+		ReadTimeout:  150 * time.Millisecond,
+		InitialDelay: 1 * time.Millisecond,
+		MaxDelay:     10 * time.Millisecond,
+	})
+	c.Start()
+	defer c.Stop()
+
+	// Hold a window that is ~5x the read deadline. With steady keepalives the
+	// deadline should reset on each read; we should see exactly one connection.
+	time.Sleep(750 * time.Millisecond)
+
+	if got := connAttempts.Load(); got != 1 {
+		t.Fatalf("expected exactly 1 connection attempt with steady keepalives, got %d", got)
+	}
+}
+
+// TestSSEClientDefaultsToHTTP11 verifies the SSE client's default *http.Client
+// is wired with a transport that disables HTTP/2. Toxiproxy is TCP-only, so an
+// h2 stream stall (where stream-level frames are silent but connection-level
+// frames flow) would be invisible in CI. Forcing HTTP/1.1 on the SSE socket
+// keeps stall detection observable. The polling client is unaffected.
+func TestSSEClientDefaultsToHTTP11(t *testing.T) {
+	c := newSSEClient(sseClientConfig{
+		URL:        "http://example.invalid",
+		APIKey:     "test-key",
+		OnEnvelope: func(*ConfigEnvelope) {},
+	})
+
+	tr, ok := c.cfg.Client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport on default SSE client, got %T", c.cfg.Client.Transport)
+	}
+	if tr.ForceAttemptHTTP2 {
+		t.Error("expected ForceAttemptHTTP2=false on default SSE transport")
+	}
+	if tr.TLSNextProto == nil {
+		t.Error("expected TLSNextProto to be a non-nil (empty) map to disable h2 negotiation; nil enables default h2")
+	}
+	if len(tr.TLSNextProto) != 0 {
+		t.Errorf("expected empty TLSNextProto map, got %d entries", len(tr.TLSNextProto))
+	}
+}
+
+// TestSSEClientDefaultReadTimeoutIs90s anchors the production default. 90s is
+// 3x the 30s server heartbeat (one missed heartbeat as noise tolerance, two
+// missed as a clear signal). See qfg-47c2.10.
+func TestSSEClientDefaultReadTimeoutIs90s(t *testing.T) {
+	c := newSSEClient(sseClientConfig{
+		URL:        "http://example.invalid",
+		APIKey:     "test-key",
+		OnEnvelope: func(*ConfigEnvelope) {},
+	})
+	if got, want := c.cfg.ReadTimeout, 90*time.Second; got != want {
+		t.Errorf("default ReadTimeout = %v, want %v", got, want)
+	}
+}
+
 // TestNewClientWithSSEEnabledConnects verifies that SSE is default-on and the
 // background goroutine actually dials the stream URL after init completes.
 func TestNewClientWithSSEEnabledConnects(t *testing.T) {

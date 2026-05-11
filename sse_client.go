@@ -26,6 +26,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"math/rand"
@@ -56,6 +57,14 @@ type sseClientConfig struct {
 	// Reconnect backoff. Zero values get sane defaults.
 	InitialDelay time.Duration // default: 500ms
 	MaxDelay     time.Duration // default: 30s
+
+	// ReadTimeout bounds how long the SSE socket may sit idle before the
+	// client closes it and reconnects. Defaults to 90s = 3x the 30s server
+	// heartbeat (one missed heartbeat as noise tolerance, two missed as a
+	// clear signal). Set explicitly to a small value in tests; 0 means use
+	// the default. There is no "disable" — silent stalls are the failure
+	// mode that motivated this knob, and disabling it brings back the bug.
+	ReadTimeout time.Duration
 }
 
 // sseClient runs a long-lived goroutine that keeps an SSE connection open,
@@ -78,11 +87,20 @@ func newSSEClient(cfg sseClientConfig) *sseClient {
 	if cfg.MaxDelay <= 0 {
 		cfg.MaxDelay = 30 * time.Second
 	}
+	if cfg.ReadTimeout <= 0 {
+		cfg.ReadTimeout = 90 * time.Second
+	}
 	if cfg.Client == nil {
-		// No read timeout — an SSE stream is long-lived by design. We only set
-		// a reasonable dial/TLS handshake bound via the default transport;
-		// cancellation comes from ctx.
-		cfg.Client = &http.Client{}
+		// Force HTTP/1.1 on the SSE socket. http.DefaultTransport defaults to
+		// negotiating HTTP/2 over TLS; an h2 stream can stall (silent at the
+		// stream layer) while connection-level frames keep flowing — toxiproxy
+		// is TCP-only and cannot reproduce that, so we'd ship the bug
+		// undetected. Clone DefaultTransport (keeps the sensible dial/TLS
+		// timeouts) and disable h2 negotiation.
+		tr := http.DefaultTransport.(*http.Transport).Clone()
+		tr.ForceAttemptHTTP2 = false
+		tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		cfg.Client = &http.Client{Transport: tr}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &sseClient{
@@ -161,7 +179,12 @@ func (c *sseClient) runLoop() {
 // far. Callers use the return value to distinguish backoff-worthy failures
 // (DNS, refused, 401) from normal session recycling.
 func (c *sseClient) connectOnce() bool {
-	req, err := http.NewRequestWithContext(c.ctx, http.MethodGet, c.cfg.URL, nil)
+	// Per-attempt context so the read-deadline timer can cancel just this
+	// request without affecting the long-lived client context.
+	reqCtx, cancelReq := context.WithCancel(c.ctx)
+	defer cancelReq()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, c.cfg.URL, nil)
 	if err != nil {
 		return false
 	}
@@ -190,8 +213,31 @@ func (c *sseClient) connectOnce() bool {
 	c.setConnected(true)
 	defer c.setConnected(false)
 
-	c.parseStream(resp.Body)
+	// Wrap the body so each successful read resets a watchdog timer; if no
+	// bytes arrive within ReadTimeout the timer cancels reqCtx, the next
+	// body read errors, parseStream returns, and runLoop reconnects.
+	timer := time.AfterFunc(c.cfg.ReadTimeout, cancelReq)
+	defer timer.Stop()
+	c.parseStream(&deadlineResetReader{r: resp.Body, timer: timer, d: c.cfg.ReadTimeout})
 	return true
+}
+
+// deadlineResetReader wraps an io.Reader to enforce a per-read inactivity
+// deadline via a time.AfterFunc-backed watchdog. Each successful Read resets
+// the timer; if the timer fires the parent context is cancelled by the
+// caller, and subsequent reads error out.
+type deadlineResetReader struct {
+	r     io.Reader
+	timer *time.Timer
+	d     time.Duration
+}
+
+func (d *deadlineResetReader) Read(p []byte) (int, error) {
+	n, err := d.r.Read(p)
+	if n > 0 {
+		d.timer.Reset(d.d)
+	}
+	return n, err
 }
 
 // parseStream reads SSE frames from r and calls OnEnvelope for each complete

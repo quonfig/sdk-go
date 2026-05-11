@@ -514,7 +514,11 @@ func (c *Client) startSSE() {
 		URL:       url,
 		APIKey:    c.opts.APIKey,
 		UserAgent: version.Header(),
-		Client:    c.opts.HTTPClient,
+		// Intentionally do not forward c.opts.HTTPClient: the SSE socket
+		// needs HTTP/1.1 forced (an h2 stream stall is invisible in CI),
+		// and the runtime read-deadline machinery lives in newSSEClient's
+		// default transport. The polling path keeps using HTTPClient.
+		ReadTimeout: c.opts.testSSEReadTimeout,
 		OnEnvelope: func(env *ConfigEnvelope) {
 			// Serialize with polled installs via refreshMu so we don't race.
 			c.refreshMu.Lock()

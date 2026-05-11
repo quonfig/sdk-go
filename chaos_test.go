@@ -131,6 +131,13 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(15 * time.Second),
 		WithOnInitFailure(ReturnZeroValue),
+		// Compress the production 90s SSE read deadline to 5s for chaos
+		// scenarios — the spec is "3x the server heartbeat", and the
+		// harness uses a 30s heartbeat in production but we don't have
+		// minutes per scenario in CI. 5s gives the same mechanism
+		// (deadline trips → drop → reconnect) at test cadence so e.g.
+		// scenario 07's within_ms=15000 is reachable.
+		withTestSSEReadTimeout(5 * time.Second),
 	}
 
 	// Scenario 10 (user_callback: throw) — a user callback panic that the

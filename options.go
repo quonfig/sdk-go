@@ -116,6 +116,14 @@ type Options struct {
 	// field directly on Options after calling defaultOptions or after applying
 	// their functional options.
 	testStreamURLOverride string
+
+	// testSSEReadTimeout, if non-zero, is forwarded to the SSE client as its
+	// per-read idle deadline. The production default is 90s (3x the 30s
+	// server heartbeat); tests that exercise stall detection use a much
+	// smaller value so a scenario can fail fast rather than running for
+	// minutes. Like testStreamURLOverride this is test-only — no public
+	// With* accessor.
+	testSSEReadTimeout time.Duration
 }
 
 // TelemetryEnabled returns true if a TelemetryURL is configured and any
@@ -453,6 +461,17 @@ func WithSSEStateCallback(fn func(connected bool)) Option {
 func withTestStreamURLOverride(url string) Option {
 	return func(o *Options) error {
 		o.testStreamURLOverride = url
+		return nil
+	}
+}
+
+// withTestSSEReadTimeout is a test-only option that overrides the SSE
+// client's per-read idle deadline. Production defaults to 90s; tests use
+// short values (1–5s) so scenarios complete in seconds instead of minutes.
+// Unexported by design — see Options.testSSEReadTimeout.
+func withTestSSEReadTimeout(d time.Duration) Option {
+	return func(o *Options) error {
+		o.testSSEReadTimeout = d
 		return nil
 	}
 }
