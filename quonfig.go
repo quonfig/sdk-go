@@ -59,6 +59,8 @@ type Client struct {
 	transport *runtimeTransport
 	telemetry *telemetrySubmitter
 	sse       *sseClient
+	sup       *supervisor
+	fallback  *fallbackPoller
 
 	mu                     sync.RWMutex
 	initializationDone     chan struct{}
@@ -73,7 +75,8 @@ type Client struct {
 
 // NewClient creates a new Quonfig client with the given options.
 // If an API key is configured, the client begins an initial config download and
-// wires local evaluation automatically. Background refresh is opt-in via WithRefreshInterval.
+// wires local evaluation automatically. Background refresh is opt-in via
+// WithFallbackPoll (the legacy WithRefreshInterval is preserved as a shim).
 func NewClient(opts ...Option) (*Client, error) {
 	o := defaultOptions()
 	for _, opt := range opts {
@@ -163,20 +166,25 @@ func (c *Client) Refresh() error {
 	return c.fetchAndInstall(context.Background(), false)
 }
 
-// Close stops any background refresh loop, shuts down the SSE stream, and
-// flushes pending telemetry.
+// Close stops the supervised background workers, shuts down the SSE stream,
+// and flushes pending telemetry.
 func (c *Client) Close() {
 	c.closeOnce.Do(func() {
 		close(c.closeCh)
-		// Read c.sse under the lock so we synchronize with startSSE, which
-		// runs asynchronously from the init goroutine and may not yet have
-		// installed the SSE client. If startSSE runs after Close, it sees
-		// closeCh closed and skips installation.
+		// Read shared workers under the lock so we synchronize with
+		// startBackgroundWorkers, which runs asynchronously from the init
+		// goroutine and may not yet have installed the SSE client or
+		// supervisor. If they run after Close, they observe closeCh closed
+		// and skip installation.
 		c.mu.Lock()
 		sse := c.sse
+		sup := c.sup
 		c.mu.Unlock()
 		if sse != nil {
 			sse.Stop()
+		}
+		if sup != nil {
+			sup.Stop()
 		}
 		if c.telemetry != nil {
 			c.telemetry.Stop()
@@ -477,6 +485,8 @@ func (c *Client) startInitialization() {
 	c.initializationStarted = true
 	c.mu.Unlock()
 
+	c.logPollingMode()
+
 	go func() {
 		ctx := context.Background()
 		if c.opts.InitTimeout > 0 {
@@ -487,14 +497,106 @@ func (c *Client) startInitialization() {
 
 		_ = c.fetchAndInstall(ctx, true)
 
-		if c.opts.SSEEnabled {
-			c.startSSE()
-		}
-
-		if c.opts.RefreshInterval > 0 {
-			c.startRefreshLoop()
-		}
+		c.startBackgroundWorkers()
 	}()
+}
+
+// logPollingMode announces the chosen Layer 1 (SSE) and Layer 2 (fallback
+// poll) configuration at startup. Per qfg-47c2.20 we emit one line so
+// deployers can confirm they're on the new fallback-only semantic after
+// upgrading from the parallel-poll WithRefreshInterval era.
+func (c *Client) logPollingMode() {
+	mode := "sse-only"
+	if c.opts.FallbackPollEnabled {
+		mode = "sse-with-fallback-poll"
+	}
+	if !c.opts.SSEEnabled {
+		if c.opts.FallbackPollEnabled {
+			mode = "fallback-poll-only"
+		} else {
+			mode = "no-background-refresh"
+		}
+	}
+	attrs := []any{
+		slog.String("mode", mode),
+		slog.Bool("sse_enabled", c.opts.SSEEnabled),
+		slog.Bool("fallback_poll_enabled", c.opts.FallbackPollEnabled),
+	}
+	if c.opts.FallbackPollEnabled {
+		attrs = append(attrs, slog.Duration("fallback_poll_interval", c.opts.FallbackPollInterval))
+		attrs = append(attrs, slog.Duration("fallback_poll_threshold", DefaultFallbackPollThreshold))
+	}
+	c.opts.Logger.Info("quonfig: polling configuration", attrs...)
+	if c.opts.refreshIntervalDeprecated {
+		c.opts.Logger.Warn(
+			"quonfig: WithRefreshInterval is deprecated — prefer WithFallbackPoll(true, interval). "+
+				"Polling is now fallback-only: it engages after SSE has been disconnected for "+
+				"120s rather than running in parallel with SSE.",
+			slog.Duration("interval", c.opts.FallbackPollInterval),
+		)
+	}
+}
+
+// startBackgroundWorkers spawns SSE (Layer 1) and, when configured, the
+// fallback poller (Layer 2) under a single supervisor that lives for the
+// lifetime of the Client.
+func (c *Client) startBackgroundWorkers() {
+	if c.transport == nil {
+		return
+	}
+
+	// Build the supervisor first so the SSE OnStateChange callback can feed
+	// state directly into it and the Layer 2 poller. The supervisor is
+	// stored on the Client so Close() can stop it.
+	sup := newSupervisor(supervisorConfig{Logger: c.opts.Logger})
+
+	var fp *fallbackPoller
+	if c.opts.FallbackPollEnabled && c.opts.FallbackPollInterval > 0 {
+		fp = newFallbackPoller(fallbackPollerConfig{
+			Interval:  c.opts.FallbackPollInterval,
+			Threshold: DefaultFallbackPollThreshold,
+			Logger:    c.opts.Logger,
+			Fetch: func(ctx context.Context) error {
+				return c.fetchAndInstall(ctx, false)
+			},
+			OnEngage: func() {
+				sup.setConnectionState(ConnStateFallingBack)
+				c.opts.Logger.Warn("quonfig: Layer 2 fallback poller engaged (SSE disconnected past threshold)",
+					slog.Duration("interval", c.opts.FallbackPollInterval),
+					slog.Duration("threshold", DefaultFallbackPollThreshold),
+				)
+			},
+			OnDisengage: func() {
+				// Restore "connected" — we only reach this branch on SSE
+				// reconnect, which has already set Connected via the state
+				// callback ordering below. Setting it again is harmless and
+				// guards the rare case where the poller's tick fires before
+				// the SSE callback drains.
+				sup.setConnectionState(ConnStateConnected)
+				c.opts.Logger.Info("quonfig: Layer 2 fallback poller disengaged (SSE recovered)")
+			},
+		})
+	}
+
+	c.mu.Lock()
+	c.sup = sup
+	c.fallback = fp
+	c.mu.Unlock()
+
+	if fp != nil {
+		// Register the Layer 2 worker with the supervisor so a panic inside
+		// Run gets caught and the poller restarts with exponential backoff.
+		sup.workers = append(sup.workers, worker{
+			Layer: "2",
+			Run:   fp.Run,
+		})
+	}
+
+	sup.Start()
+
+	if c.opts.SSEEnabled {
+		c.startSSE()
+	}
 }
 
 // startSSE opens the long-lived SSE stream to streamURLFor(0) and installs
@@ -509,6 +611,17 @@ func (c *Client) startSSE() {
 	url := c.transport.streamURLFor(0)
 	if url == "" {
 		return
+	}
+	// Chain the SDK's internal connection bookkeeping (supervisor state,
+	// Layer 2 poller engagement) with any caller-supplied
+	// OnSSEStateChange callback. The internal bookkeeping is the source of
+	// truth for ConnectionState() and FallbackPollerActive().
+	userCB := c.opts.OnSSEStateChange
+	onStateChange := func(connected bool) {
+		c.handleSSEStateChange(connected)
+		if userCB != nil {
+			userCB(connected)
+		}
 	}
 	sse := newSSEClient(sseClientConfig{
 		URL:       url,
@@ -526,7 +639,7 @@ func (c *Client) startSSE() {
 			c.installEnvelope(env)
 			c.refreshMu.Unlock()
 		},
-		OnStateChange: c.opts.OnSSEStateChange,
+		OnStateChange: onStateChange,
 	})
 
 	// If Close ran before we got here, don't install or start the SSE
@@ -544,19 +657,75 @@ func (c *Client) startSSE() {
 	sse.Start()
 }
 
-func (c *Client) startRefreshLoop() {
-	ticker := time.NewTicker(c.opts.RefreshInterval)
-	go func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				_ = c.Refresh()
-			case <-c.closeCh:
-				return
-			}
-		}
-	}()
+// handleSSEStateChange routes an SSE connection edge to the supervisor and,
+// if configured, the Layer 2 fallback poller. The supervisor is the source
+// of truth for ConnectionState(); the poller decides when to engage based
+// on how long the stream has been down.
+func (c *Client) handleSSEStateChange(connected bool) {
+	c.mu.RLock()
+	sup := c.sup
+	fp := c.fallback
+	c.mu.RUnlock()
+
+	if fp != nil {
+		fp.SetSSEConnected(connected)
+	}
+	if sup == nil {
+		return
+	}
+	if connected {
+		sup.setConnectionState(ConnStateConnected)
+		return
+	}
+	// On disconnect: only mark "disconnected" if the poller isn't already
+	// engaged. The poller's OnEngage callback owns the "falling_back" edge
+	// and we don't want a flicker between the two.
+	if fp != nil && fp.Active() {
+		return
+	}
+	sup.setConnectionState(ConnStateDisconnected)
+}
+
+// ConnectionState reports the SDK's customer-visible transport state. Values
+// match the cross-SDK spec in
+// project/plans/sdk-hardening-and-verification.md: initializing, connected,
+// disconnected, falling_back. Returns "initializing" when background workers
+// are disabled (e.g. WithDataDir, no API key).
+func (c *Client) ConnectionState() ConnectionState {
+	c.mu.RLock()
+	sup := c.sup
+	c.mu.RUnlock()
+	if sup == nil {
+		return ConnStateInitializing
+	}
+	return sup.ConnectionState()
+}
+
+// FallbackPollerActive reports whether the Layer 2 fallback poller is
+// currently engaged (i.e. SSE has been down past the engagement threshold
+// and the SDK is polling instead). Returns false when fallback polling is
+// disabled or has not engaged.
+func (c *Client) FallbackPollerActive() bool {
+	c.mu.RLock()
+	fp := c.fallback
+	c.mu.RUnlock()
+	if fp == nil {
+		return false
+	}
+	return fp.Active()
+}
+
+// LastSuccessfulRefresh returns the wall-clock time of the most recent
+// successful config install (either path). Zero value before the first
+// install or when background workers are disabled.
+func (c *Client) LastSuccessfulRefresh() time.Time {
+	c.mu.RLock()
+	sup := c.sup
+	c.mu.RUnlock()
+	if sup == nil {
+		return time.Time{}
+	}
+	return sup.LastSuccessfulRefresh()
 }
 
 func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
@@ -617,7 +786,12 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope) {
 	c.initialized = true
 	c.initializationErr = nil
 	onConfigUpdate := c.opts.OnConfigUpdate
+	sup := c.sup
 	c.mu.Unlock()
+
+	if sup != nil {
+		sup.recordSuccessfulRefresh()
+	}
 
 	if onConfigUpdate != nil {
 		onConfigUpdate()

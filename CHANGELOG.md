@@ -2,6 +2,44 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Changed
+
+- **Polling is now fallback-only, not parallel.** Prior to this release,
+  `WithRefreshInterval(d)` ran a background HTTP poll loop in PARALLEL with
+  the SSE stream — every interval, regardless of stream health. After this
+  release, the new Layer 2 fallback poller is **idle while SSE is connected**
+  and only engages after the SSE stream has been disconnected for ≥120s
+  (`DefaultFallbackPollThreshold`). Once SSE recovers the poller disengages.
+  Net effect: outbound HTTP traffic drops to near-zero in the happy path,
+  but freshness during sustained outages is preserved by the fallback path
+  (qfg-47c2.20).
+- Alpha-phase behavior change — see
+  `project/plans/sdk-hardening-and-verification.md` "Phase 3 — Layer 2
+  fallback standardization". No semver hold (0.0.x).
+
+### Added
+
+- `WithFallbackPoll(enabled bool, interval time.Duration)` option — the
+  new way to configure Layer 2 polling. Disabled by default; opt in if you
+  want the SDK to keep refreshing configs during sustained SSE outages.
+- `Client.ConnectionState()` — returns the customer-visible transport state
+  (`initializing` | `connected` | `disconnected` | `falling_back`).
+- `Client.FallbackPollerActive()` — true while Layer 2 is engaged.
+- `Client.LastSuccessfulRefresh()` — wall-clock time of the most recent
+  successful config install from any path.
+- Startup log line "quonfig: polling configuration" announcing the chosen
+  Layer 1/Layer 2 mode and intervals, so deployers can see the new
+  fallback-only behavior at boot.
+
+### Deprecated
+
+- `WithRefreshInterval(d)` — preserved as a thin shim over
+  `WithFallbackPoll(true, d)`. A one-shot warning is logged at `NewClient`
+  time. Callers should migrate to `WithFallbackPoll` to make the
+  fallback-only semantic explicit.
+
 ## 0.0.20 - 2026-05-10
 
 ### Added

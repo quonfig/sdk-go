@@ -43,16 +43,33 @@ const DefaultDomain = "quonfig.com"
 
 // Options holds all client configuration.
 type Options struct {
-	APIKey          string
-	APIURLs         []string
-	DataDir         string
-	Environment     string
-	GlobalContext   *ContextSet
-	InitTimeout     time.Duration
-	OnInitFailure   OnInitFailure
-	EnvLookup       EnvLookupFunc
-	RefreshInterval time.Duration
-	HTTPClient      *http.Client
+	APIKey        string
+	APIURLs       []string
+	DataDir       string
+	Environment   string
+	GlobalContext *ContextSet
+	InitTimeout   time.Duration
+	OnInitFailure OnInitFailure
+	EnvLookup     EnvLookupFunc
+	HTTPClient    *http.Client
+
+	// FallbackPollEnabled controls whether the Layer 2 fallback poller is
+	// allowed to engage. The poller is idle while SSE is connected; it
+	// engages only after SSE has been disconnected for FallbackPollThreshold
+	// (default 120s) and ticks at FallbackPollInterval until SSE recovers.
+	//
+	// Default false: an SSE-only deployment trusts the stream and accepts
+	// degraded freshness during outages. Set true (and pick an interval) to
+	// guarantee a poll-based refresh path during sustained disconnects.
+	FallbackPollEnabled bool
+	// FallbackPollInterval is how often the Layer 2 poller fetches once
+	// engaged. Must be >0 when FallbackPollEnabled is true. Defaults to 60s.
+	FallbackPollInterval time.Duration
+	// refreshIntervalDeprecated is set by WithRefreshInterval so NewClient
+	// can emit a one-shot deprecation warning at startup. The deprecated
+	// option also sets FallbackPollEnabled/Interval, so callers see the new
+	// fallback-only semantic transparently.
+	refreshIntervalDeprecated bool
 
 	// Logger is the *slog.Logger used by the SDK to emit warnings (e.g. the
 	// dev-context tokens loader). Defaults to slog.Default() when not set via
@@ -318,13 +335,51 @@ func WithEnvLookup(fn EnvLookupFunc) Option {
 }
 
 // WithRefreshInterval enables background polling refreshes.
-// A zero duration disables background refresh. Call Client.Refresh for manual polling.
+//
+// Deprecated: prior to v0.0.21 this option ran PARALLEL polling on top of
+// SSE. As of v0.0.21 the SDK polls fallback-only — the poller is idle while
+// SSE is connected and engages only after SSE has been disconnected for
+// >=120s. WithRefreshInterval(d) is preserved as a thin shim over
+// WithFallbackPoll(true, d); new code should call WithFallbackPoll directly.
+// A one-shot deprecation warning is logged at NewClient time so deployers
+// can spot the call site.
 func WithRefreshInterval(d time.Duration) Option {
 	return func(o *Options) error {
 		if d < 0 {
 			return errors.New("refresh interval must not be negative")
 		}
-		o.RefreshInterval = d
+		o.refreshIntervalDeprecated = true
+		if d == 0 {
+			// Legacy semantics: zero disables polling entirely. Don't
+			// silently turn fallback polling on.
+			o.FallbackPollEnabled = false
+			o.FallbackPollInterval = 0
+			return nil
+		}
+		o.FallbackPollEnabled = true
+		o.FallbackPollInterval = d
+		return nil
+	}
+}
+
+// WithFallbackPoll configures the Layer 2 fallback poller. The poller is
+// idle while the SSE stream is connected; it engages only after SSE has
+// been disconnected for the default 120s threshold, and ticks at the given
+// interval until SSE recovers. Pass enabled=false to disable Layer 2
+// entirely (the default).
+//
+// Replaces the deprecated WithRefreshInterval, which ran parallel polling
+// on top of SSE.
+func WithFallbackPoll(enabled bool, interval time.Duration) Option {
+	return func(o *Options) error {
+		if enabled && interval <= 0 {
+			return errors.New("fallback poll interval must be positive when enabled")
+		}
+		if interval < 0 {
+			return errors.New("fallback poll interval must not be negative")
+		}
+		o.FallbackPollEnabled = enabled
+		o.FallbackPollInterval = interval
 		return nil
 	}
 }
@@ -435,7 +490,10 @@ func WithAllTelemetryDisabled() Option {
 
 // WithSSE enables or disables the background SSE streaming client.
 // Default is true. When disabled, the SDK relies on the initial HTTP fetch
-// plus any polling configured via WithRefreshInterval.
+// plus any polling configured via WithFallbackPoll. Note that fallback
+// polling only engages after sustained SSE disconnect — with SSE disabled
+// it effectively starts immediately, but you typically still want
+// WithFallbackPoll(true, …) to make poll cadence explicit.
 func WithSSE(enabled bool) Option {
 	return func(o *Options) error {
 		o.SSEEnabled = enabled

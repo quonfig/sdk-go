@@ -373,34 +373,41 @@ func applyProcess(t *testing.T, tp *toxiproxyClient, p *chaosProc, baseline time
 // ----- SDK probe -----
 
 // chaosProbe wraps an sdk-go Client with the test-time observation surface
-// the scenarios reference. It does NOT add metrics to the SDK itself —
-// instead it derives approximations from existing callbacks. Missing surface
-// area (worker_restart_total, fallbackPollerActive, lastSuccessfulRefresh,
-// connect_attempts_total) is the *point* of this harness: the scenarios fail
-// because the SDK does not yet emit those signals.
+// the scenarios reference. After qfg-47c2.20, ConnectionState and
+// FallbackPollerActive read directly from the Client's supervisor-backed
+// accessors; layer="1" restart counts and process-liveness are still derived
+// from callbacks since the SSE worker has not been migrated under the
+// supervisor yet (qfg-47c2.21).
 type chaosProbe struct {
 	client *Client
 
 	mu             sync.Mutex
-	connState      string // initializing | connected | reconnecting | falling_back | disconnected
-	lastRefresh    time.Time
 	connAttempts   int64 // count of (any) state transition into connected
-	restartLayer1  int64 // count of (connected → disconnected) edges; sdk-go never restarts on stall today so this stays 0 there
-	restartLayer2  int64 // never increments — no Layer 2 exists
-	fallbackActive bool  // always false today
+	restartLayer1  int64 // count of (connected → disconnected) edges from the SSE worker
+	restartLayer2  int64 // currently unused — Layer 2 panics/errors go through the supervisor counter
 	processCrashed atomic.Bool
 	logBuf         bytes.Buffer
 	logMu          sync.Mutex
 }
 
 func newChaosProbe() *chaosProbe {
-	return &chaosProbe{connState: "initializing"}
+	return &chaosProbe{}
+}
+
+func (p *chaosProbe) setClient(c *Client) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.client = c
 }
 
 func (p *chaosProbe) connectionState() string {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.connState
+	c := p.client
+	p.mu.Unlock()
+	if c == nil {
+		return "initializing"
+	}
+	return string(c.ConnectionState())
 }
 
 func (p *chaosProbe) sdkMetric(name string, labels map[string]string) float64 {
@@ -424,17 +431,26 @@ func (p *chaosProbe) sdkMetric(name string, labels map[string]string) float64 {
 
 func (p *chaosProbe) fallbackPollerActive() bool {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.fallbackActive
+	c := p.client
+	p.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	return c.FallbackPollerActive()
 }
 
 func (p *chaosProbe) lastSuccessfulRefreshMs() int64 {
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.lastRefresh.IsZero() {
+	c := p.client
+	p.mu.Unlock()
+	if c == nil {
 		return 0
 	}
-	return p.lastRefresh.UnixMilli()
+	last := c.LastSuccessfulRefresh()
+	if last.IsZero() {
+		return 0
+	}
+	return last.UnixMilli()
 }
 
 func (p *chaosProbe) processStillAlive() bool {
@@ -463,32 +479,21 @@ func (p *chaosProbe) sdkLogMatches(level string, re *regexp.Regexp) int {
 func (p *chaosProbe) onSSEState(connected bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	switch {
-	case connected:
-		// transition into connected
-		p.connState = "connected"
+	if connected {
 		p.connAttempts++
-	default:
-		// transition out — sdk-go's loop always retries until Stop, so map
-		// false → "reconnecting" rather than "disconnected". A drop from
-		// connected counts as a Layer 1 worker restart: the SSE worker died
-		// (deadline trip, EOF, server-side close) and the reconnect loop is
-		// starting a fresh attempt. Initial-connect failures (initializing
-		// → reconnecting) are not restarts and are not counted here. This
-		// is the mapping the scenarios 2/7/9 expectations target now that
-		// qfg-47c2.10's 90s read deadline fix lets the deadline-trip path
-		// fire at all.
-		if p.connState == "connected" {
-			p.restartLayer1++
-		}
-		p.connState = "reconnecting"
+		return
+	}
+	// A drop from connected counts as a Layer 1 worker restart: the SSE
+	// reconnect loop is starting a fresh attempt after a deadline trip,
+	// EOF, or server-side close. We approximate this by counting any
+	// false-edge that arrives after at least one connect.
+	if p.connAttempts > 0 {
+		p.restartLayer1++
 	}
 }
 
 func (p *chaosProbe) onConfigUpdate() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	p.lastRefresh = time.Now()
+	// LastSuccessfulRefresh comes off the supervisor now.
 }
 
 // slogHandler collects everything the SDK logs into logBuf so sdkLog can scan.

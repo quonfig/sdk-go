@@ -138,6 +138,11 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		// (deadline trips → drop → reconnect) at test cadence so e.g.
 		// scenario 07's within_ms=15000 is reachable.
 		withTestSSEReadTimeout(5 * time.Second),
+		// Enable Layer 2 fallback polling per qfg-47c2.20. Scenarios 5/6
+		// expect the poller to engage after the 120s default threshold;
+		// other scenarios still benefit from the poller being available
+		// as a safety net.
+		WithFallbackPoll(true, 30*time.Second),
 	}
 
 	// Scenario 10 (user_callback: throw) — a user callback panic that the
@@ -162,6 +167,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		t.Logf("client init failed: %v — continuing (the scenario may still observe disconnected state)", err)
 	} else {
 		t.Cleanup(client.Close)
+		probe.setClient(client)
 	}
 
 	// Schedule chaos events.
