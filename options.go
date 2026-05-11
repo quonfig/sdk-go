@@ -522,14 +522,3 @@ func withTestStreamURLOverride(url string) Option {
 		return nil
 	}
 }
-
-// withTestSSEReadTimeout is a test-only option that overrides the SSE
-// client's per-read idle deadline. Production defaults to 90s; tests use
-// short values (1–5s) so scenarios complete in seconds instead of minutes.
-// Unexported by design — see Options.testSSEReadTimeout.
-func withTestSSEReadTimeout(d time.Duration) Option {
-	return func(o *Options) error {
-		o.testSSEReadTimeout = d
-		return nil
-	}
-}
