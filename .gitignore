@@ -1,0 +1,2 @@
+# Locally-built api-delivery binary used by scripts/run-chaos.sh.
+.chaos-api-delivery
