@@ -29,9 +29,12 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"math/rand"
 	"net/http"
+	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -65,6 +68,10 @@ type sseClientConfig struct {
 	// the default. There is no "disable" — silent stalls are the failure
 	// mode that motivated this knob, and disabling it brings back the bug.
 	ReadTimeout time.Duration
+
+	// Logger is used to record recovered panics from the OnEnvelope callback
+	// and other unexpected internal errors. Nil falls back to slog.Default().
+	Logger *slog.Logger
 }
 
 // sseClient runs a long-lived goroutine that keeps an SSE connection open,
@@ -78,6 +85,12 @@ type sseClient struct {
 	stopOnce    sync.Once
 	connected   bool
 	connectedMu sync.Mutex
+
+	// workerRestarts tracks the quonfig_sdk_worker_restart_total counter,
+	// labeled by reason (e.g. "callback_panic"). Layer 1 is implied — the SSE
+	// stream itself. The map is allocated lazily under restartsMu.
+	restartsMu     sync.Mutex
+	workerRestarts map[string]*atomic.Int64
 }
 
 func newSSEClient(cfg sseClientConfig) *sseClient {
@@ -89,6 +102,9 @@ func newSSEClient(cfg sseClientConfig) *sseClient {
 	}
 	if cfg.ReadTimeout <= 0 {
 		cfg.ReadTimeout = 90 * time.Second
+	}
+	if cfg.Logger == nil {
+		cfg.Logger = slog.Default()
 	}
 	if cfg.Client == nil {
 		// Force HTTP/1.1 on the SSE socket. http.DefaultTransport defaults to
@@ -270,7 +286,7 @@ func (c *sseClient) parseStream(r io.Reader) {
 		var env ConfigEnvelope
 		if err := json.Unmarshal(dataBuf.Bytes(), &env); err == nil {
 			if c.cfg.OnEnvelope != nil {
-				c.cfg.OnEnvelope(&env)
+				c.invokeOnEnvelope(&env)
 			}
 		}
 		// else: malformed payload — swallow so a single bad event doesn't
@@ -315,6 +331,61 @@ func stripFieldPrefix(s, prefix string) (string, bool) {
 		rest = rest[1:]
 	}
 	return rest, true
+}
+
+// invokeOnEnvelope calls the user-supplied OnEnvelope callback under a
+// defer/recover so a panic in customer code cannot kill the SSE goroutine
+// (which would silently freeze the SDK at whatever envelope was current at
+// the time of the crash). On recovery we log at ERROR with the panic value
+// and stack, bump the quonfig_sdk_worker_restart_total{layer="1",
+// reason="callback_panic"} counter, and return — the parseStream loop then
+// continues with the next event.
+func (c *sseClient) invokeOnEnvelope(env *ConfigEnvelope) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		c.incWorkerRestart("callback_panic")
+		c.cfg.Logger.Error("quonfig: OnEnvelope callback panicked; SSE loop continuing",
+			slog.Any("panic", r),
+			slog.String("stack", string(debug.Stack())),
+			slog.String("layer", "1"),
+			slog.String("reason", "callback_panic"),
+		)
+	}()
+	c.cfg.OnEnvelope(env)
+}
+
+// workerRestartTotal returns the current value of the
+// quonfig_sdk_worker_restart_total{layer="1",reason=<reason>} counter. The
+// counter is incremented on recovered panics inside OnEnvelope (reason =
+// "callback_panic"); future causes (e.g. reader-loop panic) reuse this same
+// surface with a different reason label.
+func (c *sseClient) workerRestartTotal(reason string) int64 {
+	c.restartsMu.Lock()
+	v := c.workerRestarts[reason]
+	c.restartsMu.Unlock()
+	if v == nil {
+		return 0
+	}
+	return v.Load()
+}
+
+// incWorkerRestart bumps the counter for a given reason label, allocating the
+// map entry on first use.
+func (c *sseClient) incWorkerRestart(reason string) {
+	c.restartsMu.Lock()
+	v := c.workerRestarts[reason]
+	if v == nil {
+		if c.workerRestarts == nil {
+			c.workerRestarts = make(map[string]*atomic.Int64)
+		}
+		v = &atomic.Int64{}
+		c.workerRestarts[reason] = v
+	}
+	c.restartsMu.Unlock()
+	v.Add(1)
 }
 
 // setConnected records connection state transitions and fires the state

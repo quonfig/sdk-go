@@ -519,6 +519,7 @@ func (c *Client) startSSE() {
 		// and the runtime read-deadline machinery lives in newSSEClient's
 		// default transport. The polling path keeps using HTTPClient.
 		ReadTimeout: c.opts.testSSEReadTimeout,
+		Logger:      c.opts.Logger,
 		OnEnvelope: func(env *ConfigEnvelope) {
 			// Serialize with polled installs via refreshMu so we don't race.
 			c.refreshMu.Lock()

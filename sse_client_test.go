@@ -1,8 +1,10 @@
 package quonfig
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -436,6 +438,94 @@ func TestSSEClientDefaultReadTimeoutIs90s(t *testing.T) {
 	if got, want := c.cfg.ReadTimeout, 90*time.Second; got != want {
 		t.Errorf("default ReadTimeout = %v, want %v", got, want)
 	}
+}
+
+// TestSSEClientRecoversFromOnEnvelopePanic verifies that a panic raised inside
+// the user-supplied OnEnvelope callback does NOT crash the SSE loop. The
+// failure mode this guards against: a buggy customer callback (nil deref,
+// panic on type assertion, etc.) used to take down the whole process because
+// the panic bubbled out of parseStream → connectOnce → runLoop and tore the
+// goroutine apart. After qfg-47c2.11 the panic is recovered, logged at ERROR
+// with the panic value, the quonfig_sdk_worker_restart_total{reason="callback_panic"}
+// counter is incremented, and the loop continues parsing subsequent events.
+func TestSSEClientRecoversFromOnEnvelopePanic(t *testing.T) {
+	var calls atomic.Int32
+	envCh := make(chan *ConfigEnvelope, 4)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		w.WriteHeader(http.StatusOK)
+		writeSSEEnvelope(w, flusher, makeEnvelope("v1", "flag.p", "boom"))
+		writeSSEEnvelope(w, flusher, makeEnvelope("v2", "flag.p", "after-panic"))
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	var logBuf bytes.Buffer
+	var logMu sync.Mutex
+	handler := slog.NewTextHandler(&syncWriter{w: &logBuf, mu: &logMu}, &slog.HandlerOptions{Level: slog.LevelDebug})
+	logger := slog.New(handler)
+
+	c := newSSEClient(sseClientConfig{
+		URL:    server.URL,
+		APIKey: "test-key",
+		Logger: logger,
+		OnEnvelope: func(env *ConfigEnvelope) {
+			n := calls.Add(1)
+			envCh <- env
+			if n == 1 {
+				panic("simulated callback panic")
+			}
+		},
+		InitialDelay: 1 * time.Millisecond,
+		MaxDelay:     10 * time.Millisecond,
+	})
+	c.Start()
+	defer c.Stop()
+
+	// First envelope (panics)
+	select {
+	case <-envCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first envelope never delivered to callback")
+	}
+	// Second envelope must still be delivered — loop must have survived.
+	select {
+	case env := <-envCh:
+		if v := env.Configs[0].Default.Rules[0].Value.Value.(string); v != "after-panic" {
+			t.Errorf("second envelope value = %q, want after-panic", v)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("second envelope never delivered after panic recovery; calls=%d", calls.Load())
+	}
+
+	if got := c.workerRestartTotal("callback_panic"); got != 1 {
+		t.Errorf("workerRestartTotal(callback_panic) = %d, want 1", got)
+	}
+
+	logMu.Lock()
+	logOut := logBuf.String()
+	logMu.Unlock()
+	if !strings.Contains(logOut, "level=ERROR") {
+		t.Errorf("expected an ERROR-level log line, got: %s", logOut)
+	}
+	if !strings.Contains(logOut, "simulated callback panic") {
+		t.Errorf("expected the panic value to appear in the log output, got: %s", logOut)
+	}
+}
+
+// syncWriter wraps an io.Writer with a mutex so the test can safely read while
+// slog writes from the SSE goroutine.
+type syncWriter struct {
+	w  *bytes.Buffer
+	mu *sync.Mutex
+}
+
+func (s *syncWriter) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.w.Write(p)
 }
 
 // TestNewClientWithSSEEnabledConnects verifies that SSE is default-on and the
