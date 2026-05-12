@@ -301,10 +301,17 @@ func applyInject(t *testing.T, tp *toxiproxyClient, inj *chaosInject) *injection
 		tp.setEnabled(t, "http", false)
 		return &injectionState{enable: []string{"sse", "http"}}
 	case inj.SSEHalfOpenAfterBytes != nil:
-		tp.addToxic(t, "sse", name, "limit_data", "downstream", map[string]interface{}{
-			"bytes": *inj.SSEHalfOpenAfterBytes,
-		})
-		return &injectionState{proxy: "sse", toxic: name}
+		// Toxiproxy is TCP-only and can't truly model "server returns 200 then
+		// closes after N bytes" — the limit_data toxic this used to call only
+		// trips on the NEXT upstream byte, which for SSE is the 30s heartbeat,
+		// outside the typical within_ms=15s window. The closest TCP-only
+		// analog is to disable the proxy: existing SSE connections drop, new
+		// attempts are refused. Leave it disabled until the matching `clear`
+		// step so the SDK's reconnect attempts fail visibly (sdk-ruby's
+		// ld-eventsource only fires on_error on ECONNREFUSED, not on clean
+		// FIN). qfg-47c2.29.
+		tp.setEnabled(t, "sse", false)
+		return &injectionState{enable: []string{"sse"}}
 	case inj.SSEHTTPStatus != nil:
 		// HTTP-level status injection is not toxiproxy-native (toxiproxy is
 		// TCP-only). Skipping this case turns the scenario into a no-op —
