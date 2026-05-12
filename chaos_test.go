@@ -146,17 +146,15 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	}
 
 	// Scenario 10 (user_callback: throw) — a user callback panic that the
-	// supervisor must catch. Run it; if the SDK's panic-in-callback recovery
-	// is missing the goroutine dies and our probe records processCrashed=true
-	// via the OnEnvelope path (sdk-go runs OnConfigUpdate on a fresh goroutine
-	// in installEnvelope, so a panic there crashes only the install path).
+	// SDK's invokeOnEnvelope recover() boundary must catch. The panic
+	// propagates installEnvelope → sseClient.OnEnvelope wrapper →
+	// invokeOnEnvelope, which logs at ERROR ("OnEnvelope callback panicked")
+	// and bumps quonfig_sdk_worker_restart_total{reason="callback_panic"}.
+	// Do NOT wrap the user callback in its own defer/recover — that would
+	// swallow the panic before the SDK's recovery path could fire, defeating
+	// the scenario (qfg-47c2.30).
 	if run.Setup.UserCallback == "throw" {
 		opts = append(opts, WithOnConfigUpdate(func() {
-			defer func() {
-				if r := recover(); r != nil {
-					probe.processCrashed.Store(true)
-				}
-			}()
 			probe.onConfigUpdate()
 			panic("simulated user-callback panic for chaos scenario 10")
 		}))

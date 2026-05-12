@@ -510,15 +510,28 @@ type chaosLogHandler struct {
 
 func (h *chaosLogHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
 
+var reCallbackPanicLog = regexp.MustCompile(`(?i)callback panicked`)
+
 func (h *chaosLogHandler) Handle(_ context.Context, r slog.Record) error {
 	h.p.logMu.Lock()
-	defer h.p.logMu.Unlock()
 	fmt.Fprintf(&h.p.logBuf, "level=%s msg=%q", r.Level.String(), r.Message)
 	r.Attrs(func(a slog.Attr) bool {
 		fmt.Fprintf(&h.p.logBuf, " %s=%v", a.Key, a.Value)
 		return true
 	})
 	h.p.logBuf.WriteByte('\n')
+	h.p.logMu.Unlock()
+
+	// Mirror sdk-ruby/sdk-python: a recovered callback panic is a Layer 1
+	// worker restart in the cross-SDK chaos accounting. The SDK already logs
+	// at ERROR with "...callback panicked..." from both invokeOnEnvelope and
+	// invokeOnConfigUpdate, so deriving the counter from the log keeps the
+	// probe in sync without depending on private SDK accessors. (qfg-47c2.30)
+	if r.Level >= slog.LevelError && reCallbackPanicLog.MatchString(r.Message) {
+		h.p.mu.Lock()
+		h.p.restartLayer1++
+		h.p.mu.Unlock()
+	}
 	return nil
 }
 

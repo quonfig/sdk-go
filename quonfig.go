@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -794,8 +795,33 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope) {
 	}
 
 	if onConfigUpdate != nil {
-		onConfigUpdate()
+		c.invokeOnConfigUpdate(onConfigUpdate)
 	}
+}
+
+// invokeOnConfigUpdate calls the user-supplied OnConfigUpdate callback under
+// a defer/recover so a panic in customer code cannot tear down the goroutine
+// that called installEnvelope (the SSE callback goroutine, the polling
+// supervisor's goroutine, or the init goroutine in fetchAndInstall). On
+// recovery we log at ERROR with the panic value and stack — chaos scenario
+// 10 asserts client.sdkLog('error', /callback|onConfigUpdate/i) matches this
+// line. The SSE-side invokeOnEnvelope guard is still in place as a
+// belt-and-suspenders catch for non-OnConfigUpdate panics in OnEnvelope
+// (qfg-47c2.30).
+func (c *Client) invokeOnConfigUpdate(fn func()) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		c.opts.Logger.Error("quonfig: OnConfigUpdate callback panicked; SDK continuing",
+			slog.Any("panic", r),
+			slog.String("stack", string(debug.Stack())),
+			slog.String("layer", "1"),
+			slog.String("reason", "callback_panic"),
+		)
+	}()
+	fn()
 }
 
 func (c *Client) finishInitialization(success bool) {
