@@ -324,6 +324,12 @@ func startChaosAPIDelivery(t *testing.T, port int) string {
 		"FIXTURE_DIR="+fixtureDir,
 		"SDK_KEYS_FILE="+keysPath,
 		"QUONFIG_ENVIRONMENT=development",
+		// Compress the SSE keepalive cadence so it fits inside the chaos
+		// read deadline (testSSEReadTimeout=5s above). Production runs at
+		// 30s; without this override the deadline trips before the first
+		// keepalive arrives, making scenario 01 baseline unreachable
+		// (qfg-47c2.28).
+		"SSE_HEARTBEAT_INTERVAL=1s",
 	)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
