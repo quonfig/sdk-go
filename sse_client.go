@@ -113,9 +113,21 @@ func newSSEClient(cfg sseClientConfig) *sseClient {
 		// is TCP-only and cannot reproduce that, so we'd ship the bug
 		// undetected. Clone DefaultTransport (keeps the sensible dial/TLS
 		// timeouts) and disable h2 negotiation.
+		//
+		// Pinning TLSClientConfig.NextProtos is required, not optional:
+		// TLSNextProto only disables Go's automatic h2 RoundTripper dispatch.
+		// Without the NextProtos pin the ClientHello still advertises h2,
+		// h2-preferring servers (Fly's TLS edge) pick it, and connectOnce
+		// errors with "malformed HTTP response" every reconnect (qfg-hpqj).
 		tr := http.DefaultTransport.(*http.Transport).Clone()
 		tr.ForceAttemptHTTP2 = false
 		tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
+		if tr.TLSClientConfig == nil {
+			tr.TLSClientConfig = &tls.Config{}
+		} else {
+			tr.TLSClientConfig = tr.TLSClientConfig.Clone()
+		}
+		tr.TLSClientConfig.NextProtos = []string{"http/1.1"}
 		cfg.Client = &http.Client{Transport: tr}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -213,6 +225,14 @@ func (c *sseClient) connectOnce() bool {
 
 	resp, err := c.cfg.Client.Do(req)
 	if err != nil {
+		// Log at debug so operators can diagnose silent SSE failures (DNS,
+		// TLS, refused, malformed-response from a misconfigured edge) without
+		// adding noise in the happy path. The qfg-hpqj investigation cost
+		// ~30 minutes precisely because this error was invisible.
+		c.cfg.Logger.Debug("quonfig: SSE connect failed",
+			slog.String("url", c.cfg.URL),
+			slog.Any("err", err),
+		)
 		return false
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -223,6 +243,10 @@ func (c *sseClient) connectOnce() bool {
 		// failure — a customer rotating their key should eventually be
 		// picked up by the next reconnect.
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		c.cfg.Logger.Debug("quonfig: SSE connect non-200",
+			slog.String("url", c.cfg.URL),
+			slog.Int("status", resp.StatusCode),
+		)
 		return false
 	}
 

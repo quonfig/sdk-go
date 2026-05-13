@@ -2,11 +2,14 @@ package quonfig
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -423,6 +426,68 @@ func TestSSEClientDefaultsToHTTP11(t *testing.T) {
 	}
 	if len(tr.TLSNextProto) != 0 {
 		t.Errorf("expected empty TLSNextProto map, got %d entries", len(tr.TLSNextProto))
+	}
+	// TLSNextProto alone is insufficient: it disables Go's automatic h2
+	// RoundTripper dispatch but does NOT prevent the TLS ClientHello from
+	// advertising "h2" in ALPN. When a server prefers h2 (Fly's edge does)
+	// the negotiation lands on h2, the http.Transport receives raw h2
+	// frames on an HTTP/1 socket, and connectOnce errors with
+	// "malformed HTTP response \"\\x00\\x00\\x18\\x04...\"" indefinitely.
+	// Pinning TLSClientConfig.NextProtos = ["http/1.1"] is what actually
+	// removes h2 from the offer (qfg-hpqj).
+	if tr.TLSClientConfig == nil {
+		t.Fatal("expected TLSClientConfig to be set so ALPN advertises only http/1.1")
+	}
+	if got, want := tr.TLSClientConfig.NextProtos, []string{"http/1.1"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("TLSClientConfig.NextProtos = %v, want %v", got, want)
+	}
+}
+
+// TestSSEClientNegotiatesHTTP11AgainstH2PreferringServer is the end-to-end
+// regression for qfg-hpqj: prior to the fix, the SSE transport's TLS
+// ClientHello advertised "h2, http/1.1" in ALPN. A server that prefers h2
+// (Fly's TLS edge) would pick h2, send raw HTTP/2 frames over a socket the
+// transport tried to parse as HTTP/1, and every connectOnce failed with a
+// "malformed HTTP response" error — silently, since failures don't log.
+// All existing SSE unit tests use httptest.NewServer (plaintext) so this
+// path was uncovered. This test starts a TLS server that ADVERTISES h2 first
+// in ALPN and asserts the SSE client's default transport still negotiates
+// http/1.1.
+func TestSSEClientNegotiatesHTTP11AgainstH2PreferringServer(t *testing.T) {
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = &tls.Config{NextProtos: []string{"h2", "http/1.1"}}
+	srv.StartTLS()
+	defer srv.Close()
+
+	c := newSSEClient(sseClientConfig{
+		URL:        srv.URL,
+		APIKey:     "test-key",
+		OnEnvelope: func(*ConfigEnvelope) {},
+	})
+
+	tr, ok := c.cfg.Client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport on default SSE client, got %T", c.cfg.Client.Transport)
+	}
+	// Trust the test cert without disturbing NextProtos — that's the
+	// behavior under test.
+	pool := x509.NewCertPool()
+	pool.AddCert(srv.Certificate())
+	tr.TLSClientConfig.RootCAs = pool
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.cfg.Client.Do(req)
+	if err != nil {
+		t.Fatalf("request failed (likely h2 negotiated then parsed as h1): %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.Proto != "HTTP/1.1" {
+		t.Errorf("negotiated protocol = %q, want HTTP/1.1 (server preferred h2; ALPN must have offered only http/1.1)", resp.Proto)
 	}
 }
 

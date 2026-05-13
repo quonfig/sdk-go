@@ -2,6 +2,30 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 0.0.22 - 2026-05-13
+
+### Fixed
+
+- **SSE no longer silently fails against h2-preferring TLS edges (qfg-hpqj).**
+  The SSE socket's "force HTTP/1.1" transport setup was incomplete: setting
+  `TLSNextProto` to an empty map disabled Go's automatic h2 RoundTripper
+  dispatch but did NOT remove `"h2"` from the TLS ALPN advertisement. Against
+  Fly's TLS edge (staging and production), which prefers h2, every
+  `connectOnce` attempt landed on h2, received raw HTTP/2 frames on a socket
+  the transport parsed as HTTP/1, and errored with
+  `malformed HTTP response "\x00\x00\x18\x04..."` — silently, since the
+  failure path didn't log. The bug was latent in production because all
+  existing consumers use `WithFallbackPoll` or the legacy
+  `WithRefreshInterval`; SSE-only callers (the new synthetic monitor) hung
+  in `ConnectionState() = "initializing"` indefinitely. Fix pins
+  `TLSClientConfig.NextProtos = ["http/1.1"]` so ALPN offers only http/1.1.
+
+### Changed
+
+- `connectOnce` now logs `quonfig: SSE connect failed` (and the non-200
+  variant) at debug level with the URL and error. Previously failures were
+  silent — the qfg-hpqj investigation lost ~30 minutes to that gap.
+
 ## 0.0.21 - 2026-05-11
 
 ### Changed
