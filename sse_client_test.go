@@ -485,7 +485,7 @@ func TestSSEClientNegotiatesHTTP11AgainstH2PreferringServer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("request failed (likely h2 negotiated then parsed as h1): %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.Proto != "HTTP/1.1" {
 		t.Errorf("negotiated protocol = %q, want HTTP/1.1 (server preferred h2; ALPN must have offered only http/1.1)", resp.Proto)
 	}
