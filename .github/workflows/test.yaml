@@ -27,7 +27,10 @@ jobs:
         with:
           repository: quonfig/integration-test-data
           path: integration-test-data
-          ref: main
+          # Pinned to a tag (not main) so a typo in shared YAML can't
+          # break every SDK's CI at once. Bump to a newer tag when
+          # adopting new test cases. See integration-test-data/RELEASING.md.
+          ref: v2026.05.13
 
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
