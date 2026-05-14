@@ -44,6 +44,13 @@ jobs:
     # docker pull. Run will fail fast inside the scenario via its own
     # wall_clock_seconds, so this only kicks in if something hangs.
     timeout-minutes: 75
+    # The `secrets` context cannot be referenced in step `if:`
+    # conditions, so surface the token's presence as a job-level env
+    # var. Dependabot-triggered runs have no access to repo Actions
+    # secrets, so HAS_REPO_TOKEN is 'false' for them and the chaos
+    # harness steps below are skipped rather than hard failing.
+    env:
+      HAS_REPO_TOKEN: ${{ secrets.QUONFIG_REPO_TOKEN != '' }}
     steps:
       - name: Checkout sdk-go
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -72,7 +79,7 @@ jobs:
         # chaos result anyway, and Test (Go 1.25/1.26) still gates it.
         # On main, tags, and normal PRs the secret is present and the
         # full harness runs.
-        if: ${{ secrets.QUONFIG_REPO_TOKEN != '' }}
+        if: env.HAS_REPO_TOKEN == 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           repository: quonfig/api-delivery
@@ -80,7 +87,7 @@ jobs:
           ref: main
           token: ${{ secrets.QUONFIG_REPO_TOKEN }}
 
-      - if: ${{ secrets.QUONFIG_REPO_TOKEN != '' }}
+      - if: env.HAS_REPO_TOKEN == 'true'
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
@@ -89,18 +96,18 @@ jobs:
             api-delivery/go.sum
 
       - name: Verify docker compose available
-        if: ${{ secrets.QUONFIG_REPO_TOKEN != '' }}
+        if: env.HAS_REPO_TOKEN == 'true'
         run: docker compose version
 
       - name: Skipped (no api-delivery access token)
-        if: ${{ secrets.QUONFIG_REPO_TOKEN == '' }}
+        if: env.HAS_REPO_TOKEN != 'true'
         run: |
           echo "QUONFIG_REPO_TOKEN is not available to this run" \
                "(expected for Dependabot PRs)." \
                "Skipping the chaos harness; Test jobs still gate this PR."
 
       - name: Run chaos harness
-        if: ${{ secrets.QUONFIG_REPO_TOKEN != '' }}
+        if: env.HAS_REPO_TOKEN == 'true'
         working-directory: sdk-go
         env:
           # Smoke skips 11-null-hypothesis (30 min idle). Full suite
