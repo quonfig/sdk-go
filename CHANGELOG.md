@@ -2,6 +2,32 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 0.0.23 - 2026-05-14
+
+CI and release-infrastructure only — no SDK runtime or public API changes.
+
+### Changed
+
+- **Chaos harness wired as a release gate (qfg-47c2.4, qfg-f26e).** The
+  cross-SDK chaos harness (toxiproxy + `integration-test-data/chaos`
+  scenarios) now runs on every push to `main`, every PR, and on tags via a
+  new `chaos.yaml` workflow. `integration-test-data` is pinned to
+  `v2026.05.13` so the gate only moves when scenarios are deliberately
+  rev'd.
+- **Chaos workflow no longer hard-fails on Dependabot PRs.** Dependabot runs
+  have no access to repo Actions secrets, so the private `api-delivery`
+  checkout (which needs `QUONFIG_REPO_TOKEN`) used to fail the chaos job for
+  every dependency-bump PR. The harness steps are now gated on a
+  `HAS_REPO_TOKEN` job env var and skipped cleanly when the token is absent;
+  the full harness still runs on `main`, tags, and normal PRs.
+- **CI action bumps:** `actions/checkout` 4.3.1 → 6.0.2 (#4),
+  `golangci/golangci-lint-action` 8.0.0 → 9.2.0 (#3), `actions/setup-go`
+  5.6.0 → 6.4.0 (#2).
+
+### Fixed
+
+- Satisfied `errcheck` on `resp.Body.Close` in the SSE TLS ALPN test.
+
 ## 0.0.22 - 2026-05-13
 
 ### Fixed
