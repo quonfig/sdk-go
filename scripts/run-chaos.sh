@@ -61,10 +61,17 @@ API_BIN="$SDK_GO_DIR/.chaos-api-delivery"
 ( cd "$REPO_ROOT/api-delivery" && GOWORK=off go build -o "$API_BIN" ./cmd/server )
 
 echo "==> starting api-delivery on :$API_PORT (FIXTURE_DIR=integration-test-data/data/integration-tests)"
+# SSE_HEARTBEAT_INTERVAL=1s mirrors the env chaos_test.go's own
+# startChaosAPIDelivery sets (qfg-47c2.28). Production heartbeats are 30s,
+# but the chaos run uses a 5s client read deadline (testSSEReadTimeout) for
+# speed, so the server must keepalive faster than that or the deadline trips
+# before the first heartbeat lands and scenario 01-baseline / 03-latency
+# show spurious worker restarts (qfg-f26e).
 PORT="$API_PORT" \
   FIXTURE_DIR="$REPO_ROOT/integration-test-data/data/integration-tests" \
   SDK_KEYS_FILE="$REPO_ROOT/api-delivery/testdata/fixture-sdk-keys.json" \
   QUONFIG_ENVIRONMENT=development \
+  SSE_HEARTBEAT_INTERVAL=1s \
   "$API_BIN" &
 API_DELIVERY_PID=$!
 
