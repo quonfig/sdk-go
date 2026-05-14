@@ -61,20 +61,27 @@ jobs:
           ref: v2026.05.13
 
       - name: Checkout api-delivery
+        # api-delivery is private; the default GITHUB_TOKEN cannot read
+        # it. A PAT or fine-grained token with read access to
+        # quonfig/api-delivery must be configured as the repo secret
+        # QUONFIG_REPO_TOKEN. Dependabot-triggered runs do NOT have
+        # access to repo Actions secrets (they use a separate
+        # dependabot secret store), so for those runs the token is
+        # empty and the chaos harness is skipped rather than hard
+        # failing — a GitHub Actions version bump can't affect the
+        # chaos result anyway, and Test (Go 1.25/1.26) still gates it.
+        # On main, tags, and normal PRs the secret is present and the
+        # full harness runs.
+        if: ${{ secrets.QUONFIG_REPO_TOKEN != '' }}
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
-          # api-delivery is private; the default GITHUB_TOKEN cannot
-          # read it. A PAT or fine-grained token with read access to
-          # quonfig/api-delivery must be configured as the repo secret
-          # QUONFIG_REPO_TOKEN. Without it this step fails fast and
-          # the chaos gate is red — by design, until the secret is
-          # provisioned.
           repository: quonfig/api-delivery
           path: api-delivery
           ref: main
           token: ${{ secrets.QUONFIG_REPO_TOKEN }}
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
+      - if: ${{ secrets.QUONFIG_REPO_TOKEN != '' }}
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5
         with:
           go-version: '1.26'
           cache-dependency-path: |
@@ -82,9 +89,18 @@ jobs:
             api-delivery/go.sum
 
       - name: Verify docker compose available
+        if: ${{ secrets.QUONFIG_REPO_TOKEN != '' }}
         run: docker compose version
 
+      - name: Skipped (no api-delivery access token)
+        if: ${{ secrets.QUONFIG_REPO_TOKEN == '' }}
+        run: |
+          echo "QUONFIG_REPO_TOKEN is not available to this run" \
+               "(expected for Dependabot PRs)." \
+               "Skipping the chaos harness; Test jobs still gate this PR."
+
       - name: Run chaos harness
+        if: ${{ secrets.QUONFIG_REPO_TOKEN != '' }}
         working-directory: sdk-go
         env:
           # Smoke skips 11-null-hypothesis (30 min idle). Full suite
