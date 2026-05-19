@@ -2,6 +2,20 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Added
+
+- **Opt-in datadir auto-reload (qfg-mol-34b).** New `WithDataDirAutoReload(bool)`
+  and `WithDataDirAutoReloadDebounce(time.Duration)` options enable filesystem
+  watching for the configured `DataDir`. When enabled, the SDK debounces
+  filesystem-event bursts (default 200ms) via fsnotify, re-reads the workspace
+  via `loadWorkspaceEnvelope`, parses-then-swaps the envelope on success, and
+  fires the existing `OnConfigUpdate` callback. Default off. Read-only
+  filesystems, missing directories, and other registration failures are
+  logged and the SDK continues without auto-reload rather than panicking.
+  Symlinked datadirs are resolved at start via `filepath.EvalSymlinks`.
+
 ## 0.0.23 - 2026-05-14
 
 CI and release-infrastructure only — no SDK runtime or public API changes.

@@ -62,6 +62,7 @@ type Client struct {
 	sse       *sseClient
 	sup       *supervisor
 	fallback  *fallbackPoller
+	watcher   *datadirWatcher
 
 	mu                     sync.RWMutex
 	initializationDone     chan struct{}
@@ -138,6 +139,9 @@ func NewClient(opts ...Option) (*Client, error) {
 		}
 		client.installEnvelope(envelope)
 		client.finishInitialization(true)
+		if o.DataDirAutoReload {
+			client.startDatadirWatcher()
+		}
 		return client, nil
 	}
 
@@ -180,6 +184,7 @@ func (c *Client) Close() {
 		c.mu.Lock()
 		sse := c.sse
 		sup := c.sup
+		watcher := c.watcher
 		c.mu.Unlock()
 		if sse != nil {
 			sse.Stop()
@@ -187,10 +192,78 @@ func (c *Client) Close() {
 		if sup != nil {
 			sup.Stop()
 		}
+		if watcher != nil {
+			watcher.Close()
+		}
 		if c.telemetry != nil {
 			c.telemetry.Stop()
 		}
 	})
+}
+
+// startDatadirWatcher spawns the filesystem watcher that reloads the
+// in-memory envelope on disk changes. Registration failures are logged and
+// the SDK continues without auto-reload — read-only filesystems and
+// immutable containers should never cause a panic.
+func (c *Client) startDatadirWatcher() {
+	logger := c.opts.Logger
+	w := newDatadirWatcher(datadirWatcherConfig{
+		Datadir:  c.opts.DataDir,
+		Debounce: c.opts.DataDirAutoReloadDebounce,
+		Logger:   logger,
+		OnChange: c.reloadDatadir,
+		OnError: func(err error) {
+			logger.Warn("quonfig: datadir auto-reload watcher error",
+				slog.String("datadir", c.opts.DataDir),
+				slog.Any("err", err),
+			)
+		},
+	})
+	if !w.Start() {
+		logger.Warn("quonfig: datadir auto-reload disabled (watcher failed to start)",
+			slog.String("datadir", c.opts.DataDir),
+		)
+		return
+	}
+	c.mu.Lock()
+	// If Close ran while we were starting, undo the registration.
+	select {
+	case <-c.closeCh:
+		c.mu.Unlock()
+		w.Close()
+		return
+	default:
+	}
+	c.watcher = w
+	c.mu.Unlock()
+	logger.Info("quonfig: datadir auto-reload watching",
+		slog.String("datadir", c.opts.DataDir),
+		slog.Duration("debounce", c.effectiveDebounce()),
+	)
+}
+
+// reloadDatadir is the parse-then-swap fire site invoked by the watcher
+// after a debounced burst. On parse failure we keep the old envelope and log
+// rather than expose a broken state to readers.
+func (c *Client) reloadDatadir() {
+	envelope, err := loadWorkspaceEnvelope(c.opts.DataDir, c.opts.Environment)
+	if err != nil {
+		c.opts.Logger.Warn("quonfig: datadir auto-reload skipped (parse failed)",
+			slog.String("datadir", c.opts.DataDir),
+			slog.Any("err", err),
+		)
+		return
+	}
+	c.refreshMu.Lock()
+	c.installEnvelope(envelope)
+	c.refreshMu.Unlock()
+}
+
+func (c *Client) effectiveDebounce() time.Duration {
+	if c.opts.DataDirAutoReloadDebounce > 0 {
+		return c.opts.DataDirAutoReloadDebounce
+	}
+	return DefaultDataDirAutoReloadDebounce
 }
 
 // GetStringValue returns the string value for a config key.

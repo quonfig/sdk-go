@@ -90,6 +90,18 @@ type Options struct {
 	// from within the callback.
 	OnConfigUpdate func()
 
+	// DataDirAutoReload enables filesystem watching when DataDir is set. The
+	// SDK re-reads the datadir whenever a file inside changes, atomically
+	// swaps the envelope on a successful parse, and fires OnConfigUpdate.
+	// Default false — opt in for dev / git-pull workflows.
+	DataDirAutoReload bool
+
+	// DataDirAutoReloadDebounce coalesces filesystem-event bursts (atomic-rename
+	// editor saves, git pull touching dozens of files). The SDK waits this long
+	// after the most recent event before re-reading. Zero means use
+	// DefaultDataDirAutoReloadDebounce (200ms).
+	DataDirAutoReloadDebounce time.Duration
+
 	// SSEEnabled controls whether a background SSE streamer is opened after
 	// initialization. Default true. Set false for pure HTTP-poll behavior.
 	// When DataDir is set (local dev) or no APIKey is configured, SSE is a
@@ -459,6 +471,33 @@ func WithTelemetryURL(url string) Option {
 func WithOnConfigUpdate(fn func()) Option {
 	return func(o *Options) error {
 		o.OnConfigUpdate = fn
+		return nil
+	}
+}
+
+// WithDataDirAutoReload enables filesystem watching for the configured
+// DataDir. When enabled, the SDK debounces filesystem events and re-reads
+// the datadir on change, firing OnConfigUpdate on each successful swap.
+// Default false. Registration failures (read-only filesystems, immutable
+// containers) are logged and the SDK runs without auto-reload — it never
+// panics on a watcher failure.
+func WithDataDirAutoReload(enabled bool) Option {
+	return func(o *Options) error {
+		o.DataDirAutoReload = enabled
+		return nil
+	}
+}
+
+// WithDataDirAutoReloadDebounce tunes how long the watcher waits after the
+// most recent filesystem event before re-reading the datadir. Defaults to
+// DefaultDataDirAutoReloadDebounce (200ms). Has no effect unless
+// WithDataDirAutoReload(true) is also set.
+func WithDataDirAutoReloadDebounce(d time.Duration) Option {
+	return func(o *Options) error {
+		if d < 0 {
+			return errors.New("data dir auto reload debounce must not be negative")
+		}
+		o.DataDirAutoReloadDebounce = d
 		return nil
 	}
 }
