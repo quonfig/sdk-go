@@ -476,11 +476,31 @@ func WithOnConfigUpdate(fn func()) Option {
 }
 
 // WithDataDirAutoReload enables filesystem watching for the configured
-// DataDir. When enabled, the SDK debounces filesystem events and re-reads
-// the datadir on change, firing OnConfigUpdate on each successful swap.
-// Default false. Registration failures (read-only filesystems, immutable
-// containers) are logged and the SDK runs without auto-reload — it never
-// panics on a watcher failure.
+// DataDir. Default false — datadir mode is silent until you opt in.
+//
+// When enabled, the SDK walks the resolved datadir at startup, registers
+// every subdirectory with fsnotify, debounces filesystem-event bursts
+// (default DefaultDataDirAutoReloadDebounce, 200ms — tune with
+// WithDataDirAutoReloadDebounce), then re-reads the workspace, parses it,
+// and atomically swaps in the new envelope on success. The existing
+// OnConfigUpdate callback fires on each successful swap; on parse failure
+// the SDK keeps serving the previous envelope and the callback is NOT
+// fired.
+//
+// Symlinks are resolved once at Start via filepath.EvalSymlinks — editing
+// the file the symlink points at is detected, but atomic flips that
+// retarget the symlink itself are not.
+//
+// Graceful degrade: if watch registration fails (read-only filesystem,
+// immutable container, missing directory, EMFILE), the SDK logs at WARN
+// via the configured WithLogger and continues serving the envelope it
+// loaded at NewClient. It never panics on a watcher failure and
+// NewClient does not return an error from a failed registration.
+//
+// Shutdown: Client.Close stops the watcher goroutine, releases the
+// underlying fsnotify handle, and clears any pending debounce timer.
+// There is no separate handle to manage — the watcher lifecycle is tied
+// to the client.
 func WithDataDirAutoReload(enabled bool) Option {
 	return func(o *Options) error {
 		o.DataDirAutoReload = enabled
@@ -488,10 +508,21 @@ func WithDataDirAutoReload(enabled bool) Option {
 	}
 }
 
-// WithDataDirAutoReloadDebounce tunes how long the watcher waits after the
-// most recent filesystem event before re-reading the datadir. Defaults to
-// DefaultDataDirAutoReloadDebounce (200ms). Has no effect unless
-// WithDataDirAutoReload(true) is also set.
+// WithDataDirAutoReloadDebounce tunes how long the watcher waits after
+// the most recent filesystem event before re-reading the datadir. Bursts
+// of events (atomic-rename editor saves, `git pull` touching dozens of
+// files) coalesce into a single re-read inside this window.
+//
+// Defaults to DefaultDataDirAutoReloadDebounce (200ms) — long enough to
+// absorb the 3–5 events typical editors emit in <50ms, short enough that
+// interactive edits feel immediate. Raise it if you have a noisy producer
+// (continuously regenerating files) and would rather see one reload per
+// second than per save. Lower it only if you have measured 200ms is
+// meaningfully too slow.
+//
+// Has no effect unless WithDataDirAutoReload(true) is also set. A
+// negative duration is rejected at option-apply time; zero falls back to
+// the default.
 func WithDataDirAutoReloadDebounce(d time.Duration) Option {
 	return func(o *Options) error {
 		if d < 0 {
