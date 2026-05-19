@@ -2,7 +2,7 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
-## Unreleased
+## 0.0.24 - 2026-05-19
 
 ### Added
 
@@ -14,7 +14,18 @@ All notable changes to the Quonfig Go SDK are documented here.
   fires the existing `OnConfigUpdate` callback. Default off. Read-only
   filesystems, missing directories, and other registration failures are
   logged and the SDK continues without auto-reload rather than panicking.
-  Symlinked datadirs are resolved at start via `filepath.EvalSymlinks`.
+  Symlinked datadirs are resolved at start via `filepath.EvalSymlinks`. New
+  dependency: `github.com/fsnotify/fsnotify v1.10.1`.
+
+### Documentation
+
+- **README + godoc for auto-reload (qfg-zx3y.2).** README gains a "Datadir
+  mode: auto-reload on file changes" section covering opt-in, when (not) to
+  enable, the parse-then-swap / debounce / symlink / graceful-degrade /
+  shutdown contract, and a debounce-tuning snippet. Godoc on
+  `WithDataDirAutoReload` and `WithDataDirAutoReloadDebounce` expanded to
+  surface the same contract via `go doc`. Cross-link to
+  docs.quonfig.com/docs/how-tos/open-source-local.
 
 ## 0.0.23 - 2026-05-14
 
