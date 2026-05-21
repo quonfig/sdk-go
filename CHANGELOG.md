@@ -2,6 +2,25 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 0.0.25 - 2026-05-21
+
+CI, test, and dependency only — no SDK runtime or public API changes. Cut to
+keep the cross-SDK version matrix aligned.
+
+### Changed
+
+- **CI: `actions/upload-artifact` 4.6.2 → 7.0.1 (#8).** Dependabot bump of the
+  GitHub Actions artifact-upload action used by the workflows.
+- **Integration tests pinned to `integration-test-data` v2026.05.20 (#10).**
+  Bumped the pinned shared-test-data tag and added a guard against stale
+  generated tests so the suite only moves when scenarios are deliberately
+  rev'd.
+
+### Internal
+
+- Added the generated `datadir_value_type` integration test covering datadir
+  int/double value-type coercion (qfg-bwwj).
+
 ## 0.0.24 - 2026-05-19
 
 ### Added
