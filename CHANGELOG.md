@@ -2,7 +2,7 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
-## Unreleased
+## 0.0.26 - 2026-05-28
 
 ### Removed
 
