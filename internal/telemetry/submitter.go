@@ -41,7 +41,7 @@ type Config struct {
 	TelemetryURL               string
 	SyncInterval               time.Duration
 	CollectEvaluationSummaries bool
-	ContextTelemetryMode       string // "", "shapes", "periodic_example"
+	ContextTelemetryMode       string // "", "shapes_only", "periodic_example" ("shapes" still accepted as a deprecated alias for "shapes_only")
 	InstanceHash               string
 	HTTPClient                 *http.Client
 }
@@ -70,7 +70,9 @@ func NewSubmitter(cfg Config) *Submitter {
 	case "periodic_example":
 		s.shapeAggregator = NewContextShapeAggregator()
 		s.exampleAggregator = NewExampleContextAggregator()
-	case "shapes":
+	case "shapes_only", "shapes":
+		// "shapes" is the pre-1.0 wire value, kept as a deprecated alias
+		// for one minor cycle while consumers migrate to "shapes_only".
 		s.shapeAggregator = NewContextShapeAggregator()
 	}
 

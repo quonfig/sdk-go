@@ -144,16 +144,35 @@ func TestSubmitter_DisabledTelemetry(t *testing.T) {
 func TestSubmitter_ContextTelemetryShapesOnly(t *testing.T) {
 	s := NewSubmitter(Config{
 		CollectEvaluationSummaries: false,
+		ContextTelemetryMode:       "shapes_only",
+		SyncInterval:               time.Minute,
+		InstanceHash:               "test",
+	})
+
+	if s.shapeAggregator == nil {
+		t.Error("expected shape aggregator when mode is 'shapes_only'")
+	}
+	if s.exampleAggregator != nil {
+		t.Error("expected nil example aggregator when mode is 'shapes_only'")
+	}
+}
+
+// TestSubmitter_ContextTelemetryShapes_DeprecatedAlias ensures the pre-1.0
+// "shapes" value continues to enable shape-only telemetry for one minor cycle
+// while consumers migrate to the unified "shapes_only" value.
+func TestSubmitter_ContextTelemetryShapes_DeprecatedAlias(t *testing.T) {
+	s := NewSubmitter(Config{
+		CollectEvaluationSummaries: false,
 		ContextTelemetryMode:       "shapes",
 		SyncInterval:               time.Minute,
 		InstanceHash:               "test",
 	})
 
 	if s.shapeAggregator == nil {
-		t.Error("expected shape aggregator when mode is 'shapes'")
+		t.Error("expected shape aggregator when deprecated mode 'shapes' is supplied")
 	}
 	if s.exampleAggregator != nil {
-		t.Error("expected nil example aggregator when mode is 'shapes'")
+		t.Error("expected nil example aggregator when deprecated mode 'shapes' is supplied")
 	}
 }
 

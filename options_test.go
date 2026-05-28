@@ -130,3 +130,18 @@ func TestQuonfigDomainEnvVar(t *testing.T) {
 		}
 	})
 }
+
+// TestContextTelemetryShapesConstant pins the wire value for the shape-only
+// context-telemetry mode. The SDK family agreed on "shapes_only" in qfg-6svs;
+// see project/plans/sdk-1.0-unification.md (Section 1).
+func TestContextTelemetryShapesConstant(t *testing.T) {
+	if got, want := string(ContextTelemetryShapes), "shapes_only"; got != want {
+		t.Errorf("ContextTelemetryShapes = %q, want %q", got, want)
+	}
+	if got, want := string(ContextTelemetryPeriodicExample), "periodic_example"; got != want {
+		t.Errorf("ContextTelemetryPeriodicExample = %q, want %q", got, want)
+	}
+	if got, want := string(ContextTelemetryNone), ""; got != want {
+		t.Errorf("ContextTelemetryNone = %q, want %q", got, want)
+	}
+}

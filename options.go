@@ -25,9 +25,17 @@ const (
 	// ContextTelemetryNone disables context telemetry.
 	ContextTelemetryNone ContextTelemetryMode = ""
 	// ContextTelemetryShapes sends only context field names and types.
-	ContextTelemetryShapes ContextTelemetryMode = "shapes"
+	// The wire value is "shapes_only" — the value the SDK family agreed on
+	// in qfg-6svs (see project/plans/sdk-1.0-unification.md, Section 1).
+	ContextTelemetryShapes ContextTelemetryMode = "shapes_only"
 	// ContextTelemetryPeriodicExample sends context shapes and periodic example values.
 	ContextTelemetryPeriodicExample ContextTelemetryMode = "periodic_example"
+
+	// contextTelemetryShapesLegacy is the pre-1.0 wire value for shape-only
+	// context telemetry. The submitter still accepts it for one minor cycle
+	// so callers passing the literal "shapes" keep working. Remove after
+	// the unification deprecation window closes.
+	contextTelemetryShapesLegacy = "shapes"
 )
 
 // Option is a functional option for configuring the Client.
