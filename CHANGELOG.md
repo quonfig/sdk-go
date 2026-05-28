@@ -24,6 +24,12 @@ All notable changes to the Quonfig Go SDK are documented here.
   The `WithFallbackPoll(enabled, interval)` signature is unchanged; pass
   `WithFallbackPoll(false, 0)` to opt out. See
   `project/plans/sdk-1.0-unification.md` Section 1.
+- **Context telemetry wire value renamed `"shapes"` → `"shapes_only"`
+  (qfg-6svs).** `ContextTelemetryShapes` now serializes as `"shapes_only"`,
+  the value the SDK family agreed on. `WithContextTelemetryMode` still accepts
+  the legacy `"shapes"` literal as a deprecated alias for one minor cycle and
+  normalizes it to the canonical mode. See
+  `project/plans/sdk-1.0-unification.md` Section 1.
 
 ## 0.0.25 - 2026-05-21
 

@@ -411,9 +411,14 @@ func WithCollectEvaluationSummaries(enabled bool) Option {
 	}
 }
 
-// WithContextTelemetryMode sets the context telemetry mode.
+// WithContextTelemetryMode sets the context telemetry mode. The pre-1.0 wire
+// value "shapes" is accepted as a deprecated alias for one minor cycle and
+// normalized to the canonical ContextTelemetryShapes ("shapes_only").
 func WithContextTelemetryMode(mode ContextTelemetryMode) Option {
 	return func(o *Options) error {
+		if mode == contextTelemetryShapesLegacy {
+			mode = ContextTelemetryShapes
+		}
 		o.ContextTelemetryMode = mode
 		return nil
 	}
