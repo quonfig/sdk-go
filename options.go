@@ -74,11 +74,6 @@ type Options struct {
 	// FallbackPollInterval is how often the Layer 2 poller fetches once
 	// engaged. Must be >0 when FallbackPollEnabled is true. Defaults to 60s.
 	FallbackPollInterval time.Duration
-	// refreshIntervalDeprecated is set by WithRefreshInterval so NewClient
-	// can emit a one-shot deprecation warning at startup. The deprecated
-	// option also sets FallbackPollEnabled/Interval, so callers see the new
-	// fallback-only semantic transparently.
-	refreshIntervalDeprecated bool
 
 	// Logger is the *slog.Logger used by the SDK to emit warnings (e.g. the
 	// dev-context tokens loader). Defaults to slog.Default() when not set via
@@ -357,34 +352,6 @@ func WithEnvLookup(fn EnvLookupFunc) Option {
 	}
 }
 
-// WithRefreshInterval enables background polling refreshes.
-//
-// Deprecated: prior to v0.0.21 this option ran PARALLEL polling on top of
-// SSE. As of v0.0.21 the SDK polls fallback-only — the poller is idle while
-// SSE is connected and engages only after SSE has been disconnected for
-// >=120s. WithRefreshInterval(d) is preserved as a thin shim over
-// WithFallbackPoll(true, d); new code should call WithFallbackPoll directly.
-// A one-shot deprecation warning is logged at NewClient time so deployers
-// can spot the call site.
-func WithRefreshInterval(d time.Duration) Option {
-	return func(o *Options) error {
-		if d < 0 {
-			return errors.New("refresh interval must not be negative")
-		}
-		o.refreshIntervalDeprecated = true
-		if d == 0 {
-			// Legacy semantics: zero disables polling entirely. Don't
-			// silently turn fallback polling on.
-			o.FallbackPollEnabled = false
-			o.FallbackPollInterval = 0
-			return nil
-		}
-		o.FallbackPollEnabled = true
-		o.FallbackPollInterval = d
-		return nil
-	}
-}
-
 // WithFallbackPoll configures the Layer 2 fallback poller. The poller is
 // idle while the SSE stream is connected; it engages only after SSE has
 // been disconnected for the default 120s threshold, and ticks at the given
@@ -394,9 +361,6 @@ func WithRefreshInterval(d time.Duration) Option {
 // Default: enabled with a 60s interval, matching sdk-node/python/ruby/java.
 // Call WithFallbackPoll(false, 0) only if you want silent staleness during
 // SSE outages.
-//
-// Replaces the deprecated WithRefreshInterval, which ran parallel polling
-// on top of SSE.
 func WithFallbackPoll(enabled bool, interval time.Duration) Option {
 	return func(o *Options) error {
 		if enabled && interval <= 0 {

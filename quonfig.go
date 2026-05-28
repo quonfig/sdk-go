@@ -77,8 +77,8 @@ type Client struct {
 
 // NewClient creates a new Quonfig client with the given options.
 // If an API key is configured, the client begins an initial config download and
-// wires local evaluation automatically. Background refresh is opt-in via
-// WithFallbackPoll (the legacy WithRefreshInterval is preserved as a shim).
+// wires local evaluation automatically. Background refresh is configured via
+// WithFallbackPoll (default: enabled, 60s interval).
 func NewClient(opts ...Option) (*Client, error) {
 	o := defaultOptions()
 	for _, opt := range opts {
@@ -577,8 +577,7 @@ func (c *Client) startInitialization() {
 
 // logPollingMode announces the chosen Layer 1 (SSE) and Layer 2 (fallback
 // poll) configuration at startup. Per qfg-47c2.20 we emit one line so
-// deployers can confirm they're on the new fallback-only semantic after
-// upgrading from the parallel-poll WithRefreshInterval era.
+// deployers can confirm the configured polling semantics.
 func (c *Client) logPollingMode() {
 	mode := "sse-only"
 	if c.opts.FallbackPollEnabled {
@@ -601,14 +600,6 @@ func (c *Client) logPollingMode() {
 		attrs = append(attrs, slog.Duration("fallback_poll_threshold", DefaultFallbackPollThreshold))
 	}
 	c.opts.Logger.Info("quonfig: polling configuration", attrs...)
-	if c.opts.refreshIntervalDeprecated {
-		c.opts.Logger.Warn(
-			"quonfig: WithRefreshInterval is deprecated — prefer WithFallbackPoll(true, interval). "+
-				"Polling is now fallback-only: it engages after SSE has been disconnected for "+
-				"120s rather than running in parallel with SSE.",
-			slog.Duration("interval", c.opts.FallbackPollInterval),
-		)
-	}
 }
 
 // startBackgroundWorkers spawns SSE (Layer 1) and, when configured, the

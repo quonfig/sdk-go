@@ -2,11 +2,10 @@ package quonfig
 
 // Layer 2 fallback poller (bead qfg-47c2.20).
 //
-// Today the SDK polls in PARALLEL with SSE whenever WithRefreshInterval is set.
-// That doubles outbound traffic in the happy path. The cross-SDK plan
-// standardizes on fallback-only polling: while SSE is connected the poller is
-// idle; when SSE has been disconnected for >=120s the poller engages and
-// fetches at the configured interval; when SSE recovers the poller disengages.
+// The cross-SDK plan standardizes on fallback-only polling: while SSE is
+// connected the poller is idle; when SSE has been disconnected for >=120s the
+// poller engages and fetches at the configured interval; when SSE recovers
+// the poller disengages.
 //
 // fallbackPoller is wired into the supervisor as a Layer 2 worker. The
 // supervisor owns its lifecycle (restart on panic, stop on Close); this type
@@ -24,7 +23,7 @@ import (
 const DefaultFallbackPollThreshold = 120 * time.Second
 
 // DefaultFallbackPollInterval is the cadence used once Layer 2 has engaged.
-// Matches the legacy WithRefreshInterval recommendation; callers can override.
+// Matches sdk-node/python/ruby/java; callers can override with WithFallbackPoll.
 const DefaultFallbackPollInterval = 60 * time.Second
 
 // fallbackPollerConfig carries the knobs the Layer 2 worker needs.

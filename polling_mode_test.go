@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// Tests for qfg-47c2.20: WithRefreshInterval deprecation shim, the startup
-// polling-mode announcement, and the Client's exposed ConnectionState /
-// FallbackPollerActive accessors when no background workers are running.
+// Tests for qfg-47c2.20: the startup polling-mode announcement, and the
+// Client's exposed ConnectionState / FallbackPollerActive accessors when no
+// background workers are running.
 
 func TestPollingModeAnnouncedAtStartup(t *testing.T) {
 	var buf bytes.Buffer
@@ -49,67 +49,6 @@ func TestPollingModeAnnouncedAtStartup(t *testing.T) {
 	}
 	if !strings.Contains(out, "fallback_poll_interval=30s") {
 		t.Fatalf("expected fallback_poll_interval=30s in startup log, got: %q", out)
-	}
-}
-
-func TestWithRefreshIntervalEmitsDeprecationWarning(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-
-	client, err := NewClient(
-		WithAPIKey("test-key"),
-		WithAPIURLs([]string{"https://example.test"}),
-		WithSSE(true),
-		WithRefreshInterval(45*time.Second),
-		WithLogger(logger),
-		WithAllTelemetryDisabled(),
-		WithInitTimeout(50*time.Millisecond),
-	)
-	if err != nil {
-		t.Fatalf("NewClient: %v", err)
-	}
-	t.Cleanup(client.Close)
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		if strings.Contains(buf.String(), "WithRefreshInterval is deprecated") {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-
-	out := buf.String()
-	if !strings.Contains(out, "WithRefreshInterval is deprecated") {
-		t.Fatalf("expected deprecation warning for WithRefreshInterval, got: %q", out)
-	}
-	if !strings.Contains(out, "interval=45s") {
-		t.Fatalf("expected interval=45s in deprecation warning, got: %q", out)
-	}
-
-	// And the shim must turn fallback polling ON with the same interval.
-	if !client.opts.FallbackPollEnabled {
-		t.Fatalf("expected FallbackPollEnabled=true after WithRefreshInterval, got false")
-	}
-	if got := client.opts.FallbackPollInterval; got != 45*time.Second {
-		t.Errorf("FallbackPollInterval = %s, want 45s", got)
-	}
-}
-
-func TestWithRefreshIntervalZeroDisablesFallbackPoll(t *testing.T) {
-	client, err := NewClient(
-		WithAPIKey("test-key"),
-		WithAPIURLs([]string{"https://example.test"}),
-		WithRefreshInterval(0),
-		WithAllTelemetryDisabled(),
-		WithInitTimeout(50*time.Millisecond),
-	)
-	if err != nil {
-		t.Fatalf("NewClient: %v", err)
-	}
-	t.Cleanup(client.Close)
-
-	if client.opts.FallbackPollEnabled {
-		t.Errorf("expected FallbackPollEnabled=false when interval is 0, got true")
 	}
 }
 

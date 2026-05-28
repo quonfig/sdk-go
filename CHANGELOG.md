@@ -4,6 +4,16 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ## Unreleased
 
+### Removed
+
+- **`WithRefreshInterval` deleted (qfg-85wm).** The deprecated functional
+  option (a thin shim over `WithFallbackPoll(true, d)` that also logged a
+  one-shot deprecation warning) is gone ahead of v1.0.0. Callers must migrate
+  to `WithFallbackPoll(enabled, interval)`; the migration is mechanical
+  (`WithRefreshInterval(d)` → `WithFallbackPoll(true, d)`,
+  `WithRefreshInterval(0)` → `WithFallbackPoll(false, 0)`). See
+  `project/plans/sdk-1.0-unification.md` Section 1.
+
 ### Changed
 
 - **Layer 2 fallback polling is now ON by default (qfg-wb2n).** A
