@@ -11,9 +11,16 @@ type ConfigStoreGetter interface {
 
 // EvalMatch is the result of evaluating a config against a context.
 type EvalMatch struct {
-	IsMatch            bool
-	Value              *Value
-	RuleIndex          int
+	IsMatch   bool
+	Value     *Value
+	RuleIndex int
+	// IsWeighted is true when the matched value was a weighted_values block that
+	// was resolved through the WeightedValueResolver. It is the unambiguous
+	// signal for the SPLIT reason: WeightedValueIndex alone cannot distinguish a
+	// weighted value landing in bucket 0 from a non-weighted match.
+	IsWeighted bool
+	// WeightedValueIndex is the 0-based bucket index when IsWeighted is true; 0
+	// otherwise. Only meaningful when IsWeighted is true.
 	WeightedValueIndex int
 }
 
@@ -89,6 +96,7 @@ func (e *Evaluator) evaluateRules(cfg *Config, rules []Rule, ctx ContextValueGet
 					resolved, wvIndex := e.weighted.Resolve(wvData, cfg.Key, ctx)
 					if resolved != nil {
 						match.Value = resolved
+						match.IsWeighted = true
 						match.WeightedValueIndex = wvIndex
 					}
 				}

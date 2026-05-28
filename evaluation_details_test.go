@@ -165,6 +165,51 @@ func TestEvaluateDetails_Split_VariantAndMetadata(t *testing.T) {
 	}
 }
 
+// TestEvaluateDetails_Split_Bucket0_ReportsSplit guards qfg-hknp: a weighted
+// value that resolves to bucket index 0 must still report SPLIT, not STATIC.
+// A single-entry weighted_values block always resolves to index 0, so this is
+// deterministic regardless of the hash of the context.
+func TestEvaluateDetails_Split_Bucket0_ReportsSplit(t *testing.T) {
+	client := detailsClient(t, []ConfigResponse{
+		{
+			ID:        "cfg-split-0",
+			Key:       "weighted.bucket0",
+			Type:      ConfigTypeConfig,
+			ValueType: ValueTypeString,
+			Default: RuleSet{Rules: []Rule{
+				{
+					Criteria: []Criterion{{Operator: "ALWAYS_TRUE"}},
+					Value: Value{
+						Type: ValueTypeWeightedValues,
+						Value: &WeightedValuesData{
+							HashByPropertyName: "user.id",
+							WeightedValues: []WeightedValue{
+								{Weight: 1, Value: Value{Type: ValueTypeString, Value: "only-variant"}},
+							},
+						},
+					},
+				},
+			}},
+		},
+	}, nil)
+
+	ctx := NewContextSet().WithNamedContextValues("user", map[string]interface{}{"id": "user-123"})
+	d := client.EvaluateDetails("weighted.bucket0", ctx)
+
+	if d.Reason != ReasonSplit {
+		t.Fatalf("Reason = %v, want ReasonSplit (weighted value in bucket 0 must report SPLIT, not STATIC)", d.Reason)
+	}
+	if !strings.HasPrefix(d.Variant, "split:") {
+		t.Errorf("Variant = %q, want split:N", d.Variant)
+	}
+	if got := d.FlagMetadata["weightedValueIndex"]; got != int64(0) {
+		t.Errorf("FlagMetadata[weightedValueIndex] = %v (%T), want int64(0)", got, got)
+	}
+	if d.Value == nil || d.Value.StringValue() != "only-variant" {
+		t.Errorf("Value = %+v, want %q", d.Value, "only-variant")
+	}
+}
+
 func TestEvaluateDetails_FlagNotFound_TypedErrorCode(t *testing.T) {
 	client := detailsClient(t, []ConfigResponse{}, nil)
 

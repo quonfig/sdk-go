@@ -49,10 +49,11 @@ func (e *runtimeEvaluator) EvaluateConfigResponse(cfg *ConfigResponse, envID str
 	result.IsMatch = true
 	result.RuleIndex = match.RuleIndex
 	result.WeightedValueIndex = match.WeightedValueIndex
+	result.IsWeighted = match.IsWeighted
 
 	// Determine evaluation reason
 	switch {
-	case match.WeightedValueIndex > 0:
+	case match.IsWeighted:
 		result.Reason = ReasonSplit
 	case len(match.Value.Type) > 0 && match.RuleIndex == 0 && !hasTargetingRules(cfg):
 		result.Reason = ReasonStatic

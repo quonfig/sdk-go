@@ -72,6 +72,10 @@ type EvalResult struct {
 	WeightedValueIndex int
 	Reason             EvalReason
 	IsMatch            bool
+	// IsWeighted is true when the resolved value came from a weighted_values
+	// block. It drives the SPLIT reason unambiguously, including the bucket-0
+	// case where WeightedValueIndex is 0 (see qfg-hknp).
+	IsWeighted bool
 }
 
 // EvaluationDetails is the public, OpenFeature-shaped record of an evaluation.
