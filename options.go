@@ -66,9 +66,10 @@ type Options struct {
 	// engages only after SSE has been disconnected for FallbackPollThreshold
 	// (default 120s) and ticks at FallbackPollInterval until SSE recovers.
 	//
-	// Default false: an SSE-only deployment trusts the stream and accepts
-	// degraded freshness during outages. Set true (and pick an interval) to
-	// guarantee a poll-based refresh path during sustained disconnects.
+	// Default true: matches sdk-node/python/ruby/java so a customer who
+	// turns SSE off or hits a network policy that blocks streaming still
+	// gets a graceful poll-based refresh path instead of silent staleness.
+	// Pass WithFallbackPoll(false, 0) to opt out.
 	FallbackPollEnabled bool
 	// FallbackPollInterval is how often the Layer 2 poller fetches once
 	// engaged. Must be >0 when FallbackPollEnabled is true. Defaults to 60s.
@@ -178,6 +179,8 @@ func defaultOptions() Options {
 		InitTimeout:                10 * time.Second,
 		OnInitFailure:              ReturnError,
 		SSEEnabled:                 true,
+		FallbackPollEnabled:        true,
+		FallbackPollInterval:       60 * time.Second,
 		CollectEvaluationSummaries: true,
 		ContextTelemetryMode:       ContextTelemetryPeriodicExample,
 		TelemetrySyncInterval:      60 * time.Second,
@@ -386,7 +389,11 @@ func WithRefreshInterval(d time.Duration) Option {
 // idle while the SSE stream is connected; it engages only after SSE has
 // been disconnected for the default 120s threshold, and ticks at the given
 // interval until SSE recovers. Pass enabled=false to disable Layer 2
-// entirely (the default).
+// entirely.
+//
+// Default: enabled with a 60s interval, matching sdk-node/python/ruby/java.
+// Call WithFallbackPoll(false, 0) only if you want silent staleness during
+// SSE outages.
 //
 // Replaces the deprecated WithRefreshInterval, which ran parallel polling
 // on top of SSE.
@@ -568,10 +575,10 @@ func WithAllTelemetryDisabled() Option {
 
 // WithSSE enables or disables the background SSE streaming client.
 // Default is true. When disabled, the SDK relies on the initial HTTP fetch
-// plus any polling configured via WithFallbackPoll. Note that fallback
-// polling only engages after sustained SSE disconnect — with SSE disabled
-// it effectively starts immediately, but you typically still want
-// WithFallbackPoll(true, …) to make poll cadence explicit.
+// plus the Layer 2 fallback poller, which is on by default (60s interval)
+// and engages immediately when there is no SSE stream to be connected to.
+// Override the interval with WithFallbackPoll(true, d), or disable polling
+// entirely with WithFallbackPoll(false, 0).
 func WithSSE(enabled bool) Option {
 	return func(o *Options) error {
 		o.SSEEnabled = enabled

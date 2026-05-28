@@ -2,6 +2,19 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Changed
+
+- **Layer 2 fallback polling is now ON by default (qfg-wb2n).** A
+  `NewClient()` with no explicit `WithFallbackPoll(...)` engages the poller
+  on a 60s interval once SSE has been disconnected past the 120s threshold,
+  matching sdk-node/python/ruby/java. Previously sdk-go was the family
+  outlier — an SSE-only deployment that lost the stream went silently stale.
+  The `WithFallbackPoll(enabled, interval)` signature is unchanged; pass
+  `WithFallbackPoll(false, 0)` to opt out. See
+  `project/plans/sdk-1.0-unification.md` Section 1.
+
 ## 0.0.25 - 2026-05-21
 
 CI, test, and dependency only — no SDK runtime or public API changes. Cut to

@@ -234,12 +234,13 @@ func TestHandleSSEStateChangeEngagesFallbackPoller(t *testing.T) {
 // the existing fallback-engagement test does not assert. It also verifies
 // LastSuccessfulRefresh advances when installEnvelope runs.
 func TestClientConnectionStateAndLastRefreshTransitions(t *testing.T) {
-	// FallbackPoll left at its default (disabled) so the disconnect edge
-	// lands at Disconnected, not FallingBack.
+	// FallbackPoll explicitly disabled so the disconnect edge lands at
+	// Disconnected, not FallingBack. (Post-qfg-wb2n the default is on.)
 	client, err := NewClient(
 		WithAPIKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithSSE(false), // no real dial; we drive handleSSEStateChange manually
+		WithFallbackPoll(false, 0),
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(50*time.Millisecond),
 	)

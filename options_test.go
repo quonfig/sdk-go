@@ -3,6 +3,7 @@ package quonfig
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestApplyAPIKeyEnvOverride(t *testing.T) {
@@ -127,6 +128,53 @@ func TestQuonfigDomainEnvVar(t *testing.T) {
 		}
 		if got, want := client.opts.TelemetryURL, "https://telemetry.quonfig-staging.com"; got != want {
 			t.Errorf("TelemetryURL = %q, want %q", got, want)
+		}
+	})
+}
+
+// TestFallbackPollEnabledByDefault pins the SDK-family-wide default that
+// fallback polling is on with a 60s interval. sdk-node/python/ruby/java all
+// default to enabled; sdk-go was the outlier prior to qfg-wb2n
+// (see project/plans/sdk-1.0-unification.md, Section 1). A NewClient() with
+// no options must wire the Layer 2 poller so an SSE-only deployment that
+// loses the stream still recovers via polling instead of going silently
+// stale.
+func TestFallbackPollEnabledByDefault(t *testing.T) {
+	t.Run("defaultOptions sets enabled+60s", func(t *testing.T) {
+		o := defaultOptions()
+		if !o.FallbackPollEnabled {
+			t.Errorf("FallbackPollEnabled = false, want true")
+		}
+		if got, want := o.FallbackPollInterval, 60*time.Second; got != want {
+			t.Errorf("FallbackPollInterval = %s, want %s", got, want)
+		}
+	})
+
+	t.Run("NewClient with no fallback-poll option keeps defaults", func(t *testing.T) {
+		client, err := NewClient(
+			WithAPIURLs([]string{"https://example.test"}),
+			WithAllTelemetryDisabled(),
+			WithInitTimeout(50*time.Millisecond),
+		)
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+		t.Cleanup(client.Close)
+		if !client.opts.FallbackPollEnabled {
+			t.Errorf("client.opts.FallbackPollEnabled = false, want true")
+		}
+		if got, want := client.opts.FallbackPollInterval, 60*time.Second; got != want {
+			t.Errorf("client.opts.FallbackPollInterval = %s, want %s", got, want)
+		}
+	})
+
+	t.Run("WithFallbackPoll(false, 0) still disables", func(t *testing.T) {
+		o := defaultOptions()
+		if err := WithFallbackPoll(false, 0)(&o); err != nil {
+			t.Fatalf("WithFallbackPoll(false, 0): %v", err)
+		}
+		if o.FallbackPollEnabled {
+			t.Errorf("FallbackPollEnabled = true, want false after explicit disable")
 		}
 	})
 }

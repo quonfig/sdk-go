@@ -64,20 +64,23 @@ liveness one.
 
 ## Fallback polling
 
-By default the SDK opens an SSE stream and trusts it. To guarantee a
-poll-based refresh path during sustained disconnects (≥120s), enable Layer 2:
+By default the SDK opens an SSE stream and pairs it with a Layer 2 fallback
+poller on a 60s interval — matching sdk-node/python/ruby/java. The poller
+is idle while SSE is connected; it only engages after the stream has been
+disconnected past `DefaultFallbackPollThreshold` (120s) and disengages once
+SSE recovers. While engaged, `ConnectionState()` reports `FallingBack`.
+
+Tune the poll cadence with `WithFallbackPoll(true, d)`:
 
 ```go
 client, err := quonfig.NewClient(
     quonfig.WithAPIKey("your-sdk-key"),
-    quonfig.WithFallbackPoll(true, 60*time.Second),
+    quonfig.WithFallbackPoll(true, 30*time.Second),
 )
 ```
 
-The poller is idle while SSE is connected. It only engages after the
-stream has been disconnected past `DefaultFallbackPollThreshold` (120s) and
-disengages once SSE recovers. While engaged, `ConnectionState()` reports
-`FallingBack`.
+Opt out entirely (SSE-only, accept silent staleness during outages) with
+`WithFallbackPoll(false, 0)`.
 
 ## Datadir mode: auto-reload on file changes
 
