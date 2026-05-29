@@ -2,6 +2,26 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 0.0.27 - 2026-05-29
+
+### Changed
+
+- **Warn when an environment pin is set in delivery mode (qfg-pinh).** In
+  delivery (SDK-key) mode the active environment is determined by the SDK key
+  on the server, so a `WithEnvironment` / `QUONFIG_ENVIRONMENT` pin is ignored.
+  Previously this was silently dropped; `NewClient` now emits a one-time WARN
+  at init. Datadir mode (which honors the pin) stays quiet, as does delivery
+  mode with no pin. No evaluation behavior change.
+
+### Fixed
+
+- **Report `SPLIT` for a weighted value landing in bucket 0 (qfg-hknp).**
+  Reason detection used `WeightedValueIndex > 0`, but the index is a plain
+  0-based bucket index defaulting to 0, so a weighted value resolving to bucket
+  0 (~half of users on a 50/50 split) was mis-reported as `STATIC`. An explicit
+  `IsWeighted` signal now drives the reason; `WeightedValueIndex` stays 0-based
+  so telemetry is unchanged.
+
 ## 0.0.26 - 2026-05-28
 
 ### Removed
