@@ -129,6 +129,14 @@ func NewClient(opts ...Option) (*Client, error) {
 		client.telemetry.Start()
 	}
 
+	// Delivery (SDK-key) mode: the active environment is determined by the SDK
+	// key on the server, so a WithEnvironment / QUONFIG_ENVIRONMENT pin is
+	// ignored. Warn once at init rather than silently dropping it. Datadir mode
+	// honors the pin, so it is excluded.
+	if o.DataDir == "" && o.Environment != "" {
+		o.Logger.Warn(fmt.Sprintf("quonfig: environment %q was set but the client is in delivery (SDK-key) mode; the active environment is determined by the SDK key, so this setting is ignored (it applies only when loading from a local data dir)", o.Environment))
+	}
+
 	if o.DataDir != "" {
 		envelope, err := loadWorkspaceEnvelope(o.DataDir, o.Environment)
 		if err != nil {
