@@ -121,7 +121,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	streamURL := fmt.Sprintf("http://127.0.0.1:%d", ssePort)
 
 	opts := []Option{
-		WithAPIKey("test-backend-key"),
+		WithSdkKey("test-backend-key"),
 		WithAPIURLs([]string{apiURL}),
 		withTestStreamURLOverride(streamURL),
 		WithSSE(true),

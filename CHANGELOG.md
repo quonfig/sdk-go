@@ -2,6 +2,19 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 0.0.28 - 2026-05-30
+
+### Changed
+
+- **BREAKING: rename `WithAPIKey` → `WithSdkKey` (qfg-ujcq).** The functional
+  option that sets the SDK key is now `WithSdkKey`, matching the naming used by
+  every other Quonfig SDK (`sdkKey` / `sdk_key` / `.sdkKey()`) and the
+  documentation. `WithAPIKey` has been removed — update call sites from
+  `quonfig.WithAPIKey(key)` to `quonfig.WithSdkKey(key)`. The error message on
+  an empty key is now "SDK key must not be empty". No behavior change: the same
+  `QUONFIG_BACKEND_SDK_KEY` env var is still auto-loaded when no explicit key is
+  passed.
+
 ## 0.0.27 - 2026-05-29
 
 ### Changed

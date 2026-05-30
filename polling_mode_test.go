@@ -17,7 +17,7 @@ func TestPollingModeAnnouncedAtStartup(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithSSE(true),
 		WithFallbackPoll(true, 30*time.Second),
@@ -54,7 +54,7 @@ func TestPollingModeAnnouncedAtStartup(t *testing.T) {
 
 func TestWithFallbackPollRejectsZeroIntervalWhenEnabled(t *testing.T) {
 	_, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithFallbackPoll(true, 0),
 	)
@@ -91,7 +91,7 @@ func TestConnectionStateInitializingWithoutTransport(t *testing.T) {
 // the configured threshold.
 func TestHandleSSEStateChangeEngagesFallbackPoller(t *testing.T) {
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithSSE(false), // skip the actual SSE dial; we drive state manually
 		WithFallbackPoll(true, 5*time.Millisecond),
@@ -176,7 +176,7 @@ func TestClientConnectionStateAndLastRefreshTransitions(t *testing.T) {
 	// FallbackPoll explicitly disabled so the disconnect edge lands at
 	// Disconnected, not FallingBack. (Post-qfg-wb2n the default is on.)
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithSSE(false), // no real dial; we drive handleSSEStateChange manually
 		WithFallbackPoll(false, 0),

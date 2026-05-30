@@ -7,11 +7,11 @@ import (
 )
 
 func TestApplyAPIKeyEnvOverride(t *testing.T) {
-	t.Run("explicit WithAPIKey wins over env var", func(t *testing.T) {
+	t.Run("explicit WithSdkKey wins over env var", func(t *testing.T) {
 		t.Setenv("QUONFIG_BACKEND_SDK_KEY", "env-key")
 		o := defaultOptions()
-		if err := WithAPIKey("explicit-key")(&o); err != nil {
-			t.Fatalf("WithAPIKey returned error: %v", err)
+		if err := WithSdkKey("explicit-key")(&o); err != nil {
+			t.Fatalf("WithSdkKey returned error: %v", err)
 		}
 		applyAPIKeyEnvOverride(&o)
 		if o.APIKey != "explicit-key" {

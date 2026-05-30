@@ -248,8 +248,8 @@ func applyDevContextEnvOverride(o *Options) {
 }
 
 // applyAPIKeyEnvOverride checks the QUONFIG_BACKEND_SDK_KEY environment
-// variable and, if set and no explicit WithAPIKey was provided, uses it
-// as the API key. WithAPIKey takes precedence over the env var.
+// variable and, if set and no explicit WithSdkKey was provided, uses it
+// as the API key. WithSdkKey takes precedence over the env var.
 func applyAPIKeyEnvOverride(o *Options) {
 	if o.APIKey != "" {
 		return // explicit option takes precedence
@@ -259,11 +259,11 @@ func applyAPIKeyEnvOverride(o *Options) {
 	}
 }
 
-// WithAPIKey sets the API key for authentication.
-func WithAPIKey(key string) Option {
+// WithSdkKey sets the SDK key for authentication.
+func WithSdkKey(key string) Option {
 	return func(o *Options) error {
 		if key == "" {
-			return errors.New("API key must not be empty")
+			return errors.New("SDK key must not be empty")
 		}
 		o.APIKey = key
 		return nil

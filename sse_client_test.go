@@ -275,7 +275,7 @@ func TestNewClientWithSSEDisabled(t *testing.T) {
 	defer httpServer.Close()
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{httpServer.URL}),
 		WithSSE(false),
 		WithAllTelemetryDisabled(),
@@ -619,7 +619,7 @@ func TestNewClientWithSSEEnabledConnects(t *testing.T) {
 	defer httpServer.Close()
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{httpServer.URL}),
 		WithAllTelemetryDisabled(),
 		withTestStreamURLOverride(sseServer.URL),

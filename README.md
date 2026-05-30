@@ -17,7 +17,7 @@ go get github.com/quonfig/sdk-go
 import "github.com/quonfig/sdk-go"
 
 client, err := quonfig.NewClient(
-    quonfig.WithAPIKey("your-sdk-key"),
+    quonfig.WithSdkKey("your-sdk-key"),
 )
 if err != nil {
     log.Fatal(err)
@@ -74,7 +74,7 @@ Tune the poll cadence with `WithFallbackPoll(true, d)`:
 
 ```go
 client, err := quonfig.NewClient(
-    quonfig.WithAPIKey("your-sdk-key"),
+    quonfig.WithSdkKey("your-sdk-key"),
     quonfig.WithFallbackPoll(true, 30*time.Second),
 )
 ```

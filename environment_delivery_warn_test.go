@@ -21,7 +21,7 @@ func TestEnvironmentPinWarnsInDeliveryMode(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithEnvironment("Production"),
 		WithSSE(false),
@@ -54,7 +54,7 @@ func TestEnvironmentPinFromEnvVarWarnsInDeliveryMode(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithSSE(false),
 		WithFallbackPoll(false, 0),
@@ -104,7 +104,7 @@ func TestNoEnvironmentPinSilentInDeliveryMode(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithSSE(false),
 		WithFallbackPoll(false, 0),

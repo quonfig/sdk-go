@@ -127,7 +127,7 @@ func newIntegrationClient(t *testing.T, serverURL, apiKey string) *quonfig.Clien
 
 	// Build client
 	client, err := quonfig.NewClient(
-		quonfig.WithAPIKey(apiKey),
+		quonfig.WithSdkKey(apiKey),
 		quonfig.WithAPIURLs([]string{serverURL}),
 	)
 	if err != nil {

@@ -155,7 +155,7 @@ func assertClientConstructionRaises(t *testing.T, key string, initTimeoutSec flo
 		policy = quonfig.ReturnError
 	}
 	client, err := quonfig.NewClient(
-		quonfig.WithAPIKey("test-unused"),
+		quonfig.WithSdkKey("test-unused"),
 		quonfig.WithAPIURLs([]string{apiURL}),
 		quonfig.WithHTTPClient(httpClient),
 		quonfig.WithInitTimeout(timeout),
@@ -192,7 +192,7 @@ func assertClientConstructionMissingDefault(t *testing.T, key string, initTimeou
 		policy = quonfig.ReturnError
 	}
 	client, err := quonfig.NewClient(
-		quonfig.WithAPIKey("test-unused"),
+		quonfig.WithSdkKey("test-unused"),
 		quonfig.WithAPIURLs([]string{apiURL}),
 		quonfig.WithHTTPClient(httpClient),
 		quonfig.WithInitTimeout(timeout),
@@ -222,7 +222,7 @@ func assertClientConstructionValue(t *testing.T, key string, initTimeoutSec floa
 		policy = quonfig.ReturnError
 	}
 	client, err := quonfig.NewClient(
-		quonfig.WithAPIKey("test-unused"),
+		quonfig.WithSdkKey("test-unused"),
 		quonfig.WithAPIURLs([]string{apiURL}),
 		quonfig.WithHTTPClient(httpClient),
 		quonfig.WithInitTimeout(timeout),

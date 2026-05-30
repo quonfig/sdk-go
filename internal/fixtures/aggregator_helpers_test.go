@@ -853,7 +853,7 @@ func assertInitializationTimeoutError(t *testing.T, key string, initTimeoutSec f
 	}
 
 	client, err := quonfig.NewClient(
-		quonfig.WithAPIKey("test-key"),
+		quonfig.WithSdkKey("test-key"),
 		quonfig.WithAPIURLs([]string{apiURL}),
 		quonfig.WithHTTPClient(httpClient),
 		quonfig.WithInitTimeout(timeout),

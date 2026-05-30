@@ -31,7 +31,7 @@ func TestDeliveryEnvironment_SingularEnvironmentOverrideWinsOverDefaultWhenEnvNo
 	defer server.Close()
 
 	client, err := quonfig.NewClient(
-		quonfig.WithAPIKey("sdk-test"),
+		quonfig.WithSdkKey("sdk-test"),
 		quonfig.WithAPIURLs([]string{server.URL}),
 		quonfig.WithSSE(false),
 		quonfig.WithFallbackPoll(false, 0),
@@ -62,7 +62,7 @@ func TestDeliveryEnvironment_ExplicitEnvironmentPinIsIgnoredInDeliveryModeMetaEn
 	defer server.Close()
 
 	client, err := quonfig.NewClient(
-		quonfig.WithAPIKey("sdk-test"),
+		quonfig.WithSdkKey("sdk-test"),
 		quonfig.WithAPIURLs([]string{server.URL}),
 		quonfig.WithSSE(false),
 		quonfig.WithFallbackPoll(false, 0),
@@ -94,7 +94,7 @@ func TestDeliveryEnvironment_ConfigWithoutEnvironmentBlockFallsBackToDefaultInDe
 	defer server.Close()
 
 	client, err := quonfig.NewClient(
-		quonfig.WithAPIKey("sdk-test"),
+		quonfig.WithSdkKey("sdk-test"),
 		quonfig.WithAPIURLs([]string{server.URL}),
 		quonfig.WithSSE(false),
 		quonfig.WithFallbackPoll(false, 0),

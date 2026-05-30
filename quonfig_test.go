@@ -250,7 +250,7 @@ func TestNewClientTransportRaceFreeUnderConcurrency(t *testing.T) {
 	}
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithSSE(false),

@@ -69,7 +69,7 @@ func TestNewClientInitializesAndUsesEnvLookup(t *testing.T) {
 	}
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		// Disable SSE and telemetry so this test isolates the initial HTTP
@@ -131,7 +131,7 @@ func TestNewClientInitTimeoutHonorsFailurePolicy(t *testing.T) {
 	}
 
 	errorClient, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithInitTimeout(25*time.Millisecond),
@@ -147,7 +147,7 @@ func TestNewClientInitTimeoutHonorsFailurePolicy(t *testing.T) {
 	}
 
 	zeroClient, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithInitTimeout(25*time.Millisecond),
@@ -182,7 +182,7 @@ func TestNewClientInitTimeoutWrapsContextDeadline(t *testing.T) {
 	}
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithInitTimeout(10*time.Millisecond),
@@ -245,7 +245,7 @@ func TestClientRefreshUsesETagAndUpdatesStore(t *testing.T) {
 	}
 
 	client, err := NewClient(
-		WithAPIKey("test-key"),
+		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 	)
