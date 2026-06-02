@@ -93,13 +93,12 @@ func NewClient(opts ...Option) (*Client, error) {
 	applyDomainEnvOverride(&o)
 	applyEnvironmentEnvOverride(&o)
 	applyAPIKeyEnvOverride(&o)
-	applyDevContextEnvOverride(&o)
 
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
 
-	if o.EnableQuonfigUserContext {
+	if resolveDevContextEnabled(&o) {
 		if devCtx := loadQuonfigUserContext(o.APIURLs, o.Logger); devCtx != nil {
 			// Customer-supplied GlobalContext wins on collision because
 			// Merge replaces by named-context name and the second arg wins.

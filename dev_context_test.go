@@ -126,7 +126,10 @@ func TestNewClientWithQuonfigUserContext_InjectsIntoGlobalContext(t *testing.T) 
 	}
 }
 
-func TestNewClientWithQuonfigUserContext_DisabledByDefault(t *testing.T) {
+// The flip: with no opt-in (no WithQuonfigUserContext, no
+// QUONFIG_DEV_CONTEXT) the token file alone now triggers injection, and
+// customer-supplied context is preserved alongside it.
+func TestNewClientDevContext_EnabledByDefault(t *testing.T) {
 	home := withTmpHome(t)
 	writeTokensFile(t, home, `{"userEmail":"bob@foo.com"}`)
 	t.Setenv("QUONFIG_DEV_CONTEXT", "")
@@ -144,11 +147,78 @@ func TestNewClientWithQuonfigUserContext_DisabledByDefault(t *testing.T) {
 	}
 	t.Cleanup(client.Close)
 
-	if _, ok := quonfigUserEmail(t, client.opts.GlobalContext); ok {
-		t.Fatalf("expected no quonfig-user injection when option disabled and no env var")
+	got, ok := quonfigUserEmail(t, client.opts.GlobalContext)
+	if !ok || got != "bob@foo.com" {
+		t.Fatalf("expected default-on injection of bob@foo.com, got %q ok=%v", got, ok)
 	}
 	if v, ok := client.opts.GlobalContext.GetContextValue("user.plan"); !ok || v != "pro" {
 		t.Fatalf("expected customer user.plan to remain, got %v ok=%v", v, ok)
+	}
+}
+
+func TestNewClientDevContext_OptionFalseDisables(t *testing.T) {
+	home := withTmpHome(t)
+	writeTokensFile(t, home, `{"userEmail":"bob@foo.com"}`)
+	t.Setenv("QUONFIG_DEV_CONTEXT", "")
+
+	dir := emptyEnvelopeWorkspace(t)
+	client, err := NewClient(
+		WithDataDir(dir),
+		WithEnvironment("Production"),
+		WithAllTelemetryDisabled(),
+		WithQuonfigUserContext(false),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(client.Close)
+
+	if _, ok := quonfigUserEmail(t, client.opts.GlobalContext); ok {
+		t.Fatalf("expected WithQuonfigUserContext(false) to disable injection")
+	}
+}
+
+func TestNewClientDevContext_EnvFalseDisables(t *testing.T) {
+	home := withTmpHome(t)
+	writeTokensFile(t, home, `{"userEmail":"bob@foo.com"}`)
+	t.Setenv("QUONFIG_DEV_CONTEXT", "false")
+
+	dir := emptyEnvelopeWorkspace(t)
+	client, err := NewClient(
+		WithDataDir(dir),
+		WithEnvironment("Production"),
+		WithAllTelemetryDisabled(),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(client.Close)
+
+	if _, ok := quonfigUserEmail(t, client.opts.GlobalContext); ok {
+		t.Fatalf("expected QUONFIG_DEV_CONTEXT=false to disable injection")
+	}
+}
+
+func TestNewClientDevContext_OptionTrueOverridesEnvFalse(t *testing.T) {
+	home := withTmpHome(t)
+	writeTokensFile(t, home, `{"userEmail":"bob@foo.com"}`)
+	t.Setenv("QUONFIG_DEV_CONTEXT", "false")
+
+	dir := emptyEnvelopeWorkspace(t)
+	client, err := NewClient(
+		WithDataDir(dir),
+		WithEnvironment("Production"),
+		WithAllTelemetryDisabled(),
+		WithQuonfigUserContext(true),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(client.Close)
+
+	got, ok := quonfigUserEmail(t, client.opts.GlobalContext)
+	if !ok || got != "bob@foo.com" {
+		t.Fatalf("expected explicit option true to override env false, got %q ok=%v", got, ok)
 	}
 }
 

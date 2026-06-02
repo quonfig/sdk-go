@@ -127,13 +127,16 @@ type Options struct {
 	// log-level config can drive per-logger overrides.
 	LoggerKey string
 
-	// EnableQuonfigUserContext, when true, makes NewClient read
-	// ~/.quonfig/tokens.json (written by `qfg login`) and merge
-	// { "quonfig-user": { "email": <userEmail> } } into GlobalContext under
-	// any caller-supplied keys. Default false. The env var
-	// QUONFIG_DEV_CONTEXT=true also enables it. Production servers do not
-	// have the tokens file, so this is a no-op there by construction.
-	EnableQuonfigUserContext bool
+	// EnableQuonfigUserContext makes NewClient read ~/.quonfig/tokens.json
+	// (written by `qfg login`) and merge { "quonfig-user": { "email":
+	// <userEmail> } } into GlobalContext under any caller-supplied keys.
+	//
+	// Tri-state (nil = unset). Default ON, gated only by the presence of the
+	// tokens file: production servers do not have it, so this is a no-op
+	// there by construction. Precedence: this explicit pointer (if non-nil)
+	// wins, else QUONFIG_DEV_CONTEXT ("true"/"false"), else true. Set it via
+	// WithQuonfigUserContext(false) (or QUONFIG_DEV_CONTEXT=false) to opt out.
+	EnableQuonfigUserContext *bool
 
 	// Telemetry options
 	CollectEvaluationSummaries bool
@@ -235,15 +238,21 @@ func applyEnvironmentEnvOverride(o *Options) {
 	}
 }
 
-// applyDevContextEnvOverride enables quonfig-user.email injection when
-// QUONFIG_DEV_CONTEXT=true and no explicit WithQuonfigUserContext was set.
-// An explicit option (true OR false) wins over the env var.
-func applyDevContextEnvOverride(o *Options) {
-	if o.EnableQuonfigUserContext {
-		return
+// resolveDevContextEnabled decides whether to inject quonfig-user.email.
+// Precedence: an explicit WithQuonfigUserContext (non-nil pointer) wins,
+// else QUONFIG_DEV_CONTEXT ("true"/"false"), else the default of true.
+// The loader no-ops without a tokens file, so default-on is dead in prod.
+func resolveDevContextEnabled(o *Options) bool {
+	if o.EnableQuonfigUserContext != nil {
+		return *o.EnableQuonfigUserContext
 	}
-	if v, ok := os.LookupEnv("QUONFIG_DEV_CONTEXT"); ok && v == "true" {
-		o.EnableQuonfigUserContext = true
+	switch os.Getenv("QUONFIG_DEV_CONTEXT") {
+	case "true":
+		return true
+	case "false":
+		return false
+	default:
+		return true
 	}
 }
 
@@ -318,11 +327,11 @@ func WithGlobalContext(ctx *ContextSet) Option {
 // WithQuonfigUserContext enables (or disables) injecting
 // quonfig-user.email from ~/.quonfig/tokens.json into GlobalContext on
 // NewClient. Customer-supplied GlobalContext keys win on collision.
-// Default off; the env var QUONFIG_DEV_CONTEXT=true also enables it when
-// no explicit option is set.
+// Default on (gated by the tokens file); this explicit option wins over
+// the QUONFIG_DEV_CONTEXT env var, so pass false to opt out.
 func WithQuonfigUserContext(enabled bool) Option {
 	return func(o *Options) error {
-		o.EnableQuonfigUserContext = enabled
+		o.EnableQuonfigUserContext = &enabled
 		return nil
 	}
 }
