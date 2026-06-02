@@ -2,6 +2,18 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 0.0.29 - 2026-06-02
+
+### Changed
+
+- **Dev-context injection is now default-on (qfg-bw7g.3).** `EnableQuonfigUserContext`
+  is now a `*bool` tri-state (`nil` = unset). When left unset it defaults to **on**,
+  gated solely by the presence of `~/.quonfig/tokens.json`; the loader no-ops without
+  that file, so this stays inert in production. Precedence: explicit
+  `WithQuonfigUserContext` pointer ?? `QUONFIG_DEV_CONTEXT` env (`true`/`false`) ??
+  `true`. Pass `WithQuonfigUserContext(false)` or set `QUONFIG_DEV_CONTEXT=false` to
+  opt out. Replaces the prior `applyDevContextEnvOverride` helper.
+
 ## 0.0.28 - 2026-05-30
 
 ### Changed
