@@ -732,8 +732,12 @@ func (c *Client) startSSE() {
 		Logger:      c.opts.Logger,
 		OnEnvelope: func(env *ConfigEnvelope) {
 			// Serialize with polled installs via refreshMu so we don't race.
+			// Reject-older guard: an SSE initial snapshot or update only installs
+			// if it advances the held generation (qfg-7h5d.1.5).
 			c.refreshMu.Lock()
-			c.installEnvelope(env)
+			if c.shouldInstall(env) {
+				c.installEnvelope(env)
+			}
 			c.refreshMu.Unlock()
 		},
 		OnStateChange: onStateChange,
@@ -909,15 +913,52 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 		return nil
 	}
 
-	c.installEnvelope(result.Envelope)
-	c.mu.Lock()
-	c.resolvedFromIndex = result.SourceIndex
-	c.mu.Unlock()
+	// Reject-older guard: a poll, failover, or fallback-poller fetch installs
+	// only if it advances the held generation. Without this, a failover to an
+	// older secondary regresses an established client (qfg-7h5d.1.5). We hold
+	// refreshMu across the whole function, so the guard decision and the install
+	// are atomic with respect to every other install path. The very first fetch
+	// is always installed (fresh client), so the initial path never lands here
+	// rejected with nothing held.
+	if c.shouldInstall(result.Envelope) {
+		c.installEnvelope(result.Envelope)
+		c.mu.Lock()
+		c.resolvedFromIndex = result.SourceIndex
+		c.mu.Unlock()
+	}
 
 	if initial {
 		c.finishInitialization(true)
 	}
 	return nil
+}
+
+// shouldInstall applies the canonical reject-older rule to an incoming snapshot
+// arriving on a network install path (poll, failover/hedged fetch, SSE initial
+// snapshot, SSE update, fallback poller). The rule is the whole story — there is
+// no source ranking:
+//
+//   - A fresh client (nothing installed yet) always accepts the first snapshot,
+//     even at generation 0. A stale secondary payload can therefore seed a fresh
+//     client, but...
+//   - ...an established client installs only if the incoming Meta.Generation is
+//     strictly greater than the held generation. An older payload is dropped, so
+//     a late failover to a stale secondary can never move the client backward; a
+//     later, newer primary win heals forward.
+//   - A same-generation snapshot is a no-op (not strictly greater), so an equal
+//     second leg can't re-install or flap.
+//
+// Callers must hold c.refreshMu so the decision and the install that follows are
+// atomic with respect to every other install path. Datadir install/reload is a
+// local source of truth (generation is always 0) and intentionally bypasses this
+// guard by calling installEnvelope directly.
+func (c *Client) shouldInstall(envelope *ConfigEnvelope) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.configInstalls == 0 {
+		return true
+	}
+	return envelope.Meta.Generation > c.heldGeneration
 }
 
 func (c *Client) installEnvelope(envelope *ConfigEnvelope) {
