@@ -58,11 +58,21 @@ type chaosScenarioRun struct {
 }
 
 type chaosSetup struct {
-	SDK              string `yaml:"sdk"`
-	SSEEndpoint      string `yaml:"sse_endpoint"`
-	HTTPEndpoint     string `yaml:"http_endpoint"`
-	WallClockSeconds int    `yaml:"wall_clock_seconds"`
-	UserCallback     string `yaml:"user_callback"`
+	SDK              string          `yaml:"sdk"`
+	SSEEndpoint      string          `yaml:"sse_endpoint"`
+	HTTPEndpoint     string          `yaml:"http_endpoint"`
+	WallClockSeconds int             `yaml:"wall_clock_seconds"`
+	UserCallback     string          `yaml:"user_callback"`
+	Topology         string          `yaml:"topology"`  // "", single, failover, ordering
+	Upstreams        []chaosUpstream `yaml:"upstreams"` // ordering rig: per-leg generations
+}
+
+// chaosUpstream is one leg of the ordering rig — a fixture upstream pinned to a
+// chosen Meta.generation so o01-o04 can stand up primary and secondary at
+// divergent generations.
+type chaosUpstream struct {
+	Role       string `yaml:"role"` // primary | secondary
+	Generation int    `yaml:"generation"`
 }
 
 type chaosEvent struct {
@@ -83,6 +93,14 @@ type chaosInject struct {
 	BothDownMs            *int `yaml:"both_down_ms"`
 	SSEHalfOpenAfterBytes *int `yaml:"sse_half_open_after_bytes"`
 	SSEHTTPStatus         *int `yaml:"sse_http_status"`
+
+	// Failover-rig aliases (scenarios-failover/): fault the PRIMARY HTTP leg
+	// only. Each carries a duration in ms after which the fault auto-clears, so
+	// the failover scenarios need no explicit `clear` event (see
+	// applyFailoverInject).
+	PrimaryRefusedMs *int `yaml:"primary_refused_ms"` // disable the primary proxy (port refuses)
+	PrimaryHangMs    *int `yaml:"primary_hang_ms"`    // timeout toxic: accept but never respond
+	PrimaryLatencyMs *int `yaml:"primary_latency_ms"` // latency toxic: respond, but far too late
 
 	// Low-level escape hatch (not used in any current scenario but kept for completeness).
 	Proxy string                 `yaml:"proxy"`
@@ -464,6 +482,61 @@ func (p *chaosProbe) processStillAlive() bool {
 	return !p.processCrashed.Load()
 }
 
+// ---- failover + ordering observability (read the public accessors added for
+// this epic; nil-safe before the client is constructed) ----
+
+func (p *chaosProbe) ready() bool {
+	p.mu.Lock()
+	c := p.client
+	p.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.initialized
+}
+
+func (p *chaosProbe) resolvedFrom() string {
+	p.mu.Lock()
+	c := p.client
+	p.mu.Unlock()
+	if c == nil {
+		return ""
+	}
+	return c.ResolvedFrom()
+}
+
+func (p *chaosProbe) heldGeneration() int {
+	p.mu.Lock()
+	c := p.client
+	p.mu.Unlock()
+	if c == nil {
+		return 0
+	}
+	return c.HeldGeneration()
+}
+
+func (p *chaosProbe) configInstallCount() int {
+	p.mu.Lock()
+	c := p.client
+	p.mu.Unlock()
+	if c == nil {
+		return 0
+	}
+	return c.ConfigInstallCount()
+}
+
+func (p *chaosProbe) sseFailedOverToSecondary() bool {
+	p.mu.Lock()
+	c := p.client
+	p.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	return c.SSEFailedOverToSecondary()
+}
+
 func (p *chaosProbe) sdkLogMatches(level string, re *regexp.Regexp) int {
 	p.logMu.Lock()
 	defer p.logMu.Unlock()
@@ -626,6 +699,13 @@ var (
 	reSDKMetric   = regexp.MustCompile(`^client\.sdkMetric\(\s*'([^']+)'\s*(?:,\s*layer=\s*'([^']+)'\s*)?\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
 	reServerMet   = regexp.MustCompile(`^server_metric\(\s*'([^']+)'\s*\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
 	reSDKLog      = regexp.MustCompile(`^client\.sdkLog\(\s*'([^']+)'\s*,\s*/(.+)/i\s*\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
+
+	// Failover + ordering vocabulary.
+	reReady        = regexp.MustCompile(`^client\.ready\(\)\s*==\s*(true|false)$`)
+	reResolvedFrom = regexp.MustCompile(`^client\.resolvedFrom\(\)\s*(==|!=)\s*'([^']+)'$`)
+	reHeldGen      = regexp.MustCompile(`^client\.heldGeneration\(\)\s*(>=|<=|==|!=|<|>)\s*(-?\d+)$`)
+	reInstallCnt   = regexp.MustCompile(`^client\.configInstallCount\(\)\s*(>=|<=|==|!=|<|>)\s*(-?\d+)$`)
+	reSSEFailover  = regexp.MustCompile(`^client\.sseFailedOverToSecondary\(\)\s*==\s*(true|false)$`)
 )
 
 func evalLeaf(expr string, ec *evalCtx) (bool, string) {
@@ -641,6 +721,38 @@ func evalLeaf(expr string, ec *evalCtx) (bool, string) {
 			ok := got != want
 			return ok, fmt.Sprintf("connectionState=%s want != %s", got, want)
 		}
+	}
+	if m := reReady.FindStringSubmatch(expr); m != nil {
+		want := m[1] == "true"
+		got := ec.probe.ready()
+		return got == want, fmt.Sprintf("ready=%v want %v", got, want)
+	}
+	if m := reResolvedFrom.FindStringSubmatch(expr); m != nil {
+		got := ec.probe.resolvedFrom()
+		want := m[2]
+		switch m[1] {
+		case "==":
+			return got == want, fmt.Sprintf("resolvedFrom=%q want %q", got, want)
+		case "!=":
+			return got != want, fmt.Sprintf("resolvedFrom=%q want != %q", got, want)
+		}
+	}
+	if m := reHeldGen.FindStringSubmatch(expr); m != nil {
+		got := int64(ec.probe.heldGeneration())
+		want, _ := strconv.ParseInt(m[2], 10, 64)
+		ok := compareInt(m[1], got, want)
+		return ok, fmt.Sprintf("heldGeneration=%d %s %d", got, m[1], want)
+	}
+	if m := reInstallCnt.FindStringSubmatch(expr); m != nil {
+		got := int64(ec.probe.configInstallCount())
+		want, _ := strconv.ParseInt(m[2], 10, 64)
+		ok := compareInt(m[1], got, want)
+		return ok, fmt.Sprintf("configInstallCount=%d %s %d", got, m[1], want)
+	}
+	if m := reSSEFailover.FindStringSubmatch(expr); m != nil {
+		want := m[1] == "true"
+		got := ec.probe.sseFailedOverToSecondary()
+		return got == want, fmt.Sprintf("sseFailedOverToSecondary=%v want %v", got, want)
 	}
 	if m := reFallbackEq.FindStringSubmatch(expr); m != nil {
 		want := m[1] == "true"

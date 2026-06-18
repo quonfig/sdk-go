@@ -14,6 +14,10 @@ import (
 type fetchResult struct {
 	Envelope   *ConfigEnvelope
 	NotChanged bool
+	// SourceIndex is the index into baseURLs of the leg that produced this
+	// result. 0 is the primary leg, 1 the secondary, etc. Used so the SDK can
+	// report which upstream a config was resolved from (failover observability).
+	SourceIndex int
 }
 
 type runtimeTransport struct {
@@ -81,12 +85,13 @@ func (c *runtimeTransport) streamURLFor(i int) string {
 func (c *runtimeTransport) FetchConfigs(ctx context.Context) (*fetchResult, error) {
 	var lastErr error
 
-	for _, baseURL := range c.baseURLs {
+	for i, baseURL := range c.baseURLs {
 		result, err := c.fetchFromURL(ctx, baseURL)
 		if err != nil {
 			lastErr = err
 			continue
 		}
+		result.SourceIndex = i
 		return result, nil
 	}
 

@@ -301,4 +301,10 @@ type Meta struct {
 	Version     string `json:"version"`
 	Environment string `json:"environment"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
+	// Generation is a monotonic, per-branch commit counter (git rev-list
+	// --count HEAD) served by api-delivery alongside Version. Unlike the SHA in
+	// Version — which is unordered — a higher Generation is strictly newer, so
+	// the SDK can order two snapshots and reject an older one. Purely additive:
+	// servers that predate the watermark omit it and it decodes to 0.
+	Generation int `json:"generation"`
 }

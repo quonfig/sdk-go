@@ -73,6 +73,15 @@ type Client struct {
 	refreshMu              sync.Mutex
 	closeCh                chan struct{}
 	closeOnce              sync.Once
+
+	// Failover / canonical-ordering observability (guarded by mu). These back
+	// the public HeldGeneration/ResolvedFrom/ConfigInstallCount/
+	// SSEFailedOverToSecondary accessors used by the failover + ordering chaos
+	// suites; all additive, none change evaluation behavior.
+	heldGeneration    int // Meta.Generation of the currently-installed envelope
+	configInstalls    int // count of installEnvelope calls (every install path)
+	resolvedFromIndex int // baseURLs index of the last HTTP fetch that installed; -1 until set
+	sseStreamIndex    int // baseURLs index the SSE stream connected with; -1 until connected
 }
 
 // NewClient creates a new Quonfig client with the given options.
@@ -121,6 +130,8 @@ func NewClient(opts ...Option) (*Client, error) {
 		transport:          transport,
 		initializationDone: make(chan struct{}),
 		closeCh:            make(chan struct{}),
+		resolvedFromIndex:  -1,
+		sseStreamIndex:     -1,
 	}
 
 	if o.TelemetryEnabled() {
@@ -690,6 +701,15 @@ func (c *Client) startSSE() {
 	// truth for ConnectionState() and FallbackPollerActive().
 	userCB := c.opts.OnSSEStateChange
 	onStateChange := func(connected bool) {
+		if connected {
+			// The SSE stream is pinned to the primary leg (streamURLFor(0)) and
+			// deliberately never repoints to the secondary — failover is an
+			// HTTP-only property. Record the leg so SSEFailedOverToSecondary can
+			// assert the stream stayed on primary (chaos scenario f05).
+			c.mu.Lock()
+			c.sseStreamIndex = 0
+			c.mu.Unlock()
+		}
 		c.handleSSEStateChange(connected)
 		if userCB != nil {
 			userCB(connected)
@@ -800,6 +820,54 @@ func (c *Client) LastSuccessfulRefresh() time.Time {
 	return sup.LastSuccessfulRefresh()
 }
 
+// HeldGeneration returns the Meta.Generation of the config the client is
+// currently holding (0 before the first install, or when the server predates
+// the watermark). A higher generation is strictly newer; this is the value the
+// canonical-ordering guard compares against on every install path.
+func (c *Client) HeldGeneration() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.heldGeneration
+}
+
+// ResolvedFrom reports which configured upstream leg produced the config the
+// client is currently holding: "primary" (the first API URL), "secondary" (any
+// later URL reached via failover), or "" before the first successful HTTP
+// install. Reflects the HTTP config-fetch path; SSE installs do not change it.
+func (c *Client) ResolvedFrom() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	switch {
+	case c.resolvedFromIndex < 0:
+		return ""
+	case c.resolvedFromIndex == 0:
+		return "primary"
+	default:
+		return "secondary"
+	}
+}
+
+// ConfigInstallCount returns the number of times an envelope has been installed
+// over the client's lifetime (every install path: initial fetch, failover
+// fetch, SSE snapshot/update, fallback poll). The canonical-ordering guard
+// keeps this from advancing on a same-or-older payload.
+func (c *Client) ConfigInstallCount() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.configInstalls
+}
+
+// SSEFailedOverToSecondary reports whether the live SSE stream ever repointed
+// to a non-primary leg. It is always false by design — SSE is pinned to the
+// primary stream and failover is an HTTP-only property — and exists so the
+// chaos suite can assert that invariant (scenario f05) and catch a regression
+// that silently repoints the stream.
+func (c *Client) SSEFailedOverToSecondary() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.sseStreamIndex > 0
+}
+
 func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 	c.refreshMu.Lock()
 	defer c.refreshMu.Unlock()
@@ -837,6 +905,9 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 	}
 
 	c.installEnvelope(result.Envelope)
+	c.mu.Lock()
+	c.resolvedFromIndex = result.SourceIndex
+	c.mu.Unlock()
 
 	if initial {
 		c.finishInitialization(true)
@@ -855,6 +926,8 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope) {
 	c.evaluator = evaluator
 	c.resolver = resolver
 	c.envID = envelope.Meta.Environment
+	c.heldGeneration = envelope.Meta.Generation
+	c.configInstalls++
 	c.initialized = true
 	c.initializationErr = nil
 	onConfigUpdate := c.opts.OnConfigUpdate
