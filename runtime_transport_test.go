@@ -1,6 +1,69 @@
 package quonfig
 
-import "testing"
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
+
+// TestFetchConfigsPerURLTimeoutFailsOver is the hang-failover proof for the
+// per-URL config-fetch timeout (bead qfg-7h5d.1.4, mirrors chaos scenario
+// f02-primary-hang). The primary leg accepts the connection but never responds;
+// with a per-URL deadline the primary attempt aborts fast and FetchConfigs
+// resolves off the secondary, well inside the much larger parent budget.
+//
+// Revert check: delete the context.WithTimeout wrapping in fetchFromURL and the
+// hung primary starves the secondary until the 4s parent deadline — FetchConfigs
+// returns a DeadlineExceeded error and the SourceIndex==1 assertion is never
+// reached. So the test fails iff the per-URL mechanism is absent.
+func TestFetchConfigsPerURLTimeoutFailsOver(t *testing.T) {
+	release := make(chan struct{})
+
+	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Accept the connection, never send a response: hang until either the
+		// per-URL deadline cancels the request or the test tears down.
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	t.Cleanup(primary.Close)
+	t.Cleanup(func() { close(release) })
+
+	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", `"v1"`)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	t.Cleanup(secondary.Close)
+
+	tr := newRuntimeTransport([]string{primary.URL, secondary.URL}, "test-key", nil)
+	tr.fetchTimeout = 300 * time.Millisecond
+
+	// Parent budget dwarfs the per-URL timeout; only the per-URL deadline can
+	// bound the hung primary attempt.
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	result, err := tr.FetchConfigs(ctx)
+	elapsed := time.Since(start)
+
+	if err != nil {
+		t.Fatalf("FetchConfigs returned error: %v (elapsed %s) — hung primary not bounded by per-URL timeout", err, elapsed)
+	}
+	if result == nil || result.Envelope == nil {
+		t.Fatalf("expected an envelope resolved from the secondary, got %+v", result)
+	}
+	if result.SourceIndex != 1 {
+		t.Fatalf("expected SourceIndex=1 (secondary leg), got %d", result.SourceIndex)
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("FetchConfigs took %s — per-URL timeout did not abort the hung primary fast", elapsed)
+	}
+}
 
 func TestRuntimeTransportStreamURLDerivation(t *testing.T) {
 	tr := newRuntimeTransport(

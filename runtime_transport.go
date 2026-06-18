@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/quonfig/sdk-go/internal/version"
 )
@@ -31,7 +32,21 @@ type runtimeTransport struct {
 	streamURLs []string
 	apiKey     string
 	etag       string
+	// fetchTimeout bounds a single per-URL config-fetch attempt. Each leg in
+	// FetchConfigs gets its own context.WithTimeout(fetchTimeout) so a hung
+	// upstream aborts fast and leaves budget to reach the next leg inside the
+	// caller's overall deadline (e.g. InitTimeout). Zero means use
+	// DefaultConfigFetchTimeout. Set once at construction; read-only thereafter.
+	fetchTimeout time.Duration
 }
+
+// DefaultConfigFetchTimeout bounds one per-URL config-fetch attempt when no
+// explicit WithConfigFetchTimeout is supplied. ~3s is short enough that a hung
+// primary fails over to the secondary well inside a default 10s InitTimeout,
+// yet long enough to tolerate a slow-but-healthy upstream. This is a
+// per-attempt deadline only — it does NOT touch the long-lived SSE stream,
+// which keeps its own 120s disconnect threshold.
+const DefaultConfigFetchTimeout = 3 * time.Second
 
 func newRuntimeTransport(baseURLs []string, apiKey string, httpClient *http.Client) *runtimeTransport {
 	return newRuntimeTransportWithStreamOverride(baseURLs, apiKey, httpClient, "")
@@ -102,6 +117,19 @@ func (c *runtimeTransport) FetchConfigs(ctx context.Context) (*fetchResult, erro
 }
 
 func (c *runtimeTransport) fetchFromURL(ctx context.Context, baseURL string) (*fetchResult, error) {
+	// Bound this single attempt so a hung upstream (accepts the TCP connection
+	// but never responds) aborts fast instead of blocking on the caller's
+	// overall deadline. fetchFromURL fully reads/decodes the body before
+	// returning, so cancelling on return is safe. context.WithTimeout takes the
+	// earlier of (parent deadline, fetchTimeout), so a short InitTimeout still
+	// wins; the per-URL timeout only ever shortens the wait, never extends it.
+	timeout := c.fetchTimeout
+	if timeout <= 0 {
+		timeout = DefaultConfigFetchTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/v2/configs", nil)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)

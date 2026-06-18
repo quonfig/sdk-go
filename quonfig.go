@@ -123,6 +123,11 @@ func NewClient(opts ...Option) (*Client, error) {
 	var transport *runtimeTransport
 	if o.DataDir == "" && o.APIKey != "" {
 		transport = newRuntimeTransportWithStreamOverride(o.APIURLs, o.APIKey, o.HTTPClient, o.testStreamURLOverride)
+		// Per-URL config-fetch deadline (qfg-7h5d.1.4). Set once, before any
+		// goroutine reads the transport, so it stays effectively immutable.
+		// Both the initial fetch and the fallback poller route through
+		// transport.FetchConfigs, so this bounds every leg uniformly.
+		transport.fetchTimeout = o.ConfigFetchTimeout
 	}
 
 	client := &Client{

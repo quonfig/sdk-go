@@ -58,8 +58,17 @@ type Options struct {
 	GlobalContext *ContextSet
 	InitTimeout   time.Duration
 	OnInitFailure OnInitFailure
-	EnvLookup     EnvLookupFunc
-	HTTPClient    *http.Client
+
+	// ConfigFetchTimeout bounds a single per-URL config-fetch attempt (the
+	// initial fetch and every fallback-poller fetch alike). When a leg hangs —
+	// accepts the connection but never responds — the attempt aborts after this
+	// deadline so the next leg (e.g. the secondary) is reached inside the
+	// overall InitTimeout instead of being starved until it. Zero means use
+	// DefaultConfigFetchTimeout (~3s). This is a per-attempt deadline on the
+	// HTTP config path only; it does not affect the long-lived SSE stream.
+	ConfigFetchTimeout time.Duration
+	EnvLookup          EnvLookupFunc
+	HTTPClient         *http.Client
 
 	// FallbackPollEnabled controls whether the Layer 2 fallback poller is
 	// allowed to engage. The poller is idle while SSE is connected; it
@@ -176,6 +185,7 @@ func defaultOptions() Options {
 		APIURLs:                    apiURLsForDomain(DefaultDomain),
 		InitTimeout:                10 * time.Second,
 		OnInitFailure:              ReturnError,
+		ConfigFetchTimeout:         DefaultConfigFetchTimeout,
 		SSEEnabled:                 true,
 		FallbackPollEnabled:        true,
 		FallbackPollInterval:       60 * time.Second,
@@ -340,6 +350,32 @@ func WithQuonfigUserContext(enabled bool) Option {
 func WithInitTimeout(d time.Duration) Option {
 	return func(o *Options) error {
 		o.InitTimeout = d
+		return nil
+	}
+}
+
+// WithConfigFetchTimeout sets the per-URL deadline for a single config-fetch
+// attempt. It applies uniformly to the initial fetch and to every
+// fallback-poller fetch. Each base URL in the failover list gets its own
+// timeout, so a hung primary aborts after this duration and the secondary is
+// tried within the remaining InitTimeout budget.
+//
+// Additive and backward-compatible: the default (DefaultConfigFetchTimeout,
+// ~3s) already makes a hung upstream fail over, so existing callers need not
+// set this. Pass a larger value only if a healthy upstream legitimately takes
+// longer than 3s to answer a config fetch; pass a smaller value to fail over
+// even faster. Must be positive.
+//
+// All-URLs-fail behavior is unchanged: if every leg times out (or otherwise
+// errors), the initial fetch surfaces that failure through the configured
+// OnInitFailure policy — ReturnError makes getters return
+// ErrInitializationTimeout, ReturnZeroValue makes them return zero values.
+func WithConfigFetchTimeout(d time.Duration) Option {
+	return func(o *Options) error {
+		if d <= 0 {
+			return errors.New("config fetch timeout must be positive")
+		}
+		o.ConfigFetchTimeout = d
 		return nil
 	}
 }
