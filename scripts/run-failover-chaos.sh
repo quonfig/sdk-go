@@ -13,13 +13,18 @@
 # 'http'/'secondary'/'sse' proxies at the upstreams it spawns.
 #
 # Env knobs:
-#   CHAOS_RUN          go test -run regex (default 'TestFailoverChaos|TestOrderingChaos')
+#   CHAOS_RUN          go test -run  regex (default 'TestFailoverChaos|TestOrderingChaos')
+#   CHAOS_SKIP         go test -skip regex (default empty). Matched per `/`-split
+#                      path element, so name the full path, e.g.
+#                      'TestOrderingChaos/o01-secondary-newer' (a bare 'o01' only
+#                      matches the top-level test name and skips nothing).
 #   GO_TEST_TIMEOUT    go test -timeout value (default 15m)
 #
 # Examples:
 #   ./scripts/run-failover-chaos.sh
 #   CHAOS_RUN=TestFailoverChaos ./scripts/run-failover-chaos.sh   # failover suite only
 #   CHAOS_RUN=TestOrderingChaos ./scripts/run-failover-chaos.sh   # ordering suite only
+#   CHAOS_SKIP='TestOrderingChaos/o01-secondary-newer' ./scripts/run-failover-chaos.sh  # skip o01
 
 set -euo pipefail
 
@@ -40,6 +45,7 @@ export QUONFIG_CHAOS_SESSION="${QUONFIG_CHAOS_SESSION:-sdk-go-failover-$$-$(date
 export QUONFIG_CHAOS_OWNER_PID=$$
 
 CHAOS_RUN="${CHAOS_RUN:-TestFailoverChaos|TestOrderingChaos}"
+CHAOS_SKIP="${CHAOS_SKIP:-}"
 GO_TEST_TIMEOUT="${GO_TEST_TIMEOUT:-15m}"
 
 cleanup_done=0
@@ -56,6 +62,10 @@ trap cleanup EXIT INT TERM
 echo "==> booting toxiproxy via shared launcher (no upstream — the test spawns its own)"
 "$HARNESS_DIR/start-chaos.sh"
 
-echo "==> running failover + ordering scenarios ($CHAOS_RUN)"
+echo "==> running failover + ordering scenarios (run=$CHAOS_RUN skip=${CHAOS_SKIP:-<none>})"
 cd "$SDK_GO_DIR"
-GOWORK=off go test -tags chaos -run "$CHAOS_RUN" -timeout "$GO_TEST_TIMEOUT" -v ./...
+skip_args=()
+if [[ -n "$CHAOS_SKIP" ]]; then
+  skip_args=(-skip "$CHAOS_SKIP")
+fi
+GOWORK=off go test -tags chaos -run "$CHAOS_RUN" "${skip_args[@]}" -timeout "$GO_TEST_TIMEOUT" -v ./...
