@@ -57,7 +57,7 @@ func benchClient(b *testing.B) *Client {
 	if err != nil {
 		b.Fatal(err)
 	}
-	client.installEnvelope(envelope)
+	client.installEnvelope(envelope, -1)
 	return client
 }
 

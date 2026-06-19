@@ -2,6 +2,39 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 1.1.0 - 2026-06-19
+
+### Changed
+
+- **HTTP config-fetch now uses a parallel-failover hedge (qfg-7h5d.1.14).** The
+  init/refresh fetch fires the primary URL first and, only if it is slow (past a
+  hedge delay) or errors, _also_ fires the secondary in parallel — it no longer
+  walks the URLs strictly sequentially. Whatever arrives is installed by
+  watermark-max (higher `Meta.generation` wins; a late older payload never
+  regresses an established client; a late newer payload heals forward). A fast
+  healthy primary answers inside the hedge delay, so the secondary stays a cold
+  standby and a healthy system adds zero secondary load. The SSE stream is
+  untouched and still never fails over.
+- Backward-compatible behavioral notes (no promised contract is broken):
+  - `ResolvedFrom()` may now return `"primary"` in a both-legs-healthy topology
+    where a 1.0.0 client could return `"secondary"`, because the secondary is no
+    longer contacted when the primary answers quickly.
+  - `OnConfigUpdate` may fire one extra time shortly after `ready()` when a slow
+    but newer primary heals forward past the secondary's seed.
+  - ETags are now tracked per leg (each URL has its own `If-None-Match` state);
+    this fixes a latent cross-leg 304 masking when both legs are read.
+
+### Added
+
+- **`WithConfigFetchHedgeDelay(d)`** — how long the hedge waits for the primary
+  before also firing the secondary in parallel (default ~2s). A primary that
+  answers within this delay means the secondary is never contacted.
+- **`WithConfigFetchHedgeAbort(d)`** — per-leg hard-abort on the hedged path
+  (default ~6s). Must exceed the slow-but-alive primary latency you want to heal
+  forward from and be `< InitTimeout` (a construction-time warning fires if
+  `InitTimeout <= ` this value). `WithConfigFetchTimeout` is unchanged and keeps
+  governing the sequential fetch path.
+
 ## 1.0.0 - 2026-06-06
 
 ### Changed

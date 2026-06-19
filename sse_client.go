@@ -16,7 +16,7 @@ package quonfig
 //
 //	: keepalive       <-- SSE comment, every 30s, must be ignored
 //
-// Auth mirrors runtime_transport.fetchFromURL: HTTP Basic with user="1",
+// Auth mirrors runtime_transport.fetchFromURLAt: HTTP Basic with user="1",
 // password=APIKey, plus X-Quonfig-SDK-Version and Accept: text/event-stream.
 //
 // Reconnect policy: exponential backoff (InitialDelay → MaxDelay) with jitter,

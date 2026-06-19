@@ -12,12 +12,11 @@ name: Failover Chaos
 # Meta.generations for ordering — so this job only has to boot toxiproxy via
 # scripts/run-failover-chaos.sh. Wall clock ~3 min.
 #
-# Scenarios gated here: f01-f05 (failover) + o02-o04 (ordering). o01-secondary-
-# newer is SKIPPED — it asserts cross-leg "max-wins" (hold the higher generation
-# even when the older primary leg is healthy), which the backend SDKs do not yet
-# implement (it's out of the §5f reject-older scope, "no source ranking"). That
-# behaviour is owned by qfg-7h5d.1.14; drop the CHAOS_SKIP below to re-gate o01
-# once it lands.
+# Scenarios run here: f01-f05 (failover) + o01-o05 (ordering). The parallel-
+# failover hedge (qfg-7h5d.1.14) landed, so the previously-skipped o01 (reframed
+# to the hedge happy-path: a fast primary wins and the secondary is never
+# contacted) and o03 (heal-forward) now run, alongside the new o05 (slow older
+# primary loses to a fast newer secondary). CHAOS_SKIP below is empty.
 
 on:
   push:
@@ -57,7 +56,7 @@ jobs:
           # this job drives only exists on main and is not yet in a tag (the
           # latest tag, v2026.05.28, predates it). Pin to a tag once the corpus
           # is rev'd into one, matching chaos.yaml's pinning rationale.
-          ref: v2026.06.19
+          ref: v2026.06.19.1
 
       - name: Checkout api-delivery
         # api-delivery is private; the default GITHUB_TOKEN cannot read it. A
@@ -99,9 +98,10 @@ jobs:
         if: env.HAS_REPO_TOKEN == 'true'
         working-directory: sdk-go
         env:
-          # o01-secondary-newer needs cross-leg max-wins (qfg-7h5d.1.14); not
-          # implemented yet. Drop this once o01 can go green.
-          CHAOS_SKIP: TestOrderingChaos/o01-secondary-newer|TestOrderingChaos/o03-late-primary-heals
+          # The parallel-failover hedge (qfg-7h5d.1.14) landed, so o01 (reframed
+          # to the hedge happy-path), o03 (heal-forward), and o05 (new) all run.
+          # Empty CHAOS_SKIP => skip nothing.
+          CHAOS_SKIP: ""
           # Cap the go test timeout under the job's timeout-minutes budget so a
           # stuck scenario fails inside the job rather than at the runner limit.
           GO_TEST_TIMEOUT: 25m

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/quonfig/sdk-go/internal/version"
@@ -71,8 +72,13 @@ type Client struct {
 	initialized            bool
 	initializationErr      error
 	refreshMu              sync.Mutex
-	closeCh                chan struct{}
-	closeOnce              sync.Once
+	// refreshInFlight coalesces overlapping hedged config-fetch cycles (the init
+	// fetch, the 750ms-style manual Refresh loop, and the fallback poller). At
+	// most one hedge cycle runs at a time; an overlapping trigger is skipped
+	// rather than stacking a second pair of in-flight legs against a slow primary.
+	refreshInFlight atomic.Bool
+	closeCh         chan struct{}
+	closeOnce       sync.Once
 
 	// Failover / canonical-ordering observability (guarded by mu). These back
 	// the public HeldGeneration/ResolvedFrom/ConfigInstallCount/
@@ -123,11 +129,29 @@ func NewClient(opts ...Option) (*Client, error) {
 	var transport *runtimeTransport
 	if o.DataDir == "" && o.APIKey != "" {
 		transport = newRuntimeTransportWithStreamOverride(o.APIURLs, o.APIKey, o.HTTPClient, o.testStreamURLOverride)
-		// Per-URL config-fetch deadline (qfg-7h5d.1.4). Set once, before any
-		// goroutine reads the transport, so it stays effectively immutable.
-		// Both the initial fetch and the fallback poller route through
-		// transport.FetchConfigs, so this bounds every leg uniformly.
+		// Per-leg config-fetch deadlines. Set once, before any goroutine reads the
+		// transport, so they stay effectively immutable. fetchTimeout bounds the
+		// sequential FetchConfigs path (qfg-7h5d.1.4); hedgeDelay/hedgeAbort bound
+		// the parallel hedge that the init/refresh install path uses (qfg-7h5d.1.14).
 		transport.fetchTimeout = o.ConfigFetchTimeout
+		transport.hedgeDelay = o.ConfigFetchHedgeDelay
+		transport.hedgeAbort = o.ConfigFetchHedgeAbort
+
+		// The init-path heal leg runs under a context whose deadline is the
+		// InitTimeout; if the per-leg hedge abort is >= InitTimeout the heal leg is
+		// clipped and a late-but-newer primary can't heal forward. Warn rather than
+		// hard-fail so a deliberately short InitTimeout still works (just without
+		// init-time heal-forward).
+		effAbort := o.ConfigFetchHedgeAbort
+		if effAbort <= 0 {
+			effAbort = DefaultConfigFetchHedgeAbort
+		}
+		if o.InitTimeout > 0 && o.InitTimeout <= effAbort {
+			o.Logger.Warn("quonfig: InitTimeout <= config-fetch hedge abort; init-path heal-forward may be clipped",
+				slog.Duration("init_timeout", o.InitTimeout),
+				slog.Duration("hedge_abort", effAbort),
+			)
+		}
 	}
 
 	client := &Client{
@@ -160,7 +184,7 @@ func NewClient(opts ...Option) (*Client, error) {
 			}
 			return nil, err
 		}
-		client.installEnvelope(envelope)
+		client.installEnvelope(envelope, -1)
 		client.finishInitialization(true)
 		if o.DataDirAutoReload {
 			client.startDatadirWatcher()
@@ -278,7 +302,7 @@ func (c *Client) reloadDatadir() {
 		return
 	}
 	c.refreshMu.Lock()
-	c.installEnvelope(envelope)
+	c.installEnvelope(envelope, -1)
 	c.refreshMu.Unlock()
 }
 
@@ -736,7 +760,9 @@ func (c *Client) startSSE() {
 			// if it advances the held generation (qfg-7h5d.1.5).
 			c.refreshMu.Lock()
 			if c.shouldInstall(env) {
-				c.installEnvelope(env)
+				// SSE is pinned to the primary leg and does not change which HTTP
+				// leg ResolvedFrom reports, so pass -1.
+				c.installEnvelope(env, -1)
 			}
 			c.refreshMu.Unlock()
 		},
@@ -877,21 +903,79 @@ func (c *Client) SSEFailedOverToSecondary() bool {
 	return c.sseStreamIndex > 0
 }
 
+// fetchAndInstall drives one hedged config-fetch cycle and installs whatever
+// arrives through the reject-older guard. The hedge fires the primary first and,
+// only if it is slow or errors, fires the secondary in parallel; results are
+// installed as they arrive so watermark-max falls out (higher generation wins, a
+// late older payload never regresses, a late newer payload heals forward). On
+// the init path ready() latches on the first successful install while the loop
+// keeps draining so a late-but-newer leg heals forward before the call returns.
 func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
-	c.refreshMu.Lock()
-	defer c.refreshMu.Unlock()
+	if c.transport == nil {
+		return nil
+	}
 
-	result, err := c.transport.FetchConfigs(ctx)
-	if err != nil {
+	// Coalesce overlapping hedge cycles. The init fetch claims the gate (it must
+	// run, so it never coalesces); a Refresh / fallback-poll tick that arrives
+	// while a cycle is draining is skipped rather than stacking a second pair of
+	// in-flight legs. The init fetch is the first caller, so it always wins the
+	// gate before any background worker starts.
+	if initial {
+		c.refreshInFlight.Store(true)
+	} else if !c.refreshInFlight.CompareAndSwap(false, true) {
+		return nil
+	}
+	defer c.refreshInFlight.Store(false)
+
+	results := c.transport.FetchConfigsHedged(ctx, c.transport.hedgeDelay, c.transport.hedgeAbort)
+
+	installedOnce := false
+	fired := 0
+	failures := 0
+	var lastErr error
+
+	for lr := range results {
+		fired++
+		if lr.Err != nil {
+			failures++
+			lastErr = lr.Err
+			continue
+		}
+		res := lr.Res
+		if res.NotChanged {
+			continue
+		}
+		// Reject-older guard + install are atomic under refreshMu against every
+		// other install path (SSE, datadir). installEnvelope sets the held
+		// generation, install count, and resolved-from leg together.
+		c.refreshMu.Lock()
+		installed := false
+		if c.shouldInstall(res.Envelope) {
+			c.installEnvelope(res.Envelope, res.SourceIndex)
+			installed = true
+		}
+		c.refreshMu.Unlock()
+		if installed && !installedOnce {
+			installedOnce = true
+			if initial {
+				c.finishInitialization(true)
+			}
+		}
+	}
+
+	if installedOnce {
+		return nil
+	}
+
+	// Nothing installed. If every fired leg failed, surface the failure (init
+	// path applies OnInitFailure). Otherwise every leg was a 304 (established
+	// client, no change) — a no-op success.
+	if fired > 0 && failures == fired {
 		if initial {
-			storedErr := err
-			// Normalize a context.DeadlineExceeded that came from our own
-			// init timeout into ErrInitializationTimeout. Otherwise the
-			// caller's errors.Is(err, ErrInitializationTimeout) check is
-			// non-deterministic: it succeeds when awaitInitialization's
-			// timer fires first, but fails when the fetch context's
-			// deadline fires first and stores the raw context error.
-			if c.opts.InitTimeout > 0 && errors.Is(err, context.DeadlineExceeded) {
+			storedErr := lastErr
+			// Normalize our own init-timeout DeadlineExceeded so callers'
+			// errors.Is(err, ErrInitializationTimeout) is deterministic.
+			if c.opts.InitTimeout > 0 && errors.Is(lastErr, context.DeadlineExceeded) {
 				storedErr = c.initializationTimeoutError("")
 			}
 			c.mu.Lock()
@@ -899,35 +983,14 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 			c.mu.Unlock()
 			c.finishInitialization(false)
 		}
-		return err
-	}
-
-	if result.NotChanged {
-		if initial {
-			c.mu.Lock()
-			c.initialized = true
-			c.initializationErr = nil
-			c.mu.Unlock()
-			c.finishInitialization(true)
-		}
-		return nil
-	}
-
-	// Reject-older guard: a poll, failover, or fallback-poller fetch installs
-	// only if it advances the held generation. Without this, a failover to an
-	// older secondary regresses an established client (qfg-7h5d.1.5). We hold
-	// refreshMu across the whole function, so the guard decision and the install
-	// are atomic with respect to every other install path. The very first fetch
-	// is always installed (fresh client), so the initial path never lands here
-	// rejected with nothing held.
-	if c.shouldInstall(result.Envelope) {
-		c.installEnvelope(result.Envelope)
-		c.mu.Lock()
-		c.resolvedFromIndex = result.SourceIndex
-		c.mu.Unlock()
+		return lastErr
 	}
 
 	if initial {
+		c.mu.Lock()
+		c.initialized = true
+		c.initializationErr = nil
+		c.mu.Unlock()
 		c.finishInitialization(true)
 	}
 	return nil
@@ -961,7 +1024,14 @@ func (c *Client) shouldInstall(envelope *ConfigEnvelope) bool {
 	return envelope.Meta.Generation > c.heldGeneration
 }
 
-func (c *Client) installEnvelope(envelope *ConfigEnvelope) {
+// installEnvelope swaps in a freshly-built store/evaluator/resolver for the
+// given envelope. sourceIndex is the baseURLs index of the HTTP leg that
+// produced it (so ResolvedFrom reflects the leg actually holding the config);
+// pass -1 for installs with no leg (datadir, SSE) to leave resolvedFromIndex
+// untouched. heldGeneration, configInstalls, and resolvedFromIndex are set in
+// one c.mu critical section so a reader can never observe a new generation
+// paired with a stale resolved-from index.
+func (c *Client) installEnvelope(envelope *ConfigEnvelope, sourceIndex int) {
 	store := newRuntimeStore()
 	store.Update(envelope)
 	evaluator := newRuntimeEvaluator(store)
@@ -974,6 +1044,9 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope) {
 	c.envID = envelope.Meta.Environment
 	c.heldGeneration = envelope.Meta.Generation
 	c.configInstalls++
+	if sourceIndex >= 0 {
+		c.resolvedFromIndex = sourceIndex
+	}
 	c.initialized = true
 	c.initializationErr = nil
 	onConfigUpdate := c.opts.OnConfigUpdate

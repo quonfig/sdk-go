@@ -59,16 +59,29 @@ type Options struct {
 	InitTimeout   time.Duration
 	OnInitFailure OnInitFailure
 
-	// ConfigFetchTimeout bounds a single per-URL config-fetch attempt (the
-	// initial fetch and every fallback-poller fetch alike). When a leg hangs —
-	// accepts the connection but never responds — the attempt aborts after this
-	// deadline so the next leg (e.g. the secondary) is reached inside the
-	// overall InitTimeout instead of being starved until it. Zero means use
-	// DefaultConfigFetchTimeout (~3s). This is a per-attempt deadline on the
-	// HTTP config path only; it does not affect the long-lived SSE stream.
+	// ConfigFetchTimeout bounds a single per-URL config-fetch attempt on the
+	// SEQUENTIAL fetch path. Zero means use DefaultConfigFetchTimeout (~3s). This
+	// is a per-attempt deadline on the HTTP config path only; it does not affect
+	// the long-lived SSE stream. The hedged init/refresh path uses
+	// ConfigFetchHedgeDelay / ConfigFetchHedgeAbort instead, so this option's
+	// default and semantics are unchanged by the hedge.
 	ConfigFetchTimeout time.Duration
-	EnvLookup          EnvLookupFunc
-	HTTPClient         *http.Client
+
+	// ConfigFetchHedgeDelay is how long the hedged config-fetch waits for the
+	// primary leg before ALSO firing the secondary in parallel (it never cancels
+	// the primary). A primary that succeeds before this means the secondary is
+	// never contacted; a primary that errors before this fires the secondary
+	// immediately. Zero means DefaultConfigFetchHedgeDelay (~2s). Additive.
+	ConfigFetchHedgeDelay time.Duration
+
+	// ConfigFetchHedgeAbort is the per-leg hard-abort deadline on the hedged
+	// path. It must exceed the longest slow-but-alive primary latency you want to
+	// heal forward from, and must be < InitTimeout so the init-path heal leg is
+	// not clipped. Zero means DefaultConfigFetchHedgeAbort (~6s). Additive.
+	ConfigFetchHedgeAbort time.Duration
+
+	EnvLookup  EnvLookupFunc
+	HTTPClient *http.Client
 
 	// FallbackPollEnabled controls whether the Layer 2 fallback poller is
 	// allowed to engage. The poller is idle while SSE is connected; it
@@ -186,6 +199,8 @@ func defaultOptions() Options {
 		InitTimeout:                10 * time.Second,
 		OnInitFailure:              ReturnError,
 		ConfigFetchTimeout:         DefaultConfigFetchTimeout,
+		ConfigFetchHedgeDelay:      DefaultConfigFetchHedgeDelay,
+		ConfigFetchHedgeAbort:      DefaultConfigFetchHedgeAbort,
 		SSEEnabled:                 true,
 		FallbackPollEnabled:        true,
 		FallbackPollInterval:       60 * time.Second,
@@ -376,6 +391,47 @@ func WithConfigFetchTimeout(d time.Duration) Option {
 			return errors.New("config fetch timeout must be positive")
 		}
 		o.ConfigFetchTimeout = d
+		return nil
+	}
+}
+
+// WithConfigFetchHedgeDelay sets how long the hedged config-fetch waits for the
+// primary leg before ALSO firing the secondary in parallel. The primary is never
+// cancelled; whichever payloads arrive are installed by watermark-max (higher
+// generation wins, a late older payload never regresses, a late newer payload
+// heals forward). A primary that answers within this delay means the secondary
+// is never contacted, so a healthy system adds zero secondary load.
+//
+// Additive and backward-compatible: the default (DefaultConfigFetchHedgeDelay,
+// ~2s) keeps the secondary a cold standby for a healthy sub-second primary. Set
+// it below your primary's slow-but-alive worst case but above its typical
+// latency. Must be positive.
+func WithConfigFetchHedgeDelay(d time.Duration) Option {
+	return func(o *Options) error {
+		if d <= 0 {
+			return errors.New("config fetch hedge delay must be positive")
+		}
+		o.ConfigFetchHedgeDelay = d
+		return nil
+	}
+}
+
+// WithConfigFetchHedgeAbort sets the per-leg hard-abort deadline on the hedged
+// config-fetch path. A leg that has not answered within this deadline is
+// aborted. It must exceed the longest slow-but-alive primary latency you want to
+// heal forward from (so a late-but-newer primary is installed rather than
+// aborted) and must be < InitTimeout so the init-path heal leg is not clipped;
+// the client logs a warning at construction if InitTimeout <= this value.
+//
+// Additive and backward-compatible: the default (DefaultConfigFetchHedgeAbort,
+// ~6s) sits between the typical heal latency and the default 10s InitTimeout.
+// Must be positive.
+func WithConfigFetchHedgeAbort(d time.Duration) Option {
+	return func(o *Options) error {
+		if d <= 0 {
+			return errors.New("config fetch hedge abort must be positive")
+		}
+		o.ConfigFetchHedgeAbort = d
 		return nil
 	}
 }

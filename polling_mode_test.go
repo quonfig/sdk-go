@@ -231,7 +231,7 @@ func TestClientConnectionStateAndLastRefreshTransitions(t *testing.T) {
 	// installEnvelope advances LastSuccessfulRefresh on the supervisor and
 	// the Client surfaces it.
 	before := time.Now()
-	client.installEnvelope(&ConfigEnvelope{Meta: Meta{Version: "v1", Environment: "Test"}})
+	client.installEnvelope(&ConfigEnvelope{Meta: Meta{Version: "v1", Environment: "Test"}}, -1)
 	got := client.LastSuccessfulRefresh()
 	if got.Before(before) || got.After(time.Now().Add(time.Second)) {
 		t.Errorf("LastSuccessfulRefresh = %s, want between %s and now", got, before)

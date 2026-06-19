@@ -21,7 +21,7 @@ func detailsClient(t *testing.T, configs []ConfigResponse, envLookup EnvLookupFu
 	client.installEnvelope(&ConfigEnvelope{
 		Meta:    Meta{Version: "v1", Environment: "Production"},
 		Configs: configs,
-	})
+	}, -1)
 	return client
 }
 
