@@ -239,6 +239,11 @@ func TestClientRefreshUsesETagAndUpdatesStore(t *testing.T) {
 				Meta: Meta{
 					Version:     etag,
 					Environment: "Production",
+					// A content change ships a higher generation in production
+					// (git rev-list count); the reject-older guard installs an
+					// update only when its generation advances. revision 1 -> gen 1,
+					// revision 2 -> gen 2, so the bumped payload heals forward.
+					Generation: int(current),
 				},
 			}), nil
 		}),

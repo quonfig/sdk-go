@@ -606,7 +606,12 @@ func TestNewClientWithSSEEnabledConnects(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
 		w.WriteHeader(http.StatusOK)
-		writeSSEEnvelope(w, flusher, makeEnvelope("v2", "flag.x", "streamed"))
+		// The streamed envelope must carry a higher generation than the polled
+		// one so the reject-older guard heals forward to it (production bumps the
+		// generation on every change).
+		streamedEnv := makeEnvelope("v2", "flag.x", "streamed")
+		streamedEnv.Meta.Generation = 2
+		writeSSEEnvelope(w, flusher, streamedEnv)
 		<-r.Context().Done()
 	}))
 	defer sseServer.Close()
@@ -614,7 +619,9 @@ func TestNewClientWithSSEEnabledConnects(t *testing.T) {
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("ETag", "v1")
-		_ = json.NewEncoder(w).Encode(makeEnvelope("v1", "flag.x", "polled"))
+		polledEnv := makeEnvelope("v1", "flag.x", "polled")
+		polledEnv.Meta.Generation = 1
+		_ = json.NewEncoder(w).Encode(polledEnv)
 	}))
 	defer httpServer.Close()
 

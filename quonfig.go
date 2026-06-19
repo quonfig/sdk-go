@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/quonfig/sdk-go/internal/version"
@@ -72,13 +71,8 @@ type Client struct {
 	initialized            bool
 	initializationErr      error
 	refreshMu              sync.Mutex
-	// refreshInFlight coalesces overlapping hedged config-fetch cycles (the init
-	// fetch, the 750ms-style manual Refresh loop, and the fallback poller). At
-	// most one hedge cycle runs at a time; an overlapping trigger is skipped
-	// rather than stacking a second pair of in-flight legs against a slow primary.
-	refreshInFlight atomic.Bool
-	closeCh         chan struct{}
-	closeOnce       sync.Once
+	closeCh                chan struct{}
+	closeOnce              sync.Once
 
 	// Failover / canonical-ordering observability (guarded by mu). These back
 	// the public HeldGeneration/ResolvedFrom/ConfigInstallCount/
@@ -915,18 +909,15 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 		return nil
 	}
 
-	// Coalesce overlapping hedge cycles. The init fetch claims the gate (it must
-	// run, so it never coalesces); a Refresh / fallback-poll tick that arrives
-	// while a cycle is draining is skipped rather than stacking a second pair of
-	// in-flight legs. The init fetch is the first caller, so it always wins the
-	// gate before any background worker starts.
-	if initial {
-		c.refreshInFlight.Store(true)
-	} else if !c.refreshInFlight.CompareAndSwap(false, true) {
-		return nil
-	}
-	defer c.refreshInFlight.Store(false)
-
+	// Concurrent hedge cycles (a manual Refresh racing the fallback poller, say)
+	// are safe and are NOT coalesced: each leg uses its own per-URL ETag slot
+	// under etagMu, every install is serialized through refreshMu + the
+	// reject-older guard (so an equal-or-older payload is a no-op and the install
+	// count can't double), and each leg is bounded by hedgeAbort. Coalescing here
+	// would make a manual Refresh() silently no-op whenever a background fetch is
+	// in flight, which violates the Refresh() contract. The chaos refresh loop is
+	// synchronous and init runs before any background worker starts, so there is
+	// no real-world pileup to guard against.
 	results := c.transport.FetchConfigsHedged(ctx, c.transport.hedgeDelay, c.transport.hedgeAbort)
 
 	installedOnce := false
