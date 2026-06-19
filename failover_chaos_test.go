@@ -167,6 +167,25 @@ func runRigScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, dri
 		)
 	}
 
+	// Partition chaos events into pre-init (inject present AND at_ms<=0) and
+	// scheduled (at_ms>0). The pre-init injects MUST be in place before the
+	// client's init goroutine starts fetching, otherwise the primary fetch can
+	// win and resolve off the (un-faulted) primary before the fault lands —
+	// a latent race that python/java fail on deterministically (go just won
+	// the race). applyFailoverInject makes a blocking toxiproxy HTTP call, so
+	// once it returns the fault is confirmed-applied. Mirrors sdk-ruby
+	// (chaos/failover_chaos.rb: pre_init/scheduled partition).
+	var scheduled []chaosEvent
+	for _, ev := range run.Chaos {
+		ev := ev
+		if ev.Inject != nil && ev.AtMs <= 0 {
+			applyFailoverInject(t, tp, ev.Inject)
+			t.Logf("[pre-init] inject %+v", ev.Inject)
+			continue
+		}
+		scheduled = append(scheduled, ev)
+	}
+
 	client, err := NewClient(opts...)
 	if err != nil {
 		t.Logf("client init returned: %v — continuing (the scenario may still observe the failure)", err)
@@ -177,9 +196,10 @@ func runRigScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, dri
 
 	baseline := time.Now()
 
-	// Schedule chaos events. The failover-rig aliases are self-restoring (they
-	// carry their own duration), so there are no `clear` events to track.
-	for _, ev := range run.Chaos {
+	// Schedule the remaining (at_ms>0) chaos events relative to baseline. The
+	// failover-rig aliases are self-restoring (they carry their own duration),
+	// so there are no `clear` events to track.
+	for _, ev := range scheduled {
 		ev := ev
 		if ev.Inject == nil {
 			continue
