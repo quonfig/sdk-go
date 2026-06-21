@@ -86,6 +86,53 @@ func TestRejectOlderInstallGuard(t *testing.T) {
 	}
 }
 
+// TestInstallGuardCarveOutUnversioned pins the gen<=0 carve-out (qfg-7h5d.1.18):
+// an established client must still install an UNVERSIONED snapshot (generation
+// absent or 0 — a server that predates the watermark, or one whose rev-count
+// failed and fell back to 0). Such a payload carries no ordering information, so
+// it cannot be rejected as "older"; rejecting it would freeze the client on
+// stale config until a positive generation reappeared. This generalizes the
+// carve-out sdk-node has always had to all backend SDKs.
+func TestInstallGuardCarveOutUnversioned(t *testing.T) {
+	var gen atomic.Int64
+	gen.Store(42) // establish on a real watermark first
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		g := int(gen.Load())
+		w.Header().Set("ETag", fmt.Sprintf(`"gen-%d"`, g))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(orderingEnvelopeJSON(g)))
+	}))
+	defer server.Close()
+
+	client, err := quonfig.NewClient(
+		quonfig.WithSdkKey("test-backend-key"),
+		quonfig.WithAPIURLs([]string{server.URL}),
+		quonfig.WithAllTelemetryDisabled(),
+		quonfig.WithSSE(false),
+		quonfig.WithFallbackPoll(false, 0),
+		quonfig.WithInitTimeout(5*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer client.Close()
+
+	awaitClientReady(t, client)
+	if got := client.HeldGeneration(); got != 42 {
+		t.Fatalf("after init: held generation = %d, want 42", got)
+	}
+
+	// Server now serves an unversioned (generation 0) snapshot — e.g. a
+	// pre-watermark deploy or a rev-count failure. The established client must
+	// install it (carve-out), not freeze on 42.
+	gen.Store(0)
+	_ = client.Refresh()
+	if got := client.HeldGeneration(); got != 0 {
+		t.Fatalf("carve-out failed: held generation = %d, want 0 (unversioned snapshot must install, not freeze)", got)
+	}
+}
+
 // TestInstallGuardHealsForwardAndSeeds covers the other three ordering
 // invariants the guard must preserve:
 //   - a fresh client seeds off whatever arrives first, even an older generation

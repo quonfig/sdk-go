@@ -1001,6 +1001,11 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 //     later, newer primary win heals forward.
 //   - A same-generation snapshot is a no-op (not strictly greater), so an equal
 //     second leg can't re-install or flap.
+//   - An unversioned snapshot (generation absent or <= 0 — a server that
+//     predates the watermark, or one whose rev-count failed) carries no ordering
+//     information, so it can't be rejected as "older". It installs exactly as it
+//     did before this guard existed; rejecting it would freeze an established
+//     client on stale config until a positive generation reappeared.
 //
 // Callers must hold c.refreshMu so the decision and the install that follows are
 // atomic with respect to every other install path. Datadir install/reload is a
@@ -1010,6 +1015,9 @@ func (c *Client) shouldInstall(envelope *ConfigEnvelope) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.configInstalls == 0 {
+		return true
+	}
+	if envelope.Meta.Generation <= 0 {
 		return true
 	}
 	return envelope.Meta.Generation > c.heldGeneration
