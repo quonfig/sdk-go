@@ -2,10 +2,15 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
-## 1.1.0 - 2026-06-19
+## 1.1.0 - 2026-07-01
 
 ### Changed
 
+- **Install-guard carve-out for unversioned snapshots (qfg-7h5d.1.16).** A
+  delivery payload whose `generation` is absent or `<= 0` (e.g. from a server
+  that predates the generation watermark) is installed by an established client
+  rather than rejected as older. Defensive back-compat guard — with servers
+  that emit true generations it never triggers.
 - **HTTP config-fetch now uses a parallel-failover hedge (qfg-7h5d.1.14).** The
   init/refresh fetch fires the primary URL first and, only if it is slow (past a
   hedge delay) or errors, _also_ fires the secondary in parallel — it no longer
