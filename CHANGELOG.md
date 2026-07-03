@@ -2,6 +2,23 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Fixed
+
+- **`LastSuccessfulRefresh` now advances on every successful refresh, not only
+  on installs (qfg-41nh.11).** A fetch that completes successfully at the HTTP
+  layer — 304 Not Modified, or a 200 whose payload the ordering guard rejects
+  as equal-or-older — now stamps the refresh time, as does a
+  received-and-processed SSE message that was a guard no-op. Previously a
+  healthy long-lived client parked on 304s under-reported liveness: the stamp
+  froze even though every fetch succeeded. Transport errors still never stamp.
+  Two smaller corrections ride along: the initial config fetch now stamps (it
+  previously ran before the internal supervisor existed and the stamp was
+  lost), and datadir loads/reloads now stamp (any install counts). Additive,
+  backward-compatible: the getter's signature and zero-value-before-first-
+  refresh contract are unchanged.
+
 ## 1.1.0 - 2026-07-01
 
 ### Changed

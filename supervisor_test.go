@@ -15,7 +15,9 @@ import (
 //   - restarts the worker with exponential backoff (500ms → 30s cap),
 //   - bumps quonfig_sdk_worker_restart_total{layer="<n>"} per restart,
 //   - stops cleanly within 5s on Stop(),
-//   - exposes ConnectionState() and LastSuccessfulRefresh() for callers.
+//   - exposes ConnectionState() for callers. (LastSuccessfulRefresh lives on
+//     the Client since qfg-41nh.11 — see refresh_liveness_internal_test.go
+//     and TestClientConnectionStateAndLastRefreshTransitions.)
 //
 // These tests inject tiny (sub-millisecond) backoff bounds so the suite
 // completes in well under a second; the actual 500ms→30s exponential
@@ -212,10 +214,11 @@ func TestSupervisorRecoversFromOnEnvelopeStylePanic(t *testing.T) {
 }
 
 // Test 6 — ConnectionState transitions through documented values as the
-// worker reports state changes; LastSuccessfulRefresh advances when the
-// worker records an install. The supervisor itself does not own the
-// transport — it provides the surface that workers report into.
-func TestSupervisorConnectionStateAndLastRefresh(t *testing.T) {
+// worker reports state changes. The supervisor itself does not own the
+// transport — it provides the surface that workers report into. (The
+// LastSuccessfulRefresh half of contract Test 6 is covered at the Client
+// level, where the stamp lives since qfg-41nh.11.)
+func TestSupervisorConnectionState(t *testing.T) {
 	gate := make(chan struct{})
 	w := worker{
 		Layer: "1",
@@ -233,12 +236,9 @@ func TestSupervisorConnectionStateAndLastRefresh(t *testing.T) {
 		MaxDelay:     5 * time.Millisecond,
 	}, w)
 
-	// Before Start: initializing, zero refresh.
+	// Before Start: initializing.
 	if got, want := s.ConnectionState(), ConnStateInitializing; got != want {
 		t.Errorf("pre-Start ConnectionState = %q, want %q", got, want)
-	}
-	if !s.LastSuccessfulRefresh().IsZero() {
-		t.Errorf("pre-Start LastSuccessfulRefresh should be zero, got %s", s.LastSuccessfulRefresh())
 	}
 
 	s.Start()
@@ -248,13 +248,6 @@ func TestSupervisorConnectionStateAndLastRefresh(t *testing.T) {
 	s.setConnectionState(ConnStateConnected)
 	if got, want := s.ConnectionState(), ConnStateConnected; got != want {
 		t.Errorf("after connected ConnectionState = %q, want %q", got, want)
-	}
-
-	before := time.Now()
-	s.recordSuccessfulRefresh()
-	got := s.LastSuccessfulRefresh()
-	if got.Before(before) || got.After(time.Now().Add(1*time.Second)) {
-		t.Errorf("LastSuccessfulRefresh = %s, want between %s and now", got, before)
 	}
 
 	s.setConnectionState(ConnStateDisconnected)

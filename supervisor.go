@@ -10,8 +10,10 @@ package quonfig
 // backoff (500ms → 30s cap), and restarts. A clean exit driven by ctx
 // cancellation is *not* counted as a restart.
 //
-// The supervisor is the source of truth for ConnectionState() and
-// LastSuccessfulRefresh(). Workers report into it; callers read out of it.
+// The supervisor is the source of truth for ConnectionState(). Workers
+// report into it; callers read out of it. (LastSuccessfulRefresh lives on
+// the Client — the init fetch runs before the supervisor exists, and
+// successful-but-not-installed fetches must stamp it too; qfg-41nh.11.)
 // See project/plans/sdk-hardening-and-verification.md §"Watcher of the
 // watchers" for the full design.
 
@@ -65,7 +67,7 @@ type supervisorConfig struct {
 
 // Supervisor owns a set of long-running workers, restarts them on crash with
 // exponential backoff, and exposes the health surface (ConnectionState,
-// LastSuccessfulRefresh, WorkerRestartTotal).
+// WorkerRestartTotal).
 type supervisor struct {
 	cfg     supervisorConfig
 	workers []worker
@@ -78,7 +80,6 @@ type supervisor struct {
 
 	mu           sync.Mutex
 	state        ConnectionState
-	lastRefresh  time.Time
 	restartTotal map[string]*atomic.Int64
 }
 
@@ -257,23 +258,5 @@ func (s *supervisor) ConnectionState() ConnectionState {
 func (s *supervisor) setConnectionState(state ConnectionState) {
 	s.mu.Lock()
 	s.state = state
-	s.mu.Unlock()
-}
-
-// LastSuccessfulRefresh returns the wall-clock time of the most recent
-// successful config install (any source). Zero value before the first
-// install.
-func (s *supervisor) LastSuccessfulRefresh() time.Time {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.lastRefresh
-}
-
-// recordSuccessfulRefresh stamps "now" as the most recent successful install.
-// Callers (workers, the Client install path) invoke it after atomic-swapping
-// a new envelope into the store.
-func (s *supervisor) recordSuccessfulRefresh() {
-	s.mu.Lock()
-	s.lastRefresh = time.Now()
 	s.mu.Unlock()
 }

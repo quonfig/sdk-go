@@ -82,6 +82,16 @@ type Client struct {
 	configInstalls    int // count of installEnvelope calls (every install path)
 	resolvedFromIndex int // baseURLs index of the last HTTP fetch that installed; -1 until set
 	sseStreamIndex    int // baseURLs index the SSE stream connected with; -1 until connected
+
+	// lastRefresh backs LastSuccessfulRefresh (guarded by mu). Stamped by
+	// every successful refresh: an envelope install (any path, including the
+	// init fetch and datadir loads), an HTTP fetch that completed successfully
+	// without installing (304 Not Modified, or 200 rejected by the ordering
+	// guard as equal-or-older), and a received-and-processed SSE message that
+	// was a guard no-op. Never stamped on transport errors. Lives on the
+	// Client rather than the supervisor so the init fetch — which runs before
+	// background workers exist — stamps too (qfg-41nh.11).
+	lastRefresh time.Time
 }
 
 // NewClient creates a new Quonfig client with the given options.
@@ -771,13 +781,19 @@ func (c *Client) startSSE() {
 // received-and-parsed SSE config message (initial snapshot or update) lands
 // here. Serialized with polled installs via refreshMu so we don't race.
 // Reject-older guard: a message only installs if it advances the held
-// generation (qfg-7h5d.1.5).
+// generation (qfg-7h5d.1.5). Either way the message was received and
+// processed — the stream proved live — so it counts as a successful refresh;
+// connection-level SSE failures flow through OnStateChange and never stamp
+// (qfg-41nh.11).
 func (c *Client) handleSSEEnvelope(env *ConfigEnvelope) {
 	c.refreshMu.Lock()
 	if c.shouldInstall(env) {
 		// SSE is pinned to the primary leg and does not change which HTTP
-		// leg ResolvedFrom reports, so pass -1.
+		// leg ResolvedFrom reports, so pass -1. installEnvelope stamps
+		// lastRefresh itself.
 		c.installEnvelope(env, -1)
+	} else {
+		c.recordSuccessfulRefresh()
 	}
 	c.refreshMu.Unlock()
 }
@@ -841,16 +857,28 @@ func (c *Client) FallbackPollerActive() bool {
 }
 
 // LastSuccessfulRefresh returns the wall-clock time of the most recent
-// successful config install (either path). Zero value before the first
-// install or when background workers are disabled.
+// successful refresh — the last moment the SDK confirmed its config source
+// was reachable and its held config current. That is: any envelope install
+// (initial fetch, SSE, fallback poll, datadir load/reload), any HTTP config
+// fetch that completed successfully without installing (304 Not Modified, or
+// a 200 the ordering guard rejected as equal-or-older), and any
+// received-and-processed SSE message even when it was a guard no-op.
+// Transport errors never advance it. Zero value before the first successful
+// refresh.
 func (c *Client) LastSuccessfulRefresh() time.Time {
 	c.mu.RLock()
-	sup := c.sup
-	c.mu.RUnlock()
-	if sup == nil {
-		return time.Time{}
-	}
-	return sup.LastSuccessfulRefresh()
+	defer c.mu.RUnlock()
+	return c.lastRefresh
+}
+
+// recordSuccessfulRefresh stamps "now" as the most recent successful refresh.
+// Called by installEnvelope (inline, under mu) for installs, and by the
+// transport paths for successful-but-not-installed outcomes: a 304, a 200
+// dropped by the reject-older guard, or a guard-no-op'd SSE message.
+func (c *Client) recordSuccessfulRefresh() {
+	c.mu.Lock()
+	c.lastRefresh = time.Now()
+	c.mu.Unlock()
 }
 
 // HeldGeneration returns the Meta.Generation of the config the client is
@@ -938,11 +966,15 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 		}
 		res := lr.Res
 		if res.NotChanged {
+			// 304: the leg answered and confirmed the held config is current —
+			// a successful refresh with nothing to install (qfg-41nh.11).
+			c.recordSuccessfulRefresh()
 			continue
 		}
 		// Reject-older guard + install are atomic under refreshMu against every
 		// other install path (SSE, datadir). installEnvelope sets the held
-		// generation, install count, and resolved-from leg together.
+		// generation, install count, and resolved-from leg together (and stamps
+		// lastRefresh).
 		c.refreshMu.Lock()
 		installed := false
 		if c.shouldInstall(res.Envelope) {
@@ -950,6 +982,12 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 			installed = true
 		}
 		c.refreshMu.Unlock()
+		if !installed {
+			// 200 dropped by the reject-older guard (equal-or-older payload):
+			// the fetch itself succeeded, so liveness still advances — only the
+			// install was a no-op (qfg-41nh.11).
+			c.recordSuccessfulRefresh()
+		}
 		if installed && !installedOnce {
 			installedOnce = true
 			if initial {
@@ -1033,7 +1071,9 @@ func (c *Client) shouldInstall(envelope *ConfigEnvelope) bool {
 // pass -1 for installs with no leg (datadir, SSE) to leave resolvedFromIndex
 // untouched. heldGeneration, configInstalls, and resolvedFromIndex are set in
 // one c.mu critical section so a reader can never observe a new generation
-// paired with a stale resolved-from index.
+// paired with a stale resolved-from index. Every install also stamps
+// lastRefresh — callers on the fetch/SSE paths must therefore only stamp
+// separately for successful-but-NOT-installed outcomes, never both.
 func (c *Client) installEnvelope(envelope *ConfigEnvelope, sourceIndex int) {
 	store := newRuntimeStore()
 	store.Update(envelope)
@@ -1052,13 +1092,9 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope, sourceIndex int) {
 	}
 	c.initialized = true
 	c.initializationErr = nil
+	c.lastRefresh = time.Now()
 	onConfigUpdate := c.opts.OnConfigUpdate
-	sup := c.sup
 	c.mu.Unlock()
-
-	if sup != nil {
-		sup.recordSuccessfulRefresh()
-	}
 
 	if onConfigUpdate != nil {
 		c.invokeOnConfigUpdate(onConfigUpdate)

@@ -573,7 +573,7 @@ func (p *chaosProbe) onSSEState(connected bool) {
 }
 
 func (p *chaosProbe) onConfigUpdate() {
-	// LastSuccessfulRefresh comes off the supervisor now.
+	// LastSuccessfulRefresh comes off the Client accessor now.
 }
 
 // slogHandler collects everything the SDK logs into logBuf so sdkLog can scan.

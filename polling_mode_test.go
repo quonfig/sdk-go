@@ -228,8 +228,8 @@ func TestClientConnectionStateAndLastRefreshTransitions(t *testing.T) {
 		t.Errorf("after disconnect ConnectionState = %q, want %q", got, ConnStateDisconnected)
 	}
 
-	// installEnvelope advances LastSuccessfulRefresh on the supervisor and
-	// the Client surfaces it.
+	// installEnvelope advances LastSuccessfulRefresh on the Client
+	// (qfg-41nh.11: the stamp lives on the Client, not the supervisor).
 	before := time.Now()
 	client.installEnvelope(&ConfigEnvelope{Meta: Meta{Version: "v1", Environment: "Test"}}, -1)
 	got := client.LastSuccessfulRefresh()
