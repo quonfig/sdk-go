@@ -746,20 +746,9 @@ func (c *Client) startSSE() {
 		// needs HTTP/1.1 forced (an h2 stream stall is invisible in CI),
 		// and the runtime read-deadline machinery lives in newSSEClient's
 		// default transport. The polling path keeps using HTTPClient.
-		ReadTimeout: c.opts.testSSEReadTimeout,
-		Logger:      c.opts.Logger,
-		OnEnvelope: func(env *ConfigEnvelope) {
-			// Serialize with polled installs via refreshMu so we don't race.
-			// Reject-older guard: an SSE initial snapshot or update only installs
-			// if it advances the held generation (qfg-7h5d.1.5).
-			c.refreshMu.Lock()
-			if c.shouldInstall(env) {
-				// SSE is pinned to the primary leg and does not change which HTTP
-				// leg ResolvedFrom reports, so pass -1.
-				c.installEnvelope(env, -1)
-			}
-			c.refreshMu.Unlock()
-		},
+		ReadTimeout:   c.opts.testSSEReadTimeout,
+		Logger:        c.opts.Logger,
+		OnEnvelope:    c.handleSSEEnvelope,
 		OnStateChange: onStateChange,
 	})
 
@@ -776,6 +765,21 @@ func (c *Client) startSSE() {
 	c.mu.Unlock()
 
 	sse.Start()
+}
+
+// handleSSEEnvelope is the OnEnvelope sink for the SSE stream: every
+// received-and-parsed SSE config message (initial snapshot or update) lands
+// here. Serialized with polled installs via refreshMu so we don't race.
+// Reject-older guard: a message only installs if it advances the held
+// generation (qfg-7h5d.1.5).
+func (c *Client) handleSSEEnvelope(env *ConfigEnvelope) {
+	c.refreshMu.Lock()
+	if c.shouldInstall(env) {
+		// SSE is pinned to the primary leg and does not change which HTTP
+		// leg ResolvedFrom reports, so pass -1.
+		c.installEnvelope(env, -1)
+	}
+	c.refreshMu.Unlock()
 }
 
 // handleSSEStateChange routes an SSE connection edge to the supervisor and,
