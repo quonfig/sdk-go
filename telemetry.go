@@ -99,6 +99,24 @@ func (t *telemetrySubmitter) RecordContext(ctx *ContextSet) {
 	t.submitter.RecordContext(ctxData)
 }
 
+// RecordHedgeFired records one config-fetch cycle whose hedge fired the
+// secondary leg (failover observability).
+func (t *telemetrySubmitter) RecordHedgeFired() {
+	t.submitter.RecordHedgeFired()
+}
+
+// RecordGuardRejected records one install dropped by the reject-older ordering
+// guard (failover observability).
+func (t *telemetrySubmitter) RecordGuardRejected() {
+	t.submitter.RecordGuardRejected()
+}
+
+// RecordResolvedFrom records one successful HTTP install by the leg that served
+// it (sourceIndex 0 = primary, > 0 = secondary; negative ignored).
+func (t *telemetrySubmitter) RecordResolvedFrom(sourceIndex int) {
+	t.submitter.RecordResolvedFrom(sourceIndex)
+}
+
 // generateInstanceHash creates a random UUID v4 string without external dependencies.
 func generateInstanceHash() string {
 	var b [16]byte

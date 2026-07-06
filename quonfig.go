@@ -793,6 +793,12 @@ func (c *Client) handleSSEEnvelope(env *ConfigEnvelope) {
 		// lastRefresh itself.
 		c.installEnvelope(env, -1)
 	} else {
+		// Guard-rejected SSE message (equal-or-older): the stream is live, so
+		// liveness still advances — count the rejection for failover
+		// observability (qfg-41nh.18).
+		if c.telemetry != nil {
+			c.telemetry.RecordGuardRejected()
+		}
 		c.recordSuccessfulRefresh()
 	}
 	c.refreshMu.Unlock()
@@ -982,10 +988,20 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 			installed = true
 		}
 		c.refreshMu.Unlock()
-		if !installed {
+		if installed {
+			// Failover observability: record which leg (primary/secondary)
+			// served the config now held (qfg-41nh.18).
+			if c.telemetry != nil {
+				c.telemetry.RecordResolvedFrom(res.SourceIndex)
+			}
+		} else {
 			// 200 dropped by the reject-older guard (equal-or-older payload):
 			// the fetch itself succeeded, so liveness still advances — only the
-			// install was a no-op (qfg-41nh.11).
+			// install was a no-op (qfg-41nh.11). Count the guard rejection for
+			// failover observability (qfg-41nh.18).
+			if c.telemetry != nil {
+				c.telemetry.RecordGuardRejected()
+			}
 			c.recordSuccessfulRefresh()
 		}
 		if installed && !installedOnce {
@@ -994,6 +1010,14 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 				c.finishInitialization(true)
 			}
 		}
+	}
+
+	// Failover observability: if more than the primary leg fired, the hedge
+	// fired its secondary leg this cycle (the primary was slow or errored).
+	// Recorded once per cycle regardless of which leg's payload won the guard
+	// (qfg-41nh.18).
+	if fired > 1 && c.telemetry != nil {
+		c.telemetry.RecordHedgeFired()
 	}
 
 	if installedOnce {

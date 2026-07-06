@@ -85,6 +85,71 @@ func TestSubmitter_SubmitsEvalSummaries(t *testing.T) {
 	}
 }
 
+func TestSubmitter_SubmitsFailover(t *testing.T) {
+	var mu sync.Mutex
+	var received []TelemetryEvents
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var payload TelemetryEvents
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Errorf("failed to unmarshal: %v", err)
+			w.WriteHeader(500)
+			return
+		}
+		mu.Lock()
+		received = append(received, payload)
+		mu.Unlock()
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+
+	// Telemetry with eval/context collection OFF: the failover aggregator is
+	// still created (it rides any enabled telemetry stream), so a failover
+	// event must still be submitted.
+	s := NewSubmitter(Config{
+		APIKey:       "test-key",
+		TelemetryURL: server.URL,
+		SyncInterval: time.Minute,
+		InstanceHash: "test-instance",
+	})
+
+	s.RecordHedgeFired()
+	s.RecordGuardRejected()
+	s.RecordResolvedFrom(0) // primary
+	s.RecordResolvedFrom(1) // secondary
+
+	// Flush via Stop (final submission).
+	s.Stop()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	var failover *FailoverEvent
+	for _, payload := range received {
+		for _, ev := range payload.Events {
+			if ev.Failover != nil {
+				failover = ev.Failover
+			}
+		}
+	}
+	if failover == nil {
+		t.Fatal("expected a failover event in the submitted payload")
+	}
+	if failover.HedgeFired != 1 {
+		t.Errorf("HedgeFired = %d, want 1", failover.HedgeFired)
+	}
+	if failover.GuardRejected != 1 {
+		t.Errorf("GuardRejected = %d, want 1", failover.GuardRejected)
+	}
+	if failover.ResolvedFromPrimary != 1 {
+		t.Errorf("ResolvedFromPrimary = %d, want 1", failover.ResolvedFromPrimary)
+	}
+	if failover.ResolvedFromSecondary != 1 {
+		t.Errorf("ResolvedFromSecondary = %d, want 1", failover.ResolvedFromSecondary)
+	}
+}
+
 func TestSubmitter_SkipsLogLevelEvaluations(t *testing.T) {
 	s := NewSubmitter(Config{
 		CollectEvaluationSummaries: true,

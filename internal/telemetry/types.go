@@ -13,6 +13,23 @@ type TelemetryEvent struct {
 	Summaries       *EvalSummaries      `json:"summaries,omitempty"`
 	ContextShapes   *ContextShapes      `json:"contextShapes,omitempty"`
 	ExampleContexts *ExampleContextList `json:"exampleContexts,omitempty"`
+	Failover        *FailoverEvent      `json:"failover,omitempty"`
+}
+
+// --- Failover observability ---
+
+// FailoverEvent carries per-flush-window failover counters. It is additive on
+// the wire (an older api-telemetry strips the unknown field) and is only sent
+// when at least one counter is non-zero, so a healthy client emits nothing.
+// Start/End are unix millis, matching the eval-summary window convention.
+type FailoverEvent struct {
+	Start                 int64 `json:"start"`
+	End                   int64 `json:"end"`
+	HedgeFired            int64 `json:"hedgeFired"`
+	GuardRejected         int64 `json:"guardRejected"`
+	ResolvedFromPrimary   int64 `json:"resolvedFromPrimary"`
+	ResolvedFromSecondary int64 `json:"resolvedFromSecondary"`
+	ResolvedFromLkg       int64 `json:"resolvedFromLkg"`
 }
 
 // --- Evaluation Summaries ---

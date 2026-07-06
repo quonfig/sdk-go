@@ -2,6 +2,19 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Added
+
+- **Failover telemetry emission (qfg-41nh.18).** The SDK now emits a
+  per-flush-window `failover` telemetry event carrying failover-behavior
+  counters — hedge-fired, guard-rejected, and resolved-from
+  (primary/secondary) — on the existing telemetry wire, so failover dashboards
+  (qfg-41nh.19) can be built. Additive and opt-out-respecting: the counters ride
+  any already-enabled telemetry stream, a healthy steady-state client emits
+  nothing (every counter zero, no event sent), and an older api-telemetry
+  silently ignores the new event. No new dependencies.
+
 ## 1.1.1 - 2026-07-03
 
 ### Fixed

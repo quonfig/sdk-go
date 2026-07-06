@@ -21,9 +21,10 @@ type queueItem interface{}
 
 // Submitter collects telemetry events and periodically submits them.
 type Submitter struct {
-	evalAggregator    *EvalSummaryAggregator
-	shapeAggregator   *ContextShapeAggregator
-	exampleAggregator *ExampleContextAggregator
+	evalAggregator     *EvalSummaryAggregator
+	shapeAggregator    *ContextShapeAggregator
+	exampleAggregator  *ExampleContextAggregator
+	failoverAggregator *FailoverAggregator
 
 	instanceHash string
 	apiKey       string
@@ -61,6 +62,13 @@ func NewSubmitter(cfg Config) *Submitter {
 	if s.httpClient == nil {
 		s.httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
+
+	// Failover counters carry no user data and are the operational signal for
+	// the secondary-delivery hardening, so they ride any enabled telemetry
+	// stream regardless of the eval/context opt-outs. The Submitter itself is
+	// only constructed when telemetry is enabled, so this still honors a full
+	// telemetry opt-out.
+	s.failoverAggregator = NewFailoverAggregator()
 
 	if cfg.CollectEvaluationSummaries {
 		s.evalAggregator = NewEvalSummaryAggregator()
@@ -109,6 +117,29 @@ func (s *Submitter) RecordEvaluation(match EvalMatch) {
 func (m EvalMatch) isValid() bool {
 	// Skip log level evaluations from telemetry
 	return m.ConfigType != "log_level"
+}
+
+// RecordHedgeFired records one config-fetch cycle whose hedge fired the
+// secondary leg. Safe to call before Start and on a zero Submitter.
+func (s *Submitter) RecordHedgeFired() {
+	if s.failoverAggregator != nil {
+		s.failoverAggregator.RecordHedgeFired()
+	}
+}
+
+// RecordGuardRejected records one install dropped by the reject-older guard.
+func (s *Submitter) RecordGuardRejected() {
+	if s.failoverAggregator != nil {
+		s.failoverAggregator.RecordGuardRejected()
+	}
+}
+
+// RecordResolvedFrom records one successful HTTP install by the leg that served
+// it (sourceIndex 0 = primary, > 0 = secondary; a negative index is ignored).
+func (s *Submitter) RecordResolvedFrom(sourceIndex int) {
+	if s.failoverAggregator != nil {
+		s.failoverAggregator.RecordResolvedFrom(sourceIndex)
+	}
 }
 
 // RecordContext enqueues a context for shape and example aggregation.
@@ -195,6 +226,11 @@ func (s *Submitter) submit() {
 	}
 	if s.exampleAggregator != nil {
 		if event := s.exampleAggregator.GetAndClear(); event != nil {
+			payload.Events = append(payload.Events, *event)
+		}
+	}
+	if s.failoverAggregator != nil {
+		if event := s.failoverAggregator.GetAndClear(); event != nil {
 			payload.Events = append(payload.Events, *event)
 		}
 	}
