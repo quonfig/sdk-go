@@ -82,6 +82,42 @@ client, err := quonfig.NewClient(
 Opt out entirely (SSE-only, accept silent staleness during outages) with
 `WithFallbackPoll(false, 0)`.
 
+## Failover & `QUONFIG_DOMAIN`
+
+By default the SDK derives every hostname from `QUONFIG_DOMAIN` (default
+`quonfig.com`):
+
+| Role                     | URL                              |
+|--------------------------|----------------------------------|
+| Config fetch (primary)   | `https://primary.quonfig.com`         |
+| SSE stream (primary)     | `https://stream.primary.quonfig.com`  |
+| Config fetch (secondary) | `https://secondary.quonfig.com`       |
+| SSE stream (secondary)   | `https://stream.secondary.quonfig.com`|
+| Telemetry                | `https://telemetry.quonfig.com`       |
+
+Set `QUONFIG_DOMAIN` to move all of them together (e.g.
+`QUONFIG_DOMAIN=quonfig-staging.com`). **Automatic failover and hedging between
+the primary and the secondary are on by default** — the secondary runs on
+separate infrastructure, and the SDK fails over to it if the primary is
+unreachable and hedges to it if the primary is slow.
+
+`WithAPIURLs` replaces the derived list wholesale. To keep automatic failover
+with custom URLs, **pass both a primary and a secondary URL**:
+
+```go
+client, err := quonfig.NewClient(
+    quonfig.WithSdkKey("your-sdk-key"),
+    quonfig.WithAPIURLs([]string{
+        "https://primary.your-proxy.example",
+        "https://secondary.your-proxy.example",
+    }),
+)
+```
+
+A single URL disables failover, and the SDK logs a warning at init. See
+[Reliability](https://docs.quonfig.com/docs/explanations/architecture/resiliency)
+for the full model.
+
 ## Datadir mode: auto-reload on file changes
 
 When you initialize the SDK with `WithDataDir("./path")`, configs are loaded

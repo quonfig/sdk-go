@@ -156,6 +156,15 @@ func NewClient(opts ...Option) (*Client, error) {
 				slog.Duration("hedge_abort", effAbort),
 			)
 		}
+
+		// A single explicit API URL disables automatic failover: the SDK's
+		// default (and every QUONFIG_DOMAIN-derived) URL list carries both a
+		// primary and a secondary leg, and the SDK hedges/fails over between
+		// them. WithAPIURLs replaces that list wholesale, so a one-entry
+		// override silently drops the secondary. Warn once at init.
+		if o.apiURLsExplicit && len(o.APIURLs) < 2 {
+			o.Logger.Warn("quonfig: explicit apiUrls disables automatic failover to the secondary; pass both primary and secondary URLs to keep it")
+		}
 	}
 
 	client := &Client{

@@ -6,6 +6,14 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Added
 
+- **Warning when an explicit `WithAPIURLs` disables failover (qfg-41nh.26).**
+  The default (and every `QUONFIG_DOMAIN`-derived) API-URL list carries a
+  primary and a secondary leg, and the SDK hedges/fails over between them. An
+  explicit `WithAPIURLs` with a single entry silently dropped the secondary;
+  the SDK now logs a one-line WARN at init pointing the caller at the fix (pass
+  both a primary and a secondary URL). Behavior is otherwise unchanged; no new
+  dependencies. New README section documents the `QUONFIG_DOMAIN` derivation
+  and the failover model.
 - **Failover telemetry emission (qfg-41nh.18).** The SDK now emits a
   per-flush-window `failover` telemetry event carrying failover-behavior
   counters — hedge-fired, guard-rejected, and resolved-from
