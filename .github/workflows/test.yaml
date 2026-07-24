@@ -94,10 +94,11 @@ jobs:
 
       - name: Run govulncheck
         working-directory: sdk-go
-        # Advisory on Go 1.25 only: 1.25.9 currently has unpatched stdlib
-        # CVEs (e.g. GO-2026-4971, GO-2026-4918) that Go 1.26 does not.
-        # These are upstream backport delays we cannot fix in this repo;
-        # findings still surface as annotations. Drop this line once
-        # Go 1.25.x ships with the backports.
-        continue-on-error: ${{ matrix.go-version == '1.25' }}
+        # A hard gate on both legs. This step used to be advisory on 1.25
+        # while GO-2026-4971 / GO-2026-4918 awaited backports; both legs now
+        # report "No vulnerabilities found", so the exemption was dropped.
+        # A red here is usually an upstream stdlib CVE with no patched Go
+        # released yet, not a code regression — it self-heals once setup-go
+        # resolves the matrix major to the fixed patch. Prefer waiting (or
+        # pinning the patch version) over re-adding continue-on-error.
         run: govulncheck ./...
