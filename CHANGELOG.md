@@ -2,6 +2,22 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Fixed
+
+- **Telemetry is no longer submitted without an SDK key (qfg-j001).**
+  `Options.TelemetryEnabled()` gated only on the telemetry URL and the
+  collector switches, never on `APIKey`, so a client with no SDK key still
+  started the submitter. On the open-source / no-account path — a datadir-only
+  client, which needs no key — every flush POSTed to the telemetry endpoint
+  with `Authorization: Basic base64("1:")`, an unauthenticated request the
+  backend rejects and the submitter then retries with backoff. The gate now
+  keys off SDK-key presence rather than off the mode, matching sdk-node.
+  A datadir client **with** a key still emits exactly as before (the dogfood
+  path used by app-quonfig and api-telemetry is unaffected), and telemetry
+  from any keyed client is unchanged.
+
 ## 1.2.0 - 2026-07-08
 
 ### Added

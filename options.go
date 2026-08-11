@@ -184,9 +184,22 @@ type Options struct {
 	testSSEReadTimeout time.Duration
 }
 
-// TelemetryEnabled returns true if a TelemetryURL is configured and any
-// telemetry collection is enabled.
+// TelemetryEnabled returns true if an SDK key and a TelemetryURL are
+// configured and any telemetry collection is enabled.
+//
+// The SDK key is required, not optional: the telemetry endpoint authenticates
+// with it and the backend attributes every event to the workspace it names.
+// Without one there is nothing to attribute the data to, so the submitter must
+// not run at all — otherwise the collectors fill up and each flush POSTs
+// `Authorization: Basic base64("1:")`, an unauthenticated request that is
+// rejected and then retried with backoff. This is reachable on the
+// open-source / no-account path: a datadir-only client has no SDK key, and the
+// gate must key off that rather than off the mode (qfg-j001). sdk-node's
+// isTelemetryEnabled is the reference implementation.
 func (o *Options) TelemetryEnabled() bool {
+	if o.APIKey == "" {
+		return false
+	}
 	if o.TelemetryURL == "" {
 		return false
 	}
