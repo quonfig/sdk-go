@@ -45,7 +45,10 @@ func (a *FailoverAggregator) RecordHedgeFired() {
 }
 
 // RecordGuardRejected counts one install dropped by the reject-older ordering
-// guard (an equal-or-older snapshot on any install path, HTTP or SSE).
+// guard because the payload was STRICTLY older than the held generation, on
+// either install path (HTTP or SSE). An equal-generation re-delivery is also
+// dropped by the guard but is deliberately NOT counted here — it is a routine
+// no-op, not a leg trying to move the client backwards (qfg-rr5b).
 func (a *FailoverAggregator) RecordGuardRejected() {
 	a.mu.Lock()
 	a.ensureStart()

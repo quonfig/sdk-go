@@ -2,6 +2,36 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 1.2.2 - 2026-09-14
+
+### Fixed
+
+- **Only a STRICTLY older payload counts as `guardRejected` telemetry
+  (qfg-rr5b, qfg-alnb).** The reject-older ordering guard drops any snapshot
+  that does not advance the held generation, and every drop was reported as
+  `guardRejected` on the failover telemetry event. But two server behaviours
+  legitimately re-deliver the envelope the client already holds, at the SAME
+  generation: api-delivery re-sends the current envelope on every SSE connect,
+  and a config poll whose per-leg ETag slot is cold (a fresh transport, a
+  reconnect, the fallback poller's engage-time fetch) answers a full 200
+  instead of a 304. Counting those made `guardRejected` non-zero for perfectly
+  healthy clients, polluting the `sdk_failover` signal where the field is
+  supposed to mean "a leg tried to move us backwards". An equal-generation
+  re-delivery is now a silent no-op on both install paths (HTTP fetch and SSE):
+  still not installed, still advancing `LastSuccessfulRefresh` exactly where it
+  did before, but no longer counted. A strictly older payload is still counted,
+  and the `generation <= 0` unversioned carve-out (such a snapshot installs and
+  is never a rejection) is unchanged.
+
+  **Reading the field: `guardRejected` reports LOWER numbers on 1.2.2 than on
+  1.2.1 for the same traffic** — a steady-state client that previously reported
+  one or more per SSE reconnect and per cold-ETag poll now reports zero. That
+  is the fix, not a regression: the drop is the equal-generation re-deliveries
+  leaving the count. Nothing else changed — no wire, ClickHouse, or dashboard
+  change, no public API change, no new dependencies. Decided cross-SDK
+  (2026-09-11) and shipping in all six backend SDKs; sdk-ruby 1.4.1 and
+  sdk-python 1.4.1 shipped the same narrowing.
+
 ## 1.2.1 - 2026-08-11
 
 ### Fixed

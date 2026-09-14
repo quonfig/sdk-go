@@ -127,7 +127,8 @@ func (s *Submitter) RecordHedgeFired() {
 	}
 }
 
-// RecordGuardRejected records one install dropped by the reject-older guard.
+// RecordGuardRejected records one install dropped by the reject-older guard
+// because the payload was strictly older than the held generation (qfg-rr5b).
 func (s *Submitter) RecordGuardRejected() {
 	if s.failoverAggregator != nil {
 		s.failoverAggregator.RecordGuardRejected()

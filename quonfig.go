@@ -802,10 +802,13 @@ func (c *Client) handleSSEEnvelope(env *ConfigEnvelope) {
 		// lastRefresh itself.
 		c.installEnvelope(env, -1)
 	} else {
-		// Guard-rejected SSE message (equal-or-older): the stream is live, so
-		// liveness still advances — count the rejection for failover
-		// observability (qfg-41nh.18).
-		if c.telemetry != nil {
+		// Guard no-op (equal-or-older): the stream is live, so liveness still
+		// advances either way (qfg-41nh.11). Only a STRICTLY older message is
+		// counted as guardRejected for failover observability (qfg-41nh.18,
+		// narrowed by qfg-rr5b) — an equal-generation re-delivery is a silent
+		// no-op, because api-delivery re-sends the current envelope on every
+		// SSE connect.
+		if c.telemetry != nil && c.isStrictlyOlderThanHeld(env) {
 			c.telemetry.RecordGuardRejected()
 		}
 		c.recordSuccessfulRefresh()
@@ -992,9 +995,14 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 		// lastRefresh).
 		c.refreshMu.Lock()
 		installed := false
+		strictlyOlder := false
 		if c.shouldInstall(res.Envelope) {
 			c.installEnvelope(res.Envelope, res.SourceIndex)
 			installed = true
+		} else {
+			// Classify the rejection while still holding refreshMu, so it sees
+			// the same held generation the guard decision saw (qfg-rr5b).
+			strictlyOlder = c.isStrictlyOlderThanHeld(res.Envelope)
 		}
 		c.refreshMu.Unlock()
 		if installed {
@@ -1006,9 +1014,11 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 		} else {
 			// 200 dropped by the reject-older guard (equal-or-older payload):
 			// the fetch itself succeeded, so liveness still advances — only the
-			// install was a no-op (qfg-41nh.11). Count the guard rejection for
-			// failover observability (qfg-41nh.18).
-			if c.telemetry != nil {
+			// install was a no-op (qfg-41nh.11). Only a STRICTLY older payload
+			// is counted as guardRejected (qfg-41nh.18, narrowed by qfg-rr5b);
+			// an equal-generation 200 — what a leg with a cold ETag slot
+			// answers — is a silent no-op.
+			if c.telemetry != nil && strictlyOlder {
 				c.telemetry.RecordGuardRejected()
 			}
 			c.recordSuccessfulRefresh()
@@ -1096,6 +1106,36 @@ func (c *Client) shouldInstall(envelope *ConfigEnvelope) bool {
 		return true
 	}
 	return envelope.Meta.Generation > c.heldGeneration
+}
+
+// isStrictlyOlderThanHeld reports whether an envelope the reject-older guard
+// just dropped was STRICTLY older than the held generation — the only outcome
+// that counts as guardRejected (qfg-rr5b, decided 2026-09-11 across all six
+// backend SDKs).
+//
+// An EQUAL-generation re-delivery is a silent no-op instead: it is still not
+// installed and still advances liveness exactly where it did before, but it is
+// not counted. Two server behaviours re-deliver the envelope the client already
+// holds at the same generation — api-delivery's SSE sendInitialConfig re-sends
+// the current envelope on every connect, and a config poll whose per-leg ETag
+// slot is empty (fresh transport, reconnect, fallback-poller engage fetch)
+// answers a full 200 rather than a 304 — so counting them made guardRejected
+// non-zero for perfectly healthy clients and polluted the sdk_failover signal,
+// where it is supposed to mean "a leg tried to move us backwards".
+//
+// The gen<=0 unversioned carve-out is re-asserted here defensively: such a
+// payload always installs (see shouldInstall) so it never reaches this helper,
+// and it carries no ordering information, so it can never be "older".
+//
+// Callers must hold c.refreshMu, exactly as for shouldInstall, so the
+// classification sees the same held generation the guard decision saw.
+func (c *Client) isStrictlyOlderThanHeld(envelope *ConfigEnvelope) bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if envelope.Meta.Generation <= 0 {
+		return false
+	}
+	return envelope.Meta.Generation < c.heldGeneration
 }
 
 // installEnvelope swaps in a freshly-built store/evaluator/resolver for the

@@ -106,7 +106,9 @@ func (t *telemetrySubmitter) RecordHedgeFired() {
 }
 
 // RecordGuardRejected records one install dropped by the reject-older ordering
-// guard (failover observability).
+// guard because the payload was strictly older than the held generation
+// (failover observability; an equal-generation re-delivery is not counted, see
+// Client.isStrictlyOlderThanHeld and qfg-rr5b).
 func (t *telemetrySubmitter) RecordGuardRejected() {
 	t.submitter.RecordGuardRejected()
 }
