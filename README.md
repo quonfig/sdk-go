@@ -207,6 +207,78 @@ reload per second than per save. Lower it only if you have measured that
 See the [open-source / local how-to](https://docs.quonfig.com/docs/how-tos/open-source-local)
 for the cross-SDK story (sdk-node, sdk-go, sdk-ruby, sdk-python, sdk-java).
 
+## Telemetry
+
+The SDK sends usage telemetry to the telemetry URL (`WithTelemetryURL`,
+default `https://telemetry.quonfig.com`) so the Quonfig dashboard can show which
+flags and configs are evaluated and with what contexts. Telemetry never affects
+flag evaluation: every failure below is contained in the background submitter.
+Telemetry runs only when an SDK key is set.
+
+**What is sent.** Evaluation summaries (per flag/config: counts per rule and
+value), context shapes (context field names and types), example contexts and
+failover counters. Opt out with `WithCollectEvaluationSummaries(false)` and
+`WithContextTelemetryMode(quonfig.ContextTelemetryShapes)` (no example
+contexts) or `quonfig.ContextTelemetryNone` (no context data), or turn it all
+off with `WithAllTelemetryDisabled()`. The default mode is
+`ContextTelemetryPeriodicExample`.
+
+**How it is sent.**
+
+- One POST every `WithTelemetrySyncInterval` (60s), with at most one POST in
+  flight. A tick that fires while a POST is still out is skipped and its data
+  rolls into the next window.
+- Each POST has an overall deadline of `WithTelemetryTimeout` (15s). It is set
+  on the request context, so it holds even when you pass your own client with
+  `WithHTTPClient`. The SDK's own telemetry client also bounds TCP connect and
+  the TLS handshake at `WithTelemetryConnectTimeout` (5s); with
+  `WithHTTPClient`, your client's transport decides that part.
+- When a POST fails (timeout, network error, 408, 429 or 5xx), the serialized
+  batch is kept byte-for-byte and resent unchanged, never merged with newer
+  data, so the server can recognize a resend of a batch that did land. Up to
+  `WithTelemetryMaxRetainedBatches` (5) batches /
+  `WithTelemetryMaxRetainedBytes` (2MB) are kept for up to
+  `WithTelemetryMaxRetainedAge` (5 min); beyond that the oldest is dropped, and
+  a single batch larger than the byte cap is sent once and never kept. Resends
+  happen no sooner than 30s after a failure and after any `Retry-After`
+  (honored up to 10 minutes), oldest first, then the current window.
+- A 401, 403 or 404 means the SDK key or telemetry URL is wrong: the SDK logs
+  one error and disables telemetry for the rest of the process. Any other 4xx
+  drops that one batch with an error (the server rejected the payload) and
+  telemetry continues.
+
+**Logging.** Telemetry logs through the `*slog.Logger` from `WithLogger`
+(default `slog.Default()`). A failed POST logs at debug only. The first batch
+actually dropped logs one warning with the last POST result and queue depth;
+further drops log at debug with a summary warning at most every 10 minutes; the
+first success after failures logs one info line.
+
+**`Close()`.** `Close()` sends the current window once with a 5s deadline,
+does not resend kept batches, and returns within that deadline even if the
+telemetry endpoint hangs.
+
+**Memory.** Everything is bounded: at most 10,000 evaluation-summary counters
+(`WithTelemetryMaxEvaluationSummaries`), 10,000 context-shape fields
+(`WithTelemetryMaxContextShapeFields`) and 10,000 example contexts
+(`WithTelemetryMaxExampleContexts`) per window, with counters already seen
+still counting at the cap; a 10,000-item record queue; and the 2MB retained
+queue.
+
+```go
+client, err := quonfig.NewClient(
+    quonfig.WithSdkKey("your-sdk-key"),
+    quonfig.WithTelemetrySyncInterval(60*time.Second),   // default 60s
+    quonfig.WithTelemetryTimeout(15*time.Second),        // default 15s
+    quonfig.WithTelemetryConnectTimeout(5*time.Second),  // default 5s
+    quonfig.WithTelemetryMaxRetainedBatches(5),          // default 5
+    quonfig.WithTelemetryMaxRetainedBytes(2*1024*1024),  // default 2MB
+    quonfig.WithTelemetryMaxRetainedAge(5*time.Minute),  // default 5 min
+    quonfig.WithTelemetryMaxEvaluationSummaries(10000),  // default 10,000
+    quonfig.WithTelemetryMaxContextShapeFields(10000),   // default 10,000
+    quonfig.WithTelemetryMaxExampleContexts(10000),      // default 10,000
+)
+```
+
 ## See also
 
 - [CHANGELOG.md](./CHANGELOG.md)

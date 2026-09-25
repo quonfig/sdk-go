@@ -2,6 +2,48 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Changed
+
+- **Telemetry transport policy (qfg-y8je.6).** The telemetry POST deadline goes
+  from 30s to 15s, and it now rides the request context, so a client passed via
+  `WithHTTPClient` (which used to replace the 30s timeout entirely) can no longer
+  remove it. The SDK's own telemetry client adds a 5s connect/TLS timeout. The
+  5x immediate retry with exponential backoff (which also retried 4xx) is
+  removed: a failed batch is kept byte-for-byte and resent (no merging, so the
+  server dedups a resend of a batch that did land). Resends happen no sooner
+  than 30s after a failure and honor `Retry-After` up to 10 min. The retained
+  queue is capped at 5 batches / 2MB / 5 min (oldest dropped; a batch larger
+  than the byte cap is never kept). At most one POST is in flight.
+  401/403/404 disable telemetry for the process with one ERROR; any other 4xx
+  drops that batch with one ERROR.
+- **Telemetry now logs, through `WithLogger`.** Before, the telemetry package
+  had no logger and every failure was invisible. Now: a failed POST logs at
+  debug, one WARN when data is actually dropped (then a summary at most every
+  10 min), one INFO on recovery, one ERROR on an auth failure.
+- **`Close()`** sends the live telemetry window once with a 5s deadline and does
+  not resend kept batches; it returns within that deadline even if the
+  endpoint hangs (before: up to 5 attempts of up to 30s each, with backoff).
+- **Memory caps:** evaluation-summary counters, context-shape fields and example
+  contexts are each capped at 10,000 per window (before: uncapped). Counters
+  already present keep counting at the cap; new keys beyond it are dropped.
+
+### Added
+
+- New options (all optional; zero values in `Options` mean the default):
+  `WithTelemetryTimeout` (15s), `WithTelemetryConnectTimeout` (5s),
+  `WithTelemetryMaxRetainedBatches` (5), `WithTelemetryMaxRetainedBytes`
+  (2097152), `WithTelemetryMaxRetainedAge` (5 min),
+  `WithTelemetryMaxEvaluationSummaries` (10000),
+  `WithTelemetryMaxContextShapeFields` (10000),
+  `WithTelemetryMaxExampleContexts` (10000), the matching `Options` fields and
+  `DefaultTelemetry*` constants.
+
+Unchanged: the flush interval (`WithTelemetrySyncInterval`, 60s) and the
+`ContextTelemetryMode` default (`ContextTelemetryPeriodicExample`). No wire
+change, no removed or changed public API, no new dependencies.
+
 ## 1.2.2 - 2026-09-14
 
 ### Fixed
