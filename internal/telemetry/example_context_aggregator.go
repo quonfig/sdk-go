@@ -8,16 +8,26 @@ import (
 	"time"
 )
 
-// ExampleContextAggregator stores one example of each unique context combination.
+// ExampleContextAggregator stores one example of each unique context
+// combination, at most maxExamples per window (P6: drop newest when full).
 type ExampleContextAggregator struct {
-	mu       sync.Mutex
-	examples map[string]ExampleContext // grouped key -> example
+	mu          sync.Mutex
+	examples    map[string]ExampleContext // grouped key -> example
+	maxExamples int
 }
 
-// NewExampleContextAggregator creates a new aggregator.
+// NewExampleContextAggregator creates a new aggregator with the default cap
+// (DefaultMaxExampleContexts examples per window).
 func NewExampleContextAggregator() *ExampleContextAggregator {
+	return NewExampleContextAggregatorWithCap(DefaultMaxExampleContexts)
+}
+
+// NewExampleContextAggregatorWithCap creates a new aggregator holding at most
+// maxExamples examples per window (<= 0 means the default).
+func NewExampleContextAggregatorWithCap(maxExamples int) *ExampleContextAggregator {
 	return &ExampleContextAggregator{
-		examples: make(map[string]ExampleContext),
+		examples:    make(map[string]ExampleContext),
+		maxExamples: intOr(maxExamples, DefaultMaxExampleContexts),
 	}
 }
 
@@ -30,6 +40,9 @@ func (a *ExampleContextAggregator) Record(ctx ContextData) {
 
 	if _, ok := a.examples[key]; ok {
 		return // already have this combination
+	}
+	if len(a.examples) >= a.maxExamples {
+		return // cap reached: drop the new example (P6)
 	}
 
 	a.examples[key] = ExampleContext{

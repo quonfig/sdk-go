@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"time"
+
+	"github.com/quonfig/sdk-go/internal/telemetry"
 )
 
 // OnInitFailure controls behavior when initialization times out.
@@ -166,6 +168,41 @@ type Options struct {
 	TelemetrySyncInterval      time.Duration
 	TelemetryURL               string
 
+	// Telemetry transport (qfg-y8je.6). Zero means the default. See the
+	// README "Telemetry" section.
+	//
+	// TelemetryTimeout is the overall deadline per telemetry POST (default
+	// 15s). It is applied on the request context, so it holds even with a
+	// custom HTTPClient.
+	TelemetryTimeout time.Duration
+	// TelemetryConnectTimeout bounds TCP connect and the TLS handshake of a
+	// telemetry POST (default 5s). It applies to the SDK's own telemetry
+	// client; with WithHTTPClient the custom client's transport decides.
+	TelemetryConnectTimeout time.Duration
+	// TelemetryMaxRetainedBatches caps the failed batches kept for resend
+	// (default 5).
+	TelemetryMaxRetainedBatches int
+	// TelemetryMaxRetainedBytes caps the serialized bytes kept for resend
+	// (default 2MB). A single batch larger than this is sent once, never kept.
+	TelemetryMaxRetainedBytes int
+	// TelemetryMaxRetainedAge discards a kept batch older than this
+	// (default 5 min).
+	TelemetryMaxRetainedAge time.Duration
+	// TelemetryMaxEvaluationSummaries caps distinct evaluation-summary
+	// counters per window (default 10,000). Existing counters keep counting.
+	TelemetryMaxEvaluationSummaries int
+	// TelemetryMaxContextShapeFields caps distinct (context, field) pairs per
+	// window (default 10,000).
+	TelemetryMaxContextShapeFields int
+	// TelemetryMaxExampleContexts caps example contexts per window (default
+	// 10,000).
+	TelemetryMaxExampleContexts int
+
+	// testTelemetryClock, if non-nil, replaces the wall clock of the telemetry
+	// transport (ticks, per-POST deadline, resend floor, Retry-After, batch
+	// age). Test-only: no public With* accessor.
+	testTelemetryClock telemetry.Clock
+
 	// testStreamURLOverride, if non-empty, is used verbatim for the SSE stream
 	// connection instead of the URL derived from APIURLs. This is a test-only
 	// escape hatch: no public With* accessor is exposed, so production callers
@@ -221,8 +258,29 @@ func defaultOptions() Options {
 		ContextTelemetryMode:       ContextTelemetryPeriodicExample,
 		TelemetrySyncInterval:      60 * time.Second,
 		TelemetryURL:               telemetryURLForDomain(DefaultDomain),
+
+		TelemetryTimeout:                DefaultTelemetryTimeout,
+		TelemetryConnectTimeout:         DefaultTelemetryConnectTimeout,
+		TelemetryMaxRetainedBatches:     DefaultTelemetryMaxRetainedBatches,
+		TelemetryMaxRetainedBytes:       DefaultTelemetryMaxRetainedBytes,
+		TelemetryMaxRetainedAge:         DefaultTelemetryMaxRetainedAge,
+		TelemetryMaxEvaluationSummaries: DefaultTelemetryMaxEvaluationSummaries,
+		TelemetryMaxContextShapeFields:  DefaultTelemetryMaxContextShapeFields,
+		TelemetryMaxExampleContexts:     DefaultTelemetryMaxExampleContexts,
 	}
 }
+
+// Telemetry transport defaults (server SDK class, qfg-y8je.6).
+const (
+	DefaultTelemetryTimeout                = telemetry.DefaultTimeout
+	DefaultTelemetryConnectTimeout         = telemetry.DefaultConnectTimeout
+	DefaultTelemetryMaxRetainedBatches     = telemetry.DefaultMaxRetainedBatches
+	DefaultTelemetryMaxRetainedBytes       = telemetry.DefaultMaxRetainedBytes
+	DefaultTelemetryMaxRetainedAge         = telemetry.DefaultMaxRetainedAge
+	DefaultTelemetryMaxEvaluationSummaries = telemetry.DefaultMaxEvaluationSummaries
+	DefaultTelemetryMaxContextShapeFields  = telemetry.DefaultMaxContextShapeFields
+	DefaultTelemetryMaxExampleContexts     = telemetry.DefaultMaxExampleContexts
+)
 
 // apiURLsForDomain returns the ordered list of api base URLs derived from
 // the given domain (e.g. "quonfig-staging.com" ->
@@ -545,6 +603,105 @@ func WithTelemetrySyncInterval(d time.Duration) Option {
 			return errors.New("telemetry sync interval must be positive")
 		}
 		o.TelemetrySyncInterval = d
+		return nil
+	}
+}
+
+// WithTelemetryTimeout sets the overall deadline of one telemetry POST
+// (default 15s). It rides the request context, so a custom WithHTTPClient
+// cannot remove it.
+func WithTelemetryTimeout(d time.Duration) Option {
+	return func(o *Options) error {
+		if d <= 0 {
+			return errors.New("telemetry timeout must be positive")
+		}
+		o.TelemetryTimeout = d
+		return nil
+	}
+}
+
+// WithTelemetryConnectTimeout sets the TCP connect + TLS handshake deadline of
+// the SDK's telemetry client (default 5s). Ignored with WithHTTPClient.
+func WithTelemetryConnectTimeout(d time.Duration) Option {
+	return func(o *Options) error {
+		if d <= 0 {
+			return errors.New("telemetry connect timeout must be positive")
+		}
+		o.TelemetryConnectTimeout = d
+		return nil
+	}
+}
+
+// WithTelemetryMaxRetainedBatches caps the failed telemetry batches kept for
+// resend (default 5; oldest dropped first).
+func WithTelemetryMaxRetainedBatches(n int) Option {
+	return func(o *Options) error {
+		if n <= 0 {
+			return errors.New("telemetry max retained batches must be positive")
+		}
+		o.TelemetryMaxRetainedBatches = n
+		return nil
+	}
+}
+
+// WithTelemetryMaxRetainedBytes caps the serialized bytes of failed telemetry
+// batches kept for resend (default 2MB = 2097152). A single batch larger than
+// this is sent once and never kept.
+func WithTelemetryMaxRetainedBytes(n int) Option {
+	return func(o *Options) error {
+		if n <= 0 {
+			return errors.New("telemetry max retained bytes must be positive")
+		}
+		o.TelemetryMaxRetainedBytes = n
+		return nil
+	}
+}
+
+// WithTelemetryMaxRetainedAge discards a kept telemetry batch older than d
+// (default 5 min).
+func WithTelemetryMaxRetainedAge(d time.Duration) Option {
+	return func(o *Options) error {
+		if d <= 0 {
+			return errors.New("telemetry max retained age must be positive")
+		}
+		o.TelemetryMaxRetainedAge = d
+		return nil
+	}
+}
+
+// WithTelemetryMaxEvaluationSummaries caps distinct evaluation-summary
+// counters per telemetry window (default 10,000). Counters already present
+// keep counting at the cap; new ones are dropped.
+func WithTelemetryMaxEvaluationSummaries(n int) Option {
+	return func(o *Options) error {
+		if n <= 0 {
+			return errors.New("telemetry max evaluation summaries must be positive")
+		}
+		o.TelemetryMaxEvaluationSummaries = n
+		return nil
+	}
+}
+
+// WithTelemetryMaxContextShapeFields caps distinct (context name, field)
+// pairs per telemetry window (default 10,000).
+func WithTelemetryMaxContextShapeFields(n int) Option {
+	return func(o *Options) error {
+		if n <= 0 {
+			return errors.New("telemetry max context shape fields must be positive")
+		}
+		o.TelemetryMaxContextShapeFields = n
+		return nil
+	}
+}
+
+// WithTelemetryMaxExampleContexts caps example contexts per telemetry window
+// (default 10,000).
+func WithTelemetryMaxExampleContexts(n int) Option {
+	return func(o *Options) error {
+		if n <= 0 {
+			return errors.New("telemetry max example contexts must be positive")
+		}
+		o.TelemetryMaxExampleContexts = n
 		return nil
 	}
 }

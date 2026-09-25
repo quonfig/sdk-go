@@ -49,6 +49,16 @@ func newTelemetrySubmitter(opts Options) *telemetrySubmitter {
 		CollectEvaluationSummaries: opts.CollectEvaluationSummaries,
 		ContextTelemetryMode:       string(opts.ContextTelemetryMode),
 		InstanceHash:               generateInstanceHash(),
+		Logger:                     opts.Logger,
+		Timeout:                    opts.TelemetryTimeout,
+		ConnectTimeout:             opts.TelemetryConnectTimeout,
+		MaxRetainedBatches:         opts.TelemetryMaxRetainedBatches,
+		MaxRetainedBytes:           opts.TelemetryMaxRetainedBytes,
+		MaxRetainedAge:             opts.TelemetryMaxRetainedAge,
+		MaxEvaluationSummaries:     opts.TelemetryMaxEvaluationSummaries,
+		MaxContextShapeFields:      opts.TelemetryMaxContextShapeFields,
+		MaxExampleContexts:         opts.TelemetryMaxExampleContexts,
+		Clock:                      opts.testTelemetryClock,
 	}
 	if opts.HTTPClient != nil {
 		cfg.HTTPClient = opts.HTTPClient

@@ -25,18 +25,30 @@ type EvalMatch struct {
 
 // EvalSummaryAggregator accumulates evaluation counts grouped by
 // config key + rule index + weighted value index + selected value.
+//
+// The number of distinct counters per window is capped (P6): once the cap is
+// reached a NEW counter is dropped, while existing counters keep incrementing.
 type EvalSummaryAggregator struct {
 	mu        sync.Mutex
 	data      map[string]EvalMatch
 	counts    map[string]int64
 	dataStart int64
+	maxKeys   int
 }
 
-// NewEvalSummaryAggregator creates a new aggregator.
+// NewEvalSummaryAggregator creates a new aggregator with the default cap
+// (DefaultMaxEvaluationSummaries distinct counters per window).
 func NewEvalSummaryAggregator() *EvalSummaryAggregator {
+	return NewEvalSummaryAggregatorWithCap(DefaultMaxEvaluationSummaries)
+}
+
+// NewEvalSummaryAggregatorWithCap creates a new aggregator holding at most
+// maxKeys distinct counters per window (<= 0 means the default).
+func NewEvalSummaryAggregatorWithCap(maxKeys int) *EvalSummaryAggregator {
 	return &EvalSummaryAggregator{
-		data:   make(map[string]EvalMatch),
-		counts: make(map[string]int64),
+		data:    make(map[string]EvalMatch),
+		counts:  make(map[string]int64),
+		maxKeys: intOr(maxKeys, DefaultMaxEvaluationSummaries),
 	}
 }
 
@@ -44,10 +56,6 @@ func NewEvalSummaryAggregator() *EvalSummaryAggregator {
 func (a *EvalSummaryAggregator) Record(match EvalMatch) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-
-	if a.dataStart == 0 {
-		a.dataStart = time.Now().UnixMilli()
-	}
 
 	// Group by reportable form when present so confidential values dedup on
 	// the redacted hash rather than the plaintext.
@@ -58,6 +66,12 @@ func (a *EvalSummaryAggregator) Record(match EvalMatch) {
 	key := fmt.Sprintf("%s-%d-%d-%v", match.ConfigID, match.RuleIndex, match.WeightedValueIndex, groupValue)
 
 	if _, ok := a.data[key]; !ok {
+		if len(a.data) >= a.maxKeys {
+			return // cap reached: drop the new key (P6)
+		}
+		if a.dataStart == 0 {
+			a.dataStart = time.Now().UnixMilli()
+		}
 		a.data[key] = match
 		a.counts[key] = 1
 	} else {

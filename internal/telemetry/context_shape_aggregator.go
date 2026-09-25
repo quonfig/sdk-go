@@ -11,15 +11,28 @@ type ContextData struct {
 }
 
 // ContextShapeAggregator tracks the field types seen in evaluation contexts.
+//
+// The number of distinct (context name, field) pairs per window is capped
+// (P6): once reached, a NEW pair is dropped; existing pairs still update.
 type ContextShapeAggregator struct {
-	mu     sync.Mutex
-	shapes map[string]map[string]int // context name -> field name -> field type
+	mu        sync.Mutex
+	shapes    map[string]map[string]int // context name -> field name -> field type
+	fields    int
+	maxFields int
 }
 
-// NewContextShapeAggregator creates a new aggregator.
+// NewContextShapeAggregator creates a new aggregator with the default cap
+// (DefaultMaxContextShapeFields fields per window).
 func NewContextShapeAggregator() *ContextShapeAggregator {
+	return NewContextShapeAggregatorWithCap(DefaultMaxContextShapeFields)
+}
+
+// NewContextShapeAggregatorWithCap creates a new aggregator holding at most
+// maxFields (context name, field) pairs per window (<= 0 means the default).
+func NewContextShapeAggregatorWithCap(maxFields int) *ContextShapeAggregator {
 	return &ContextShapeAggregator{
-		shapes: make(map[string]map[string]int),
+		shapes:    make(map[string]map[string]int),
+		maxFields: intOr(maxFields, DefaultMaxContextShapeFields),
 	}
 }
 
@@ -29,11 +42,23 @@ func (a *ContextShapeAggregator) Record(ctx ContextData) {
 	defer a.mu.Unlock()
 
 	for name, props := range ctx.Contexts {
-		if _, ok := a.shapes[name]; !ok {
-			a.shapes[name] = make(map[string]int)
+		fields, ok := a.shapes[name]
+		if !ok && a.fields < a.maxFields {
+			fields = make(map[string]int)
+			a.shapes[name] = fields
 		}
 		for field, value := range props {
-			a.shapes[name][field] = inferFieldType(value)
+			if _, ok := fields[field]; !ok {
+				if a.fields >= a.maxFields {
+					continue // cap reached: drop the new field (P6)
+				}
+				if fields == nil {
+					fields = make(map[string]int)
+					a.shapes[name] = fields
+				}
+				a.fields++
+			}
+			fields[field] = inferFieldType(value)
 		}
 	}
 }
@@ -62,6 +87,7 @@ func (a *ContextShapeAggregator) GetAndClear() *TelemetryEvent {
 	}
 
 	a.shapes = make(map[string]map[string]int)
+	a.fields = 0
 	return event
 }
 

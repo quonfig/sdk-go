@@ -311,7 +311,7 @@ func TestSubmitter_AuthHeader(t *testing.T) {
 		ConfigType:    "feature_flag",
 		SelectedValue: true,
 	})
-	s.submit()
+	s.Tick()
 
 	if authHeader == "" {
 		t.Fatal("expected Authorization header")
