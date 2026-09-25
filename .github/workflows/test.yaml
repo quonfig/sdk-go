@@ -83,14 +83,27 @@ jobs:
           working-directory: sdk-go
 
       - name: Install staticcheck
-        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+        # staticcheck v0.8+ requires Go >= 1.26, so the 1.25 leg pins the last
+        # release that builds on it (v0.7.0). Drop the pin with the 1.25 leg.
+        run: |
+          if [ "${{ matrix.go-version }}" = "1.25" ]; then
+            go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+          else
+            go install honnef.co/go/tools/cmd/staticcheck@latest
+          fi
 
       - name: Run staticcheck
         working-directory: sdk-go
         run: staticcheck ./...
 
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        # govulncheck v1.8+ requires Go >= 1.26; the 1.25 leg pins v1.7.0.
+        run: |
+          if [ "${{ matrix.go-version }}" = "1.25" ]; then
+            go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+          else
+            go install golang.org/x/vuln/cmd/govulncheck@latest
+          fi
 
       - name: Run govulncheck
         working-directory: sdk-go
