@@ -116,7 +116,7 @@ func TestFailoverTelemetry_HedgeAndSecondary(t *testing.T) {
 		quonfig.WithSdkKey("test-backend-key"),
 		quonfig.WithAPIURLs([]string{primary.URL, secondary.URL}),
 		quonfig.WithTelemetryURL(cap.server.URL),
-		quonfig.WithTelemetrySyncInterval(time.Minute),
+		quonfig.WithTelemetrySyncInterval(100*time.Millisecond),
 		quonfig.WithSSE(false),
 		quonfig.WithFallbackPoll(false, 0),
 		quonfig.WithInitTimeout(8*time.Second),
@@ -127,6 +127,13 @@ func TestFailoverTelemetry_HedgeAndSecondary(t *testing.T) {
 	awaitReady(t, client)
 	if got := client.ResolvedFrom(); got != "secondary" {
 		t.Fatalf("ResolvedFrom = %q, want secondary", got)
+	}
+	// Initialization finishes (install) before the fetch cycle records
+	// hedgeFired, so a Close() right after awaitReady can flush before the
+	// counter lands. Let the 100ms telemetry tick deliver it instead.
+	deadline := time.Now().Add(5 * time.Second)
+	for cap.get().HedgeFired < 1 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
 	}
 	client.Close() // flushes telemetry
 
