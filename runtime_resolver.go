@@ -26,6 +26,15 @@ func newRuntimeResolver(store configStore, evaluator *runtimeEvaluator, envLooku
 }
 
 func (r *runtimeResolver) ResolveValue(val *Value, configKey string, valueType ValueType, envID string, ctx *ContextSet) (*Value, error) {
+	return r.resolveValue(val, configKey, valueType, envID, ctx, nil)
+}
+
+// resolveValue is ResolveValue plus keyPath: the config keys already being
+// resolved above this one through decryptWith. A decryptWith that points back
+// onto the path (a key config decrypted with itself, or A->B->A) is a cycle
+// and returns ErrUnableToDecrypt instead of recursing until an unrecoverable
+// stack overflow (qfg-9dxb.4).
+func (r *runtimeResolver) resolveValue(val *Value, configKey string, valueType ValueType, envID string, ctx *ContextSet, keyPath []string) (*Value, error) {
 	if val == nil {
 		return nil, nil
 	}
@@ -33,7 +42,7 @@ func (r *runtimeResolver) ResolveValue(val *Value, configKey string, valueType V
 		return r.resolveProvided(val, configKey, valueType)
 	}
 	if val.Confidential && val.DecryptWith != "" {
-		return r.resolveDecryption(val, configKey, envID, ctx)
+		return r.resolveDecryption(val, configKey, envID, ctx, keyPath)
 	}
 	return val, nil
 }
@@ -60,7 +69,14 @@ func (r *runtimeResolver) resolveProvided(val *Value, configKey string, valueTyp
 	}, nil
 }
 
-func (r *runtimeResolver) resolveDecryption(val *Value, configKey, envID string, ctx *ContextSet) (*Value, error) {
+func (r *runtimeResolver) resolveDecryption(val *Value, configKey, envID string, ctx *ContextSet, keyPath []string) (*Value, error) {
+	keyPath = append(keyPath[:len(keyPath):len(keyPath)], configKey)
+	for _, k := range keyPath {
+		if k == val.DecryptWith {
+			return nil, fmt.Errorf("%w: decryption key config %q is part of a decryptWith cycle", ErrUnableToDecrypt, val.DecryptWith)
+		}
+	}
+
 	keyCfg, ok := r.store.Get(val.DecryptWith)
 	if !ok {
 		return nil, fmt.Errorf("%w: decryption key config %q not found", ErrUnableToDecrypt, val.DecryptWith)
@@ -71,7 +87,7 @@ func (r *runtimeResolver) resolveDecryption(val *Value, configKey, envID string,
 		return nil, fmt.Errorf("%w: decryption key config %q did not match", ErrUnableToDecrypt, val.DecryptWith)
 	}
 
-	resolvedKey, err := r.ResolveValue(keyResult.Value, keyCfg.Key, keyCfg.ValueType, envID, ctx)
+	resolvedKey, err := r.resolveValue(keyResult.Value, keyCfg.Key, keyCfg.ValueType, envID, ctx, keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to resolve decryption key from %q: %v", ErrUnableToDecrypt, val.DecryptWith, err)
 	}

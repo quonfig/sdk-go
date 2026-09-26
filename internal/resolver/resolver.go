@@ -89,6 +89,14 @@ func New(configStore ConfigGetter, evaluator *eval.Evaluator, envLookup EnvLooku
 // - Confidential/encrypted values (decryption)
 // - Pass-through for all other values
 func (r *Resolver) Resolve(val *quonfig.Value, cfg *eval.FullConfig, envID string, ctx eval.ContextValueGetter) (*quonfig.Value, error) {
+	return r.resolve(val, cfg, envID, ctx, nil)
+}
+
+// resolve is Resolve plus keyPath: the config keys already being resolved
+// above this one through decryptWith. A decryptWith pointing back onto the
+// path is a cycle and returns ErrUnableToDecrypt instead of recursing until an
+// unrecoverable stack overflow (qfg-9dxb.4).
+func (r *Resolver) resolve(val *quonfig.Value, cfg *eval.FullConfig, envID string, ctx eval.ContextValueGetter, keyPath []string) (*quonfig.Value, error) {
 	if val == nil {
 		return nil, nil
 	}
@@ -100,7 +108,7 @@ func (r *Resolver) Resolve(val *quonfig.Value, cfg *eval.FullConfig, envID strin
 
 	// Handle confidential/encrypted values
 	if val.Confidential && val.DecryptWith != "" {
-		return r.resolveDecryption(val, cfg, envID, ctx)
+		return r.resolveDecryption(val, cfg, envID, ctx, keyPath)
 	}
 
 	// Pass through
@@ -136,9 +144,16 @@ func (r *Resolver) resolveProvided(val *quonfig.Value, cfg *eval.FullConfig) (*q
 }
 
 // resolveDecryption handles confidential values that need decryption.
-func (r *Resolver) resolveDecryption(val *quonfig.Value, cfg *eval.FullConfig, envID string, ctx eval.ContextValueGetter) (*quonfig.Value, error) {
+func (r *Resolver) resolveDecryption(val *quonfig.Value, cfg *eval.FullConfig, envID string, ctx eval.ContextValueGetter, keyPath []string) (*quonfig.Value, error) {
 	if r.configStore == nil || r.evaluator == nil {
 		return nil, fmt.Errorf("%w: no config store available for decryption key lookup", ErrUnableToDecrypt)
+	}
+
+	keyPath = append(keyPath[:len(keyPath):len(keyPath)], cfg.Key)
+	for _, k := range keyPath {
+		if k == val.DecryptWith {
+			return nil, fmt.Errorf("%w: decryption key config %q is part of a decryptWith cycle", ErrUnableToDecrypt, val.DecryptWith)
+		}
 	}
 
 	// Look up the decryption key config
@@ -154,7 +169,7 @@ func (r *Resolver) resolveDecryption(val *quonfig.Value, cfg *eval.FullConfig, e
 	}
 
 	// The key config value might itself be a provided value (ENV_VAR), so resolve it recursively
-	resolvedKey, err := r.Resolve(keyMatch.Value, keyCfg, envID, ctx)
+	resolvedKey, err := r.resolve(keyMatch.Value, keyCfg, envID, ctx, keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to resolve decryption key from %q: %v", ErrUnableToDecrypt, val.DecryptWith, err)
 	}
