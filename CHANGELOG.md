@@ -16,6 +16,14 @@ All notable changes to the Quonfig Go SDK are documented here.
   Every `Get*`/`EvaluateKey`/`EvaluateDetails` call now recovers a panic raised
   while evaluating a config, logs it at ERROR with a stack trace, and returns
   the caller's default with an error (`Reason: ERROR`, `ErrorCode: GENERAL`).
+- **Malformed config no longer crashes the process (qfg-9dxb.4).** Three
+  inputs used to kill every process evaluating the affected key: an `IN_SEG`
+  reference cycle (a segment that is, directly or via A->B->A, in itself)
+  and a `decryptWith` cycle each recursed into an unrecoverable
+  `fatal error: stack overflow`, and ciphertext shorter than the 16-byte GCM
+  tag panicked with a slice-bounds error. A segment cycle now evaluates like a
+  missing segment (`IN_SEG` false, `NOT_IN_SEG` true); a `decryptWith` cycle
+  and short ciphertext / empty IV return `ErrUnableToDecrypt`.
 
 ## 1.3.0 - 2026-09-25
 
