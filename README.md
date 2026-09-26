@@ -284,3 +284,4 @@ client, err := quonfig.NewClient(
 - [CHANGELOG.md](./CHANGELOG.md)
 - [CONTRIBUTING.md](./CONTRIBUTING.md)
 - [SECURITY.md](./SECURITY.md)
+- [QUALITY_AUDIT.md](./QUALITY_AUDIT.md) — independent AI-run code-quality audits of this SDK, with the exact prompt, model and commit for each
