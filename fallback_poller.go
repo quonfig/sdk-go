@@ -7,6 +7,12 @@ package quonfig
 // poller engages and fetches at the configured interval; when SSE recovers
 // the poller disengages.
 //
+// "Disconnected" includes "never connected": the engage timer is armed when
+// the poller starts (unless SSE is already known to be connected), so a stream
+// that never connects — primary outage at app start, a proxy that breaks
+// streaming — still engages after Threshold (qfg-9dxb.2). When there is no SSE
+// stream at all (WithSSE(false)) the poller engages immediately.
+//
 // fallbackPoller is wired into the supervisor as a Layer 2 worker. The
 // supervisor owns its lifecycle (restart on panic, stop on Close); this type
 // does not spawn its own goroutines.
@@ -33,6 +39,9 @@ type fallbackPollerConfig struct {
 	// Threshold is the disconnect duration that triggers engagement. Defaults
 	// to 120s when zero.
 	Threshold time.Duration
+	// NoStream means there is no SSE stream to wait for (SSE disabled): the
+	// poller engages as soon as Run starts instead of after Threshold.
+	NoStream bool
 	// Fetch performs one poll. Returned errors are logged at debug; the
 	// poller keeps ticking until ctx is cancelled or SSE reconnects.
 	Fetch func(ctx context.Context) error
@@ -49,6 +58,10 @@ type fallbackPoller struct {
 	cfg     fallbackPollerConfig
 	stateCh chan bool
 	active  atomic.Bool
+	// sseConnected is the most recent state passed to SetSSEConnected. Run
+	// consults it at start so a supervisor restart while SSE is connected
+	// does not arm the engage timer (no fresh edge would arrive to cancel it).
+	sseConnected atomic.Bool
 }
 
 func newFallbackPoller(cfg fallbackPollerConfig) *fallbackPoller {
@@ -71,6 +84,7 @@ func newFallbackPoller(cfg fallbackPollerConfig) *fallbackPoller {
 // SetSSEConnected feeds an SSE connection state edge into the poller. Safe to
 // call from any goroutine, never blocks.
 func (p *fallbackPoller) SetSSEConnected(connected bool) {
+	p.sseConnected.Store(connected)
 	// Drain stale entries so the most recent state wins. With a buffer of 1
 	// this loop runs at most once.
 	for {
@@ -133,6 +147,16 @@ func (p *fallbackPoller) Run(ctx context.Context) error {
 				pollTicker = time.NewTicker(p.cfg.Interval)
 			}
 		}
+	}
+
+	// Arm engagement at start. A never-connecting stream produces no
+	// connected->disconnected edge, so waiting for one would leave the poller
+	// idle forever and config frozen at the init snapshot.
+	switch {
+	case p.cfg.NoStream:
+		engage()
+	case !p.sseConnected.Load():
+		engageTimer = time.NewTimer(p.cfg.Threshold)
 	}
 
 	for {

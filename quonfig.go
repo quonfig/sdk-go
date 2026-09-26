@@ -707,18 +707,32 @@ func (c *Client) startBackgroundWorkers() {
 
 	var fp *fallbackPoller
 	if c.opts.FallbackPollEnabled && c.opts.FallbackPollInterval > 0 {
+		threshold := DefaultFallbackPollThreshold
+		if c.opts.testFallbackPollThreshold > 0 {
+			threshold = c.opts.testFallbackPollThreshold
+		}
+		// With SSE disabled, or no stream URL to dial, there is no stream to
+		// wait for: engage immediately (see WithSSE doc, qfg-9dxb.2).
+		noStream := !c.opts.SSEEnabled || c.transport.streamURLFor(0) == ""
 		fp = newFallbackPoller(fallbackPollerConfig{
 			Interval:  c.opts.FallbackPollInterval,
-			Threshold: DefaultFallbackPollThreshold,
+			Threshold: threshold,
+			NoStream:  noStream,
 			Logger:    c.opts.Logger,
 			Fetch: func(ctx context.Context) error {
 				return c.fetchAndInstall(ctx, false)
 			},
 			OnEngage: func() {
 				sup.setConnectionState(ConnStateFallingBack)
-				c.opts.Logger.Warn("quonfig: Layer 2 fallback poller engaged (SSE disconnected past threshold)",
+				if noStream {
+					c.opts.Logger.Info("quonfig: Layer 2 fallback poller engaged (no SSE stream)",
+						slog.Duration("interval", c.opts.FallbackPollInterval),
+					)
+					return
+				}
+				c.opts.Logger.Warn("quonfig: Layer 2 fallback poller engaged (SSE not connected past threshold)",
 					slog.Duration("interval", c.opts.FallbackPollInterval),
-					slog.Duration("threshold", DefaultFallbackPollThreshold),
+					slog.Duration("threshold", threshold),
 				)
 			},
 			OnDisengage: func() {

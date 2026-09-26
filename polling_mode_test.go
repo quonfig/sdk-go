@@ -129,7 +129,22 @@ func TestHandleSSEStateChangeEngagesFallbackPoller(t *testing.T) {
 	client.fallback.cfg.Threshold = 10 * time.Millisecond
 	client.mu.Unlock()
 
+	// qfg-9dxb.2: with WithSSE(false) there is no stream to wait for, so the
+	// poller engages immediately at startup. Let that settle before driving
+	// synthetic SSE edges.
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && !client.FallbackPollerActive() {
+		time.Sleep(2 * time.Millisecond)
+	}
+	if !client.FallbackPollerActive() {
+		t.Fatalf("FallbackPollerActive never became true with WithSSE(false)")
+	}
+
 	client.handleSSEStateChange(true)
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && client.FallbackPollerActive() {
+		time.Sleep(2 * time.Millisecond)
+	}
 	if got := client.ConnectionState(); got != ConnStateConnected {
 		t.Errorf("after connect ConnectionState = %q, want %q", got, ConnStateConnected)
 	}

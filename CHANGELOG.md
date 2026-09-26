@@ -24,6 +24,15 @@ All notable changes to the Quonfig Go SDK are documented here.
   tag panicked with a slice-bounds error. A segment cycle now evaluates like a
   missing segment (`IN_SEG` false, `NOT_IN_SEG` true); a `decryptWith` cycle
   and short ciphertext / empty IV return `ErrUnableToDecrypt`.
+- **Fallback poller now engages when SSE never connects, and immediately when
+  SSE is disabled (qfg-9dxb.2).** Before, the Layer 2 poller armed its 120s
+  engage timer only on a connected-to-disconnected edge. A stream that never
+  connected (primary outage at app start, a proxy that breaks streaming) or
+  `WithSSE(false)` left config frozen at the init snapshot and
+  `ConnectionState()` stuck at `initializing`. The timer is now armed when the
+  poller starts, and with `WithSSE(false)` the poller engages at once, as the
+  `WithSSE` doc already promised. `ConnectionState()` reports `falling_back`
+  while it polls.
 
 ## 1.3.0 - 2026-09-25
 

@@ -219,6 +219,11 @@ type Options struct {
 	// minutes. Like testStreamURLOverride this is test-only — no public
 	// With* accessor.
 	testSSEReadTimeout time.Duration
+
+	// testFallbackPollThreshold, if non-zero, replaces
+	// DefaultFallbackPollThreshold (120s) as the SSE-down window before the
+	// Layer 2 poller engages. Test-only — no public With* accessor.
+	testFallbackPollThreshold time.Duration
 }
 
 // TelemetryEnabled returns true if an SDK key and a TelemetryURL are
@@ -844,6 +849,16 @@ func WithSSEStateCallback(fn func(connected bool)) Option {
 func withTestStreamURLOverride(url string) Option {
 	return func(o *Options) error {
 		o.testStreamURLOverride = url
+		return nil
+	}
+}
+
+// withTestFallbackPollThreshold is a test-only option that shortens the
+// Layer 2 engagement threshold. Unexported so production callers cannot set
+// it. See Options.testFallbackPollThreshold.
+func withTestFallbackPollThreshold(d time.Duration) Option {
+	return func(o *Options) error {
+		o.testFallbackPollThreshold = d
 		return nil
 	}
 }
