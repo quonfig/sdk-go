@@ -56,6 +56,18 @@ func NewEvaluatorWithSeed(configStore ConfigStoreGetter, seed int64) *Evaluator 
 //  4. For each rule, all criteria must match (AND logic)
 //  5. If matched value is weighted_values, resolve through WeightedValueResolver
 func (e *Evaluator) EvaluateConfig(cfg *Config, envID string, ctx ContextValueGetter) *EvalMatch {
+	return e.evaluateConfig(cfg, envID, ctx, nil)
+}
+
+// evaluateConfig is EvaluateConfig plus segPath: the keys of the configs that
+// are currently being evaluated above this one through IN_SEG / NOT_IN_SEG.
+// It lets segment resolution detect a reference cycle (a segment that is, via
+// any chain, IN_SEG itself) and stop instead of recursing until the runtime
+// kills the process with an unrecoverable stack overflow (qfg-9dxb.4). It is a
+// path, not a global visited set, so a diamond (two segments that both
+// reference a third) still resolves. It stays nil, and costs nothing, for
+// configs that never reference a segment.
+func (e *Evaluator) evaluateConfig(cfg *Config, envID string, ctx ContextValueGetter, segPath []string) *EvalMatch {
 	if ctx == nil {
 		ctx = EmptyContext{}
 	}
@@ -64,14 +76,14 @@ func (e *Evaluator) EvaluateConfig(cfg *Config, envID string, ctx ContextValueGe
 	if envID != "" {
 		env := cfg.FindEnvironment(envID)
 		if env != nil {
-			if match := e.evaluateRules(cfg, env.Rules, ctx, 0); match != nil {
+			if match := e.evaluateRules(cfg, env.Rules, ctx, 0, segPath); match != nil {
 				return match
 			}
 		}
 	}
 
 	// Fall back to default rules
-	if match := e.evaluateRules(cfg, cfg.Default.Rules, ctx, 0); match != nil {
+	if match := e.evaluateRules(cfg, cfg.Default.Rules, ctx, 0, segPath); match != nil {
 		return match
 	}
 
@@ -79,9 +91,9 @@ func (e *Evaluator) EvaluateConfig(cfg *Config, envID string, ctx ContextValueGe
 }
 
 // evaluateRules tries rules in order, returning the first match.
-func (e *Evaluator) evaluateRules(cfg *Config, rules []Rule, ctx ContextValueGetter, ruleIndexOffset int) *EvalMatch {
+func (e *Evaluator) evaluateRules(cfg *Config, rules []Rule, ctx ContextValueGetter, ruleIndexOffset int, segPath []string) *EvalMatch {
 	for i, rule := range rules {
-		if e.evaluateAllCriteria(cfg, rule.Criteria, ctx) {
+		if e.evaluateAllCriteria(cfg, rule.Criteria, ctx, segPath) {
 			value := rule.Value // copy
 			match := &EvalMatch{
 				IsMatch:   true,
@@ -109,9 +121,9 @@ func (e *Evaluator) evaluateRules(cfg *Config, rules []Rule, ctx ContextValueGet
 }
 
 // evaluateAllCriteria returns true if ALL criteria match (AND logic).
-func (e *Evaluator) evaluateAllCriteria(cfg *Config, criteria []Criterion, ctx ContextValueGetter) bool {
+func (e *Evaluator) evaluateAllCriteria(cfg *Config, criteria []Criterion, ctx ContextValueGetter, segPath []string) bool {
 	for _, criterion := range criteria {
-		if !e.evaluateSingleCriterion(cfg, criterion, ctx) {
+		if !e.evaluateSingleCriterion(cfg, criterion, ctx, segPath) {
 			return false
 		}
 	}
@@ -120,7 +132,7 @@ func (e *Evaluator) evaluateAllCriteria(cfg *Config, criteria []Criterion, ctx C
 
 // evaluateSingleCriterion evaluates one criterion, handling special properties
 // and segment resolution.
-func (e *Evaluator) evaluateSingleCriterion(cfg *Config, criterion Criterion, ctx ContextValueGetter) bool {
+func (e *Evaluator) evaluateSingleCriterion(cfg *Config, criterion Criterion, ctx ContextValueGetter, segPath []string) bool {
 	contextValue, contextExists := ctx.GetContextValue(criterion.PropertyName)
 
 	// Handle magic current-time properties at the criterion level
@@ -136,12 +148,21 @@ func (e *Evaluator) evaluateSingleCriterion(cfg *Config, criterion Criterion, ct
 		if e.configStore == nil {
 			return false, false
 		}
+		// A reference back to any config on the current evaluation path is a
+		// cycle. Treat it like a missing segment (IN_SEG false, NOT_IN_SEG
+		// true) rather than recursing forever.
+		if segmentKey == cfg.Key || containsKey(segPath, segmentKey) {
+			return false, false
+		}
 		segConfig, exists := e.configStore.GetConfig(segmentKey)
 		if !exists {
 			return false, false
 		}
+		// Full-slice expression: force a copy on append so sibling criteria
+		// never share (and overwrite) one backing array.
+		childPath := append(segPath[:len(segPath):len(segPath)], cfg.Key)
 		// Evaluate the segment config (segments have no environment, use default rules)
-		segMatch := e.EvaluateConfig(segConfig, "", ctx)
+		segMatch := e.evaluateConfig(segConfig, "", ctx, childPath)
 		if !segMatch.IsMatch || segMatch.Value == nil {
 			return false, false
 		}
@@ -149,4 +170,13 @@ func (e *Evaluator) evaluateSingleCriterion(cfg *Config, criterion Criterion, ct
 	}
 
 	return EvaluateCriterion(contextValue, contextExists, criterion, segmentResolver)
+}
+
+func containsKey(keys []string, key string) bool {
+	for _, k := range keys {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
