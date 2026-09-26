@@ -3,14 +3,23 @@ package evalcore
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 )
 
 // WeightedValueResolver resolves weighted value distributions to a single value.
+//
+// It is safe for concurrent use. A single resolver is shared by every goroutine
+// evaluating through an Evaluator, and *rand.Rand is not goroutine-safe, so the
+// random fallback source is guarded by mu (qfg-9dxb.1). A mutex, rather than
+// the math/rand/v2 top-level functions, keeps a fixed seed reproducible for
+// NewEvaluatorWithSeed.
 type WeightedValueResolver struct {
+	mu  sync.Mutex
 	rng *rand.Rand
 }
 
 // NewWeightedValueResolver creates a new resolver with a seeded random source.
+// The returned resolver is safe for concurrent use.
 func NewWeightedValueResolver(seed int64) *WeightedValueResolver {
 	src := rand.NewSource(seed)
 	return &WeightedValueResolver{
@@ -67,5 +76,13 @@ func (w *WeightedValueResolver) getUserFraction(wv *WeightedValuesData, configKe
 		}
 	}
 
+	return w.randomFraction()
+}
+
+// randomFraction returns the next value in [0, 1) from the seeded source,
+// serialized so concurrent callers cannot corrupt its state.
+func (w *WeightedValueResolver) randomFraction() float64 {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	return w.rng.Float64()
 }

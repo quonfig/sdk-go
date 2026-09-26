@@ -2,6 +2,17 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Fixed
+
+- **Concurrent percentage-rollout evaluation no longer races or panics
+  (qfg-9dxb.1).** When a weighted rollout was evaluated for a context without
+  its `hashByPropertyName` property, every goroutine shared one unsynchronized
+  `*rand.Rand`; under concurrent `Get*` calls this was a data race that could
+  panic with `index out of range [-1]` and crash the process. The random
+  fallback source is now mutex-guarded.
+
 ## 1.3.0 - 2026-09-25
 
 ### Changed
