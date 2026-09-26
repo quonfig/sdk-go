@@ -11,6 +11,12 @@ import (
 // ErrInvalidValueFormat is returned when the encrypted value does not have the expected DATA--IV--AUTH_TAG format.
 var ErrInvalidValueFormat = errors.New("invalid encrypted value format: expected DATA--IV--AUTH_TAG")
 
+// ErrInvalidIV is returned when the IV part of the encrypted value is empty.
+var ErrInvalidIV = errors.New("invalid encrypted value: empty IV")
+
+// ErrCiphertextTooShort is returned when DATA+AUTH_TAG is shorter than the GCM auth tag.
+var ErrCiphertextTooShort = errors.New("invalid encrypted value: ciphertext shorter than auth tag")
+
 const validPartCount = 3
 
 // DecryptValue decrypts an AES-GCM encrypted value.
@@ -42,6 +48,12 @@ func DecryptValue(secretKeyString string, value string) (string, error) {
 		return "", err
 	}
 
+	// Validate shape before any slicing so malformed stored data yields an
+	// error instead of a process-killing panic (qfg-9dxb.4).
+	if len(iv) == 0 {
+		return "", ErrInvalidIV
+	}
+
 	// Initialize AES block cipher
 	block, err := aes.NewCipher(secretKey)
 	if err != nil {
@@ -52,6 +64,10 @@ func DecryptValue(secretKeyString string, value string) (string, error) {
 	gcm, err := cipher.NewGCMWithNonceSize(block, len(iv))
 	if err != nil {
 		return "", err
+	}
+
+	if len(dataToProcess) < gcm.Overhead() {
+		return "", ErrCiphertextTooShort
 	}
 
 	// The ciphertext for gcm.Open is data + authTag
