@@ -461,7 +461,37 @@ func (c *Client) resolve(key string, ctx *ContextSet) (*Value, bool, error) {
 // resolveDetail returns both an EvaluationDetails record (the public-API view)
 // and the underlying Go error (preserving error identity for errors.Is checks
 // in EvaluateKey and other backward-compatible callers).
-func (c *Client) resolveDetail(key string, ctx *ContextSet) (EvaluationDetails, error) {
+//
+// Every public getter funnels through here, so it is also the panic boundary:
+// a panic during evaluation (an SDK bug or a malformed config the evaluator
+// did not anticipate) is logged and returned as a GENERAL error for that one
+// call, so the caller gets its default instead of the host process dying
+// (qfg-9dxb.1).
+func (c *Client) resolveDetail(key string, ctx *ContextSet) (details EvaluationDetails, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("quonfig: evaluation of %q panicked: %v", key, r)
+			if c.opts.Logger != nil {
+				c.opts.Logger.Error("quonfig: recovered panic during evaluation; returning default",
+					slog.String("key", key),
+					slog.Any("panic", r),
+					slog.String("stack", string(debug.Stack())),
+				)
+			}
+			details = EvaluationDetails{
+				Reason:       ReasonError,
+				ErrorCode:    ErrorCodeGeneral,
+				ErrorMessage: err.Error(),
+				Variant:      "default",
+				FlagMetadata: map[string]any{},
+			}
+		}
+	}()
+	return c.resolveDetailUnsafe(key, ctx)
+}
+
+// resolveDetailUnsafe does the work of resolveDetail without the panic guard.
+func (c *Client) resolveDetailUnsafe(key string, ctx *ContextSet) (EvaluationDetails, error) {
 	if err := c.awaitInitialization(key); err != nil {
 		if c.opts.OnInitFailure == ReturnZeroValue && errors.Is(err, ErrInitializationTimeout) {
 			return EvaluationDetails{

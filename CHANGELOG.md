@@ -12,6 +12,10 @@ All notable changes to the Quonfig Go SDK are documented here.
   `*rand.Rand`; under concurrent `Get*` calls this was a data race that could
   panic with `index out of range [-1]` and crash the process. The random
   fallback source is now mutex-guarded.
+- **A panic during evaluation no longer crashes the process (qfg-9dxb.1).**
+  Every `Get*`/`EvaluateKey`/`EvaluateDetails` call now recovers a panic raised
+  while evaluating a config, logs it at ERROR with a stack trace, and returns
+  the caller's default with an error (`Reason: ERROR`, `ErrorCode: GENERAL`).
 
 ## 1.3.0 - 2026-09-25
 
