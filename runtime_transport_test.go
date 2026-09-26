@@ -35,7 +35,7 @@ func TestFetchConfigsPerURLTimeoutFailsOver(t *testing.T) {
 	secondary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("ETag", `"v1"`)
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{}`))
+		_, _ = w.Write([]byte(`{"configs":[],"meta":{"version":"v1","environment":"Production"}}`))
 	}))
 	t.Cleanup(secondary.Close)
 

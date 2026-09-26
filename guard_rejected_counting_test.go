@@ -316,8 +316,8 @@ func TestUnversionedRedeliveryIsNotCountedAsGuardRejected(t *testing.T) {
 
 	// SSE path: unversioned message installs (carve-out).
 	client.handleSSEEnvelope(guardCountingEnvelope(0))
-	if got := client.HeldGeneration(); got != 0 {
-		t.Fatalf("after unversioned SSE message: HeldGeneration = %d, want 0 (carve-out must install)", got)
+	if got := client.HeldGeneration(); got != 42 {
+		t.Fatalf("after unversioned SSE message: HeldGeneration = %d, want 42 (an unversioned install must never lower a positive held generation, qfg-9dxb.3)", got)
 	}
 	if got := client.ConfigInstallCount(); got != installs+1 {
 		t.Fatalf("install count %d -> %d, want %d (carve-out must install)", installs, got, installs+1)
@@ -330,6 +330,9 @@ func TestUnversionedRedeliveryIsNotCountedAsGuardRejected(t *testing.T) {
 	}
 	if got := client.ConfigInstallCount(); got != installs+2 {
 		t.Fatalf("install count = %d, want %d (unversioned 200 must install)", got, installs+2)
+	}
+	if got := client.HeldGeneration(); got != 42 {
+		t.Fatalf("after unversioned 200: HeldGeneration = %d, want 42 (qfg-9dxb.3)", got)
 	}
 
 	client.Close()

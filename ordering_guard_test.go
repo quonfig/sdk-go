@@ -127,9 +127,29 @@ func TestInstallGuardCarveOutUnversioned(t *testing.T) {
 	// pre-watermark deploy or a rev-count failure. The established client must
 	// install it (carve-out), not freeze on 42.
 	gen.Store(0)
+	installs := client.ConfigInstallCount()
 	_ = client.Refresh()
-	if got := client.HeldGeneration(); got != 0 {
-		t.Fatalf("carve-out failed: held generation = %d, want 0 (unversioned snapshot must install, not freeze)", got)
+	if got := client.ConfigInstallCount(); got != installs+1 {
+		t.Fatalf("carve-out failed: install count %d -> %d, want %d (unversioned snapshot must install, not freeze)", installs, got, installs+1)
+	}
+	// qfg-9dxb.3 Fix A: the unversioned install carries no ordering
+	// information, so it must not LOWER the held watermark. Resetting to 0
+	// would let a stale older snapshot (e.g. a lagging secondary's gen 41)
+	// install next and move the established client backward.
+	if got := client.HeldGeneration(); got != 42 {
+		t.Fatalf("held generation = %d after unversioned install, want 42 (an unversioned install must never lower a positive held generation)", got)
+	}
+
+	// And the preserved watermark still guards: an older positive snapshot is
+	// now rejected rather than installed.
+	gen.Store(41)
+	installs = client.ConfigInstallCount()
+	_ = client.Refresh()
+	if got := client.ConfigInstallCount(); got != installs {
+		t.Fatalf("install count %d -> %d after older gen 41, want no install (reject-older must survive an unversioned install)", installs, got)
+	}
+	if got := client.HeldGeneration(); got != 42 {
+		t.Fatalf("held generation = %d after older gen 41, want 42", got)
 	}
 }
 

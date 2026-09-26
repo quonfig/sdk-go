@@ -2,6 +2,7 @@ package quonfig
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 )
@@ -294,6 +295,24 @@ type ConfigResponse struct {
 type ConfigEnvelope struct {
 	Configs []ConfigResponse `json:"configs"`
 	Meta    Meta             `json:"meta"`
+}
+
+// validate reports whether e is a config envelope at all, as opposed to some
+// other JSON object (an error body from a proxy/WAF, a maintenance page, `{}`)
+// that happened to decode. A real envelope always carries a meta object with a
+// non-empty version: api-delivery always sends version and environment, and
+// `qfg serve` sends version and environment without a generation (which then
+// installs through the unversioned carve-out). Anything else must never be
+// installed — it would wipe every key on an established client (qfg-9dxb.3,
+// audit H2).
+func (e *ConfigEnvelope) validate() error {
+	if e == nil {
+		return errors.New("not a config envelope: empty body")
+	}
+	if e.Meta.Version == "" {
+		return errors.New("not a config envelope: missing meta.version")
+	}
+	return nil
 }
 
 // Meta holds response metadata.

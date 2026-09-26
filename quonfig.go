@@ -945,7 +945,9 @@ func (c *Client) recordSuccessfulRefresh() {
 
 // HeldGeneration returns the Meta.Generation of the config the client is
 // currently holding (0 before the first install, or when the server predates
-// the watermark). A higher generation is strictly newer; this is the value the
+// the watermark). An unversioned install (generation absent or <= 0) keeps the
+// previous value rather than resetting it to 0, so this is the highest
+// generation installed so far (qfg-9dxb.3). A higher generation is strictly newer; this is the value the
 // canonical-ordering guard compares against on every install path.
 func (c *Client) HeldGeneration() int {
 	c.mu.RLock()
@@ -1134,7 +1136,9 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 //     predates the watermark, or one whose rev-count failed) carries no ordering
 //     information, so it can't be rejected as "older". It installs exactly as it
 //     did before this guard existed; rejecting it would freeze an established
-//     client on stale config until a positive generation reappeared.
+//     client on stale config until a positive generation reappeared. It does
+//     not lower the held generation (see installEnvelope), so the next
+//     positive snapshot is still ordered against the last real watermark.
 //
 // Callers must hold c.refreshMu so the decision and the install that follows are
 // atomic with respect to every other install path. Datadir install/reload is a
@@ -1202,7 +1206,14 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope, sourceIndex int) {
 	c.evaluator = evaluator
 	c.resolver = resolver
 	c.envID = envelope.Meta.Environment
-	c.heldGeneration = envelope.Meta.Generation
+	// An unversioned install (generation absent or <= 0) still installs — the
+	// carve-out that keeps pre-watermark servers from freezing clients — but it
+	// carries no ordering information, so it must never LOWER a positive held
+	// generation. Resetting to 0 would let a stale older snapshot install next
+	// and move an established client backward (qfg-9dxb.3).
+	if envelope.Meta.Generation > 0 {
+		c.heldGeneration = envelope.Meta.Generation
+	}
 	c.configInstalls++
 	if sourceIndex >= 0 {
 		c.resolvedFromIndex = sourceIndex

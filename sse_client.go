@@ -308,13 +308,14 @@ func (c *sseClient) parseStream(r io.Reader) {
 			return
 		}
 		var env ConfigEnvelope
-		if err := json.Unmarshal(dataBuf.Bytes(), &env); err == nil {
+		if err := json.Unmarshal(dataBuf.Bytes(), &env); err == nil && env.validate() == nil {
 			if c.cfg.OnEnvelope != nil {
 				c.invokeOnEnvelope(&env)
 			}
 		}
-		// else: malformed payload — swallow so a single bad event doesn't
-		// tear down the stream. The HTTP poller is a safety net.
+		// else: malformed payload, or valid JSON that is not a config
+		// envelope (qfg-9dxb.3) — swallow so a single bad event doesn't tear
+		// down the stream. The HTTP poller is a safety net.
 		dataBuf.Reset()
 	}
 

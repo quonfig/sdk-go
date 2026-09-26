@@ -286,15 +286,22 @@ func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time
 		return legResult{Err: fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, baseURL, string(body))}
 	}
 
+	var envelope ConfigEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return legResult{Err: fmt.Errorf("decoding response: %w", err)}
+	}
+	// A 200 that is not a config envelope is a leg error, so the hedge and
+	// failover proceed exactly as for a 5xx (qfg-9dxb.3).
+	if err := envelope.validate(); err != nil {
+		return legResult{Err: fmt.Errorf("invalid response from %s: %w", baseURL, err)}
+	}
+
+	// Store the ETag only after the body decoded and validated. Storing it
+	// first let a truncated or junk 200 pin itself through later 304s.
 	if newEtag := resp.Header.Get("ETag"); newEtag != "" {
 		c.etagMu.Lock()
 		c.etags[i] = newEtag
 		c.etagMu.Unlock()
-	}
-
-	var envelope ConfigEnvelope
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		return legResult{Err: fmt.Errorf("decoding response: %w", err)}
 	}
 
 	return legResult{Res: &fetchResult{Envelope: &envelope, SourceIndex: i}}

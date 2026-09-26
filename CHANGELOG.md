@@ -33,6 +33,20 @@ All notable changes to the Quonfig Go SDK are documented here.
   poller starts, and with `WithSSE(false)` the poller engages at once, as the
   `WithSSE` doc already promised. `ConnectionState()` reports `falling_back`
   while it polls.
+- **A non-envelope response no longer wipes the config (qfg-9dxb.3).** A 200
+  (or SSE event) whose body is not a config envelope, such as `{}` or a
+  proxy's `{"error":...}`, used to install as an empty config and every key
+  fell back to its default. A payload now needs a `meta` object with a
+  non-empty `version`. Over HTTP a failed check counts as a leg error, so the
+  hedge and failover run as they would for a 5xx, and the response's ETag is
+  stored only after the body passes. An invalid SSE event is dropped, the same
+  way malformed JSON is. `qfg serve` payloads (version and environment, no
+  generation) still install.
+- **`HeldGeneration()` no longer drops to 0 after an unversioned install
+  (qfg-9dxb.3).** A payload with no generation (or generation 0) still
+  installs, but the held generation keeps its previous value. Before, it reset
+  to 0, and the next older snapshot could then move an established client
+  backward.
 
 ## 1.3.0 - 2026-09-25
 
