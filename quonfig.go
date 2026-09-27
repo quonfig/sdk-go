@@ -1132,13 +1132,18 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 //     later, newer primary win heals forward.
 //   - A same-generation snapshot is a no-op (not strictly greater), so an equal
 //     second leg can't re-install or flap.
-//   - An unversioned snapshot (generation absent or <= 0 — a server that
-//     predates the watermark, or one whose rev-count failed) carries no ordering
-//     information, so it can't be rejected as "older". It installs exactly as it
-//     did before this guard existed; rejecting it would freeze an established
-//     client on stale config until a positive generation reappeared. It does
-//     not lower the held generation (see installEnvelope), so the next
-//     positive snapshot is still ordered against the last real watermark.
+//   - An unversioned snapshot (generation absent or <= 0) installs ONLY while
+//     the client has never held a real generation (heldGeneration == 0) — e.g.
+//     a client pointed at qfg serve, which sends no generation, keeps
+//     installing every payload. Once a positive generation is held, a gen<=0
+//     payload is dropped (qfg-9dxb.9). The pre-watermark servers that sent gen
+//     0 on every payload are long dead; today gen 0 only comes from an
+//     api-delivery machine whose git object store is damaged (rev-count
+//     failed), whose content may be OLD. Installing it moved the client
+//     backward, and because the held generation is not lowered the healthy
+//     same-generation re-delivery was then rejected, sticking the client on
+//     OLD content until the next generation. Such a drop is a silent no-op,
+//     not a guardRejected (see isStrictlyOlderThanHeld).
 //
 // Callers must hold c.refreshMu so the decision and the install that follows are
 // atomic with respect to every other install path. Datadir install/reload is a
@@ -1151,7 +1156,7 @@ func (c *Client) shouldInstall(envelope *ConfigEnvelope) bool {
 		return true
 	}
 	if envelope.Meta.Generation <= 0 {
-		return true
+		return c.heldGeneration == 0
 	}
 	return envelope.Meta.Generation > c.heldGeneration
 }
@@ -1171,9 +1176,9 @@ func (c *Client) shouldInstall(envelope *ConfigEnvelope) bool {
 // non-zero for perfectly healthy clients and polluted the sdk_failover signal,
 // where it is supposed to mean "a leg tried to move us backwards".
 //
-// The gen<=0 unversioned carve-out is re-asserted here defensively: such a
-// payload always installs (see shouldInstall) so it never reaches this helper,
-// and it carries no ordering information, so it can never be "older".
+// A gen<=0 (unversioned) payload dropped because a real generation is held
+// (qfg-9dxb.9) is also a silent no-op: it carries no ordering information, so
+// it is not provably "older" and is never counted.
 //
 // Callers must hold c.refreshMu, exactly as for shouldInstall, so the
 // classification sees the same held generation the guard decision saw.
@@ -1206,11 +1211,12 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope, sourceIndex int) {
 	c.evaluator = evaluator
 	c.resolver = resolver
 	c.envID = envelope.Meta.Environment
-	// An unversioned install (generation absent or <= 0) still installs — the
-	// carve-out that keeps pre-watermark servers from freezing clients — but it
-	// carries no ordering information, so it must never LOWER a positive held
-	// generation. Resetting to 0 would let a stale older snapshot install next
-	// and move an established client backward (qfg-9dxb.3).
+	// An unversioned install (generation absent or <= 0) reaches here only on
+	// a fresh client, a client that has never held a real generation, or the
+	// datadir path (which bypasses shouldInstall). It carries no ordering
+	// information, so it must never LOWER a positive held generation
+	// (qfg-9dxb.3): the next network snapshot is still ordered against the last
+	// real watermark.
 	if envelope.Meta.Generation > 0 {
 		c.heldGeneration = envelope.Meta.Generation
 	}

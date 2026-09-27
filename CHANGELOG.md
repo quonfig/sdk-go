@@ -43,10 +43,19 @@ All notable changes to the Quonfig Go SDK are documented here.
   way malformed JSON is. `qfg serve` payloads (version and environment, no
   generation) still install.
 - **`HeldGeneration()` no longer drops to 0 after an unversioned install
-  (qfg-9dxb.3).** A payload with no generation (or generation 0) still
-  installs, but the held generation keeps its previous value. Before, it reset
+  (qfg-9dxb.3).** When a payload with no generation (or generation 0)
+  installs, the held generation keeps its previous value. Before, it reset
   to 0, and the next older snapshot could then move an established client
   backward.
+- **A generation-0 payload no longer overrides a held generation
+  (qfg-9dxb.9).** A client that holds a real generation now ignores a payload
+  with no generation (or generation 0). Today only an api-delivery machine with
+  a damaged git store sends generation 0, and its content can be old. Before,
+  the client installed that old content, then rejected the healthy
+  same-generation re-delivery and stayed on the old content until the next
+  generation. A client that has never held a real generation (for example, one
+  pointed at `qfg serve`) still installs every such payload. The ignored
+  payload is not counted as `guardRejected`.
 
 ## 1.3.0 - 2026-09-25
 

@@ -2,6 +2,7 @@ package quonfig
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -128,14 +129,15 @@ func TestNonEnvelope200DoesNotStoreETag(t *testing.T) {
 	}
 }
 
-// qfg serve sends version+environment but no generation. It must keep
-// installing through the unversioned carve-out, and must not lower a held
-// generation.
+// qfg serve sends version+environment but no generation. A client that has
+// only ever seen such payloads (held generation 0) keeps installing each one;
+// a client already holding a real generation does not (qfg-9dxb.9).
 func TestQfgServeStylePayloadStillInstalls(t *testing.T) {
 	var serve atomic.Bool
+	var n atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if serve.Load() {
-			w.Header().Set("ETag", `"serve"`)
+			w.Header().Set("ETag", fmt.Sprintf(`"serve-%d"`, n.Add(1)))
 			_, _ = w.Write([]byte(`{"configs":[],"meta":{"version":"local-abc123","environment":"development"}}`))
 			return
 		}
@@ -150,17 +152,23 @@ func TestQfgServeStylePayloadStillInstalls(t *testing.T) {
 	if err := client.Refresh(); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	if got := client.ConfigInstallCount(); got != installs+1 {
-		t.Fatalf("install count %d -> %d, want a qfg-serve payload to install", installs, got)
+	if got := client.ConfigInstallCount(); got != installs {
+		t.Fatalf("install count %d -> %d, want a qfg-serve payload NOT to install over held generation 7", installs, got)
 	}
 	if got := client.HeldGeneration(); got != 7 {
-		t.Errorf("HeldGeneration = %d, want 7 (unversioned install must not lower it)", got)
+		t.Errorf("HeldGeneration = %d, want 7", got)
 	}
 
-	// And a fresh client seeds off a qfg-serve payload.
+	// A fresh client seeds off a qfg-serve payload and keeps installing them.
 	fresh := newValidationClient(t, []string{srv.URL})
 	if got := fresh.ConfigInstallCount(); got != 1 {
 		t.Errorf("fresh client install count = %d, want 1", got)
+	}
+	if err := fresh.Refresh(); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if got := fresh.ConfigInstallCount(); got != 2 {
+		t.Errorf("fresh client install count after refresh = %d, want 2 (gen-0-only client keeps installing)", got)
 	}
 }
 

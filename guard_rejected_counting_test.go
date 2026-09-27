@@ -297,12 +297,11 @@ func TestStrictlyOlderRedeliveryOnSSEPathIsCountedAsGuardRejected(t *testing.T) 
 	}
 }
 
-// TestUnversionedRedeliveryIsNotCountedAsGuardRejected pins the gen<=0
-// unversioned carve-out on both paths: a snapshot with generation absent or <= 0
-// carries no ordering information, so it still INSTALLS on an established
-// client (it can never be "older") and is never counted as guardRejected.
-// qfg-rr5b narrowed which rejections are counted; it did not touch the
-// carve-out.
+// TestUnversionedRedeliveryIsNotCountedAsGuardRejected pins qfg-9dxb.9 on both
+// paths: once a real generation is held, a snapshot with generation absent or
+// <= 0 is dropped (it must not override the held generation), and the drop is
+// a silent no-op — it carries no ordering information, so it is not provably
+// "older" and is never counted as guardRejected.
 func TestUnversionedRedeliveryIsNotCountedAsGuardRejected(t *testing.T) {
 	capture := newFailoverWireCapture(t)
 	upstream, gen := coldETagUpstream(t)
@@ -314,31 +313,31 @@ func TestUnversionedRedeliveryIsNotCountedAsGuardRejected(t *testing.T) {
 	}
 	installs := client.ConfigInstallCount()
 
-	// SSE path: unversioned message installs (carve-out).
+	// SSE path: unversioned message is dropped.
 	client.handleSSEEnvelope(guardCountingEnvelope(0))
 	if got := client.HeldGeneration(); got != 42 {
-		t.Fatalf("after unversioned SSE message: HeldGeneration = %d, want 42 (an unversioned install must never lower a positive held generation, qfg-9dxb.3)", got)
+		t.Fatalf("after unversioned SSE message: HeldGeneration = %d, want 42", got)
 	}
-	if got := client.ConfigInstallCount(); got != installs+1 {
-		t.Fatalf("install count %d -> %d, want %d (carve-out must install)", installs, got, installs+1)
+	if got := client.ConfigInstallCount(); got != installs {
+		t.Fatalf("install count %d -> %d, want unchanged (gen<=0 must not install over a held generation)", installs, got)
 	}
 
-	// HTTP path: unversioned 200 installs too.
+	// HTTP path: unversioned 200 is dropped too.
 	gen.Store(0)
 	if err := client.Refresh(); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	if got := client.ConfigInstallCount(); got != installs+2 {
-		t.Fatalf("install count = %d, want %d (unversioned 200 must install)", got, installs+2)
+	if got := client.ConfigInstallCount(); got != installs {
+		t.Fatalf("install count = %d, want %d (unversioned 200 must not install over a held generation)", got, installs)
 	}
 	if got := client.HeldGeneration(); got != 42 {
-		t.Fatalf("after unversioned 200: HeldGeneration = %d, want 42 (qfg-9dxb.3)", got)
+		t.Fatalf("after unversioned 200: HeldGeneration = %d, want 42", got)
 	}
 
 	client.Close()
 
 	got, _ := capture.get()
 	if got.GuardRejected != 0 {
-		t.Errorf("GuardRejected = %d, want 0 (an unversioned snapshot installs; it is never a rejection)", got.GuardRejected)
+		t.Errorf("GuardRejected = %d, want 0 (a dropped unversioned snapshot is a silent no-op, never a counted rejection)", got.GuardRejected)
 	}
 }

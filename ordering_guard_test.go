@@ -86,25 +86,52 @@ func TestRejectOlderInstallGuard(t *testing.T) {
 	}
 }
 
-// TestInstallGuardCarveOutUnversioned pins the gen<=0 carve-out (qfg-7h5d.1.18):
-// an established client must still install an UNVERSIONED snapshot (generation
-// absent or 0 — a server that predates the watermark, or one whose rev-count
-// failed and fell back to 0). Such a payload carries no ordering information, so
-// it cannot be rejected as "older"; rejecting it would freeze the client on
-// stale config until a positive generation reappeared. This generalizes the
-// carve-out sdk-node has always had to all backend SDKs.
-func TestInstallGuardCarveOutUnversioned(t *testing.T) {
-	var gen atomic.Int64
-	gen.Store(42) // establish on a real watermark first
+// contentEnvelopeJSON returns an envelope at the given generation holding one
+// bool flag "flag.content" whose value marks which content (NEW=true,
+// OLD=false) is installed.
+func contentEnvelopeJSON(generation int, value bool) string {
+	return fmt.Sprintf(
+		`{"configs":[{"id":"1","key":"flag.content","type":"feature_flag","valueType":"bool","default":{"rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"bool","value":%t}}]}}],"meta":{"version":"gen-%d-%t","environment":"Production","generation":%d}}`,
+		value, generation, value, generation,
+	)
+}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		g := int(gen.Load())
-		w.Header().Set("ETag", fmt.Sprintf(`"gen-%d"`, g))
+// swappableServer serves whatever body is currently stored, with a unique
+// ETag per request so the client never gets a 304.
+func swappableServer(t *testing.T, body *atomic.Value) *httptest.Server {
+	t.Helper()
+	var reqs atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("ETag", fmt.Sprintf(`"req-%d"`, reqs.Add(1)))
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(orderingEnvelopeJSON(g)))
+		_, _ = w.Write([]byte(body.Load().(string)))
 	}))
-	defer server.Close()
+	t.Cleanup(srv.Close)
+	return srv
+}
 
+func contentFlag(t *testing.T, client *quonfig.Client) bool {
+	t.Helper()
+	v, ok, err := client.GetBoolValue("flag.content", nil)
+	if err != nil || !ok {
+		t.Fatalf("GetBoolValue(flag.content) = %v, ok=%v, err=%v", v, ok, err)
+	}
+	return v
+}
+
+// TestInstallGuardUnversionedDoesNotOverrideHeldGeneration pins qfg-9dxb.9: a
+// client holding a real generation must NOT install an unversioned (gen <= 0)
+// payload. Pre-watermark servers that sent gen 0 on every payload are long
+// gone; gen 0 now only comes from an api-delivery machine whose git object
+// store is damaged (rev-count failed), and its content may be OLD. Installing
+// it moved the client backward, and because the held generation is not lowered
+// (qfg-9dxb.3) the healthy gen-N re-delivery was then rejected as a same-
+// generation no-op — stuck on OLD content until gen N+1.
+func TestInstallGuardUnversionedDoesNotOverrideHeldGeneration(t *testing.T) {
+	var body atomic.Value
+	body.Store(contentEnvelopeJSON(42, true)) // gen 42, NEW content
+
+	server := swappableServer(t, &body)
 	client, err := quonfig.NewClient(
 		quonfig.WithSdkKey("test-backend-key"),
 		quonfig.WithAPIURLs([]string{server.URL}),
@@ -122,34 +149,81 @@ func TestInstallGuardCarveOutUnversioned(t *testing.T) {
 	if got := client.HeldGeneration(); got != 42 {
 		t.Fatalf("after init: held generation = %d, want 42", got)
 	}
+	if !contentFlag(t, client) {
+		t.Fatalf("after init: flag.content = false, want true (NEW content)")
+	}
 
-	// Server now serves an unversioned (generation 0) snapshot — e.g. a
-	// pre-watermark deploy or a rev-count failure. The established client must
-	// install it (carve-out), not freeze on 42.
-	gen.Store(0)
+	// A damaged-store machine answers gen 0 with OLD content. It must not install.
+	body.Store(contentEnvelopeJSON(0, false))
 	installs := client.ConfigInstallCount()
-	_ = client.Refresh()
-	if got := client.ConfigInstallCount(); got != installs+1 {
-		t.Fatalf("carve-out failed: install count %d -> %d, want %d (unversioned snapshot must install, not freeze)", installs, got, installs+1)
+	if err := client.Refresh(); err != nil {
+		t.Fatalf("Refresh: %v", err)
 	}
-	// qfg-9dxb.3 Fix A: the unversioned install carries no ordering
-	// information, so it must not LOWER the held watermark. Resetting to 0
-	// would let a stale older snapshot (e.g. a lagging secondary's gen 41)
-	// install next and move the established client backward.
+	if got := client.ConfigInstallCount(); got != installs {
+		t.Fatalf("install count %d -> %d after gen-0 payload, want no install (gen<=0 must not override a held real generation)", installs, got)
+	}
+	if !contentFlag(t, client) {
+		t.Fatalf("after gen-0 OLD payload: flag.content = false, want true (client must stay on NEW content)")
+	}
 	if got := client.HeldGeneration(); got != 42 {
-		t.Fatalf("held generation = %d after unversioned install, want 42 (an unversioned install must never lower a positive held generation)", got)
+		t.Fatalf("held generation = %d after gen-0 payload, want 42", got)
 	}
 
-	// And the preserved watermark still guards: an older positive snapshot is
-	// now rejected rather than installed.
-	gen.Store(41)
-	installs = client.ConfigInstallCount()
-	_ = client.Refresh()
-	if got := client.ConfigInstallCount(); got != installs {
-		t.Fatalf("install count %d -> %d after older gen 41, want no install (reject-older must survive an unversioned install)", installs, got)
+	// The healthy gen-42 re-delivery: still NEW (the stuck scenario).
+	body.Store(contentEnvelopeJSON(42, true))
+	if err := client.Refresh(); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if !contentFlag(t, client) {
+		t.Fatalf("after gen-42 re-delivery: flag.content = false, want true (client stuck on OLD content)")
 	}
 	if got := client.HeldGeneration(); got != 42 {
-		t.Fatalf("held generation = %d after older gen 41, want 42", got)
+		t.Fatalf("held generation = %d after gen-42 re-delivery, want 42", got)
+	}
+}
+
+// TestInstallGuardUnversionedOnlyClientKeepsInstalling pins the other half of
+// qfg-9dxb.9: a client that has never held a real generation (heldGeneration
+// == 0 — e.g. pointed at qfg serve, which sends no generation) keeps installing
+// every unversioned payload, so it never freezes on its first snapshot.
+func TestInstallGuardUnversionedOnlyClientKeepsInstalling(t *testing.T) {
+	var body atomic.Value
+	body.Store(contentEnvelopeJSON(0, true))
+
+	server := swappableServer(t, &body)
+	client, err := quonfig.NewClient(
+		quonfig.WithSdkKey("test-backend-key"),
+		quonfig.WithAPIURLs([]string{server.URL}),
+		quonfig.WithAllTelemetryDisabled(),
+		quonfig.WithSSE(false),
+		quonfig.WithFallbackPoll(false, 0),
+		quonfig.WithInitTimeout(5*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer client.Close()
+
+	awaitClientReady(t, client)
+	if !contentFlag(t, client) {
+		t.Fatalf("after init: flag.content = false, want true")
+	}
+
+	for i, want := range []bool{false, true, false} {
+		body.Store(contentEnvelopeJSON(0, want))
+		installs := client.ConfigInstallCount()
+		if err := client.Refresh(); err != nil {
+			t.Fatalf("Refresh %d: %v", i, err)
+		}
+		if got := client.ConfigInstallCount(); got != installs+1 {
+			t.Fatalf("refresh %d: install count %d -> %d, want %d (a gen-0-only client must install every gen-0 payload)", i, installs, got, installs+1)
+		}
+		if got := contentFlag(t, client); got != want {
+			t.Fatalf("refresh %d: flag.content = %v, want %v", i, got, want)
+		}
+		if got := client.HeldGeneration(); got != 0 {
+			t.Fatalf("refresh %d: held generation = %d, want 0", i, got)
+		}
 	}
 }
 
