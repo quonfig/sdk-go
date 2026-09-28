@@ -28,6 +28,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"math/rand"
@@ -91,6 +92,15 @@ type sseClient struct {
 	// stream itself. The map is allocated lazily under restartsMu.
 	restartsMu     sync.Mutex
 	workerRestarts map[string]*atomic.Int64
+
+	// oversized is set when a stream ended because an event exceeded the
+	// scanner's line limit (bufio.ErrTooLong). While set, a new connection
+	// does not report "connected" on its 200 headers alone; it reports it
+	// only once an event is actually delivered. The server resends the same
+	// oversized snapshot on every connect, so without this each reconnect
+	// would emit a connected edge and cancel the fallback poller's engage
+	// timer forever (qfg-9dxb.6). Touched only by the runLoop goroutine.
+	oversized bool
 }
 
 func newSSEClient(cfg sseClientConfig) *sseClient {
@@ -250,7 +260,9 @@ func (c *sseClient) connectOnce() bool {
 		return false
 	}
 
-	c.setConnected(true)
+	if !c.oversized {
+		c.setConnected(true)
+	}
 	defer c.setConnected(false)
 
 	// Wrap the body so each successful read resets a watchdog timer; if no
@@ -258,7 +270,22 @@ func (c *sseClient) connectOnce() bool {
 	// body read errors, parseStream returns, and runLoop reconnects.
 	timer := time.AfterFunc(c.cfg.ReadTimeout, cancelReq)
 	defer timer.Stop()
-	c.parseStream(&deadlineResetReader{r: resp.Body, timer: timer, d: c.cfg.ReadTimeout})
+	err = c.parseStream(&deadlineResetReader{r: resp.Body, timer: timer, d: c.cfg.ReadTimeout})
+	if errors.Is(err, bufio.ErrTooLong) {
+		// An event larger than the line limit can never be read, and the
+		// server will resend it on every reconnect. Treat this as a failed
+		// connection (exponential backoff, not the snappy recycle path) and
+		// stop reporting "connected" until an event gets through, so the
+		// fallback poller engages and keeps config fresh over HTTP.
+		if !c.oversized {
+			c.cfg.Logger.Warn("quonfig: SSE event exceeds the maximum size; dropping it and backing off (fallback polling will take over)",
+				slog.String("url", c.cfg.URL),
+				slog.Int("maxBytes", sseMaxLine),
+			)
+		}
+		c.oversized = true
+		return false
+	}
 	return true
 }
 
@@ -295,12 +322,12 @@ func (d *deadlineResetReader) Read(p []byte) (int, error) {
 // with newlines — api-delivery always emits single-line JSON. If that
 // changes, the bufio.Scanner pre-sized line buffer and this function both
 // need an update.
-func (c *sseClient) parseStream(r io.Reader) {
+//
+// It returns the scanner's error (nil on clean EOF), so the caller can tell
+// an oversized event (bufio.ErrTooLong) apart from a normal stream end.
+func (c *sseClient) parseStream(r io.Reader) error {
 	scanner := bufio.NewScanner(r)
-	// Envelopes can be large (500 flags × ~500B rules, plus meta). Allow up to
-	// 4 MiB lines which is well over what we've observed in production.
-	const maxLine = 4 * 1024 * 1024
-	scanner.Buffer(make([]byte, 64*1024), maxLine)
+	scanner.Buffer(make([]byte, 64*1024), sseMaxLine)
 
 	var dataBuf bytes.Buffer
 	flush := func() {
@@ -309,6 +336,12 @@ func (c *sseClient) parseStream(r io.Reader) {
 		}
 		var env ConfigEnvelope
 		if err := json.Unmarshal(dataBuf.Bytes(), &env); err == nil && env.validate() == nil {
+			if c.oversized {
+				// An event got through after an oversized one: the stream is
+				// usable again, so report the connection now.
+				c.oversized = false
+				c.setConnected(true)
+			}
 			if c.cfg.OnEnvelope != nil {
 				c.invokeOnEnvelope(&env)
 			}
@@ -341,8 +374,13 @@ func (c *sseClient) parseStream(r io.Reader) {
 	}
 	// Stream ended (EOF or read error). Any pending event without a trailing
 	// blank line is discarded — matches real SSE server behavior.
-	_ = scanner.Err()
+	return scanner.Err()
 }
+
+// sseMaxLine caps a single SSE line. Envelopes can be large (500 flags ×
+// ~500B rules, plus meta); 4 MiB is well over what we've observed in
+// production. A larger event is dropped and handled in connectOnce.
+const sseMaxLine = 4 * 1024 * 1024
 
 // stripFieldPrefix returns (value, true) if s starts with prefix (optionally
 // followed by a single space). The SSE spec allows either "field:value" or

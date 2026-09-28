@@ -56,6 +56,15 @@ All notable changes to the Quonfig Go SDK are documented here.
   generation. A client that has never held a real generation (for example, one
   pointed at `qfg serve`) still installs every such payload. The ignored
   payload is not counted as `guardRejected`.
+- **An SSE event larger than 4 MiB no longer causes a reconnect storm or
+  frozen config (qfg-9dxb.6).** Before, once a workspace's config payload
+  grew past 4 MiB, the SDK silently dropped it, reconnected about three
+  times per second, and kept reporting the stream as connected, so the
+  fallback poller never took over and config stopped updating. Now the SDK
+  logs a WARN, backs off between reconnects as it does for any failed
+  connection, reports the stream as disconnected, and the fallback poller
+  keeps config current over HTTP. When a normal-size event arrives again,
+  streaming resumes.
 
 ## 1.3.0 - 2026-09-25
 
