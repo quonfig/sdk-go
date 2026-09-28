@@ -40,6 +40,9 @@ type EvalMatch struct {
 	Value              *quonfig.Value
 	RuleIndex          int
 	WeightedValueIndex int
+	// IsWeighted mirrors evalcore.EvalMatch.IsWeighted: true when the value
+	// came from a weighted_values block, including bucket 0 (qfg-stbb).
+	IsWeighted bool
 }
 
 // ContextValueGetter is re-exported from the shared evalcore package.
@@ -221,6 +224,7 @@ func sharedMatchToLocal(match *evalcore.EvalMatch) *EvalMatch {
 		IsMatch:            match.IsMatch,
 		RuleIndex:          match.RuleIndex,
 		WeightedValueIndex: match.WeightedValueIndex,
+		IsWeighted:         match.IsWeighted,
 	}
 	if match.Value != nil {
 		localVal := sharedValueToLocal(*match.Value)

@@ -44,6 +44,13 @@ func TestTelemetry_ReasonIsSPLITForWeightedValueEvaluation(t *testing.T) {
 	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.weighted", "type": "FEATURE_FLAG", "value": 2, "value_type": "int", "count": 1, "reason": 3, "selected_value": map[string]interface{}{"int": 2}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0, "weighted_value_index": 2}}}, "/api/v1/telemetry")
 }
 
+// reason is SPLIT for weighted value landing in bucket 0
+func TestTelemetry_ReasonIsSPLITForWeightedValueLandingInBucket0(t *testing.T) {
+	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})
+	FeedAggregator(t, agg, "evaluation_summary", map[string]interface{}{"keys": []interface{}{"feature-flag.weighted"}}, map[string]map[string]interface{}{"user": {"tracking_id": "3e9459d6"}})
+	AssertAggregatorPost(t, agg, "evaluation_summary", []interface{}{map[string]interface{}{"key": "feature-flag.weighted", "type": "FEATURE_FLAG", "value": 1, "value_type": "int", "count": 1, "reason": 3, "selected_value": map[string]interface{}{"int": 1}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0, "weighted_value_index": 0}}}, "/api/v1/telemetry")
+}
+
 // reason is TARGETING_MATCH for feature flag fallthrough with targeting rules
 func TestTelemetry_ReasonIsTARGETINGMATCHForFeatureFlagFallthroughWithTargetingRules(t *testing.T) {
 	agg := BuildAggregator(t, "evaluation_summary", map[string]interface{}{})

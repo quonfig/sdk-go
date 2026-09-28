@@ -278,7 +278,7 @@ func evalKeysAndRecord(t *testing.T, agg *telemetry.EvalSummaryAggregator, keys 
 			}
 			selectedValue = resolved.Value
 			switch {
-			case match.WeightedValueIndex > 0:
+			case match.IsWeighted:
 				reason = 3 // SPLIT
 			case !hasTargetingRules(cfg):
 				reason = 1 // STATIC
