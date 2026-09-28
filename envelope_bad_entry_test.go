@@ -2,6 +2,7 @@ package quonfig
 
 import (
 	"bytes"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -109,5 +110,39 @@ func TestAllConfigEntriesBadRejectsEnvelope(t *testing.T) {
 	_ = c.parseStream(strings.NewReader(stream))
 	if len(got) != 0 {
 		t.Fatalf("OnEnvelope called %d times with an all-bad envelope, want 0", len(got))
+	}
+}
+
+// The WARN for a skipped entry must never print the raw value: the decode
+// error text embeds it (`invalid int value "hunter2-secret"`), and the value
+// may be confidential. It names the key only.
+func TestBadConfigEntryWarnNeverLogsValue(t *testing.T) {
+	for _, tc := range []struct {
+		name, confidential string
+	}{
+		{"confidential", `,"confidential":true`},
+		{"normal", ``},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bad := `{"key":"db.port","type":"config","valueType":"int","default":{"rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"int","value":"hunter2-secret"` + tc.confidential + `}}]}}`
+			var logBuf lockedBuf
+			logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+			data := []byte(envelopeJSON(goodFlagJSON, bad))
+			env, err := decodeEnvelope(func(v any) error { return json.Unmarshal(data, v) }, logger)
+			if err != nil {
+				t.Fatalf("decodeEnvelope: %v", err)
+			}
+			if len(env.Configs) != 1 {
+				t.Fatalf("got %d configs, want 1", len(env.Configs))
+			}
+			out := logBuf.String()
+			t.Log(out)
+			if !strings.Contains(out, "db.port") {
+				t.Errorf("WARN should name the key db.port, got: %q", out)
+			}
+			if strings.Contains(out, "hunter2-secret") {
+				t.Errorf("WARN leaked the raw value: %q", out)
+			}
+		})
 	}
 }

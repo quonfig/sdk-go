@@ -351,16 +351,19 @@ func decodeEnvelope(decode func(any) error, logger *slog.Logger) (*ConfigEnvelop
 				firstErr = err
 			}
 			var id struct {
-				Key string `json:"key"`
+				Key       string `json:"key"`
+				ValueType string `json:"valueType"`
 			}
 			_ = json.Unmarshal(entry, &id)
 			if logger == nil {
 				logger = slog.Default()
 			}
+			// Never log err: its text embeds the raw value (e.g.
+			// `invalid int value "..."`), which may be confidential.
 			logger.Warn("quonfig: skipping config that failed to decode; other configs are unaffected",
 				slog.String("key", id.Key),
+				slog.String("valueType", id.ValueType),
 				slog.String("version", raw.Meta.Version),
-				slog.Any("err", err),
 			)
 			continue
 		}
