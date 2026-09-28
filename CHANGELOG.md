@@ -8,13 +8,15 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 - **Behavior change: a weighted rollout that hashes on a property missing
   from the context now hashes an empty value (qfg-9dxb.8).** Every caller
-  without the property gets the same variant for that flag, the same one a
-  caller with the property set to `""` gets. Before, each such evaluation got
-  a random variant, so the same caller could see a different value on every
-  call. This covers a call with no context, a context without the named
-  context (for example no `user`), a named context without the property, and
-  a property set to nil. A variant with weight 0 is not served to these
-  callers. The reason stays `SPLIT`, and `EvaluateDetails` adds
+  without a value for the property gets the same variant for that flag, the
+  same one a caller with the property set to `""` gets. This covers a call
+  with no context, a context without the named context (for example no
+  `user`), a named context without the property, and a property set to nil.
+  Before, a caller with no value got a random variant on every evaluation, so
+  the same caller could see a different value on every call. A caller whose
+  property was set to nil already got a fixed variant in 1.3.0. That variant
+  may now change to a different one, once, when you upgrade. A variant with
+  weight 0 is not served to these callers. The reason stays `SPLIT`, and `EvaluateDetails` adds
   `hashPropertyMissing: true` to `FlagMetadata` only when the property is
   missing (not when it is present and empty). The SDK logs one warning per
   flag per client. When the property is present, every user lands in the
@@ -43,13 +45,17 @@ All notable changes to the Quonfig Go SDK are documented here.
   "connected". The SDK then reported `ConnectionState()` as `connected`, the
   fallback poller never started, and config stopped updating for the whole
   outage. Changes are now delivered in order, still off the stream reader,
-  including to a `WithSSEStateCallback` callback.
+  including to a `WithSSEStateCallback` callback. A slow or blocked
+  `WithSSEStateCallback` callback can no longer delay the SDK's own failover
+  to polling: `ConnectionState()` and the fallback poller update without
+  waiting for it.
 - **Concurrent percentage-rollout evaluation no longer races or panics
-  (qfg-9dxb.1).** When a weighted rollout was evaluated for a context without
-  its `hashByPropertyName` property, every goroutine shared one unsynchronized
-  `*rand.Rand`; under concurrent `Get*` calls this was a data race that could
-  panic with `index out of range [-1]` and crash the process. The random
-  fallback source is now mutex-guarded.
+  (qfg-9dxb.1).** A weighted rollout that picks a random variant shared one
+  unsynchronized `*rand.Rand` across every goroutine. Under concurrent `Get*`
+  calls this was a data race that could panic with `index out of range [-1]`
+  and crash the process. The random source is now mutex-guarded. After this
+  release, only a rollout with no `hashByPropertyName` configured picks a
+  random variant, and the fix covers that path.
 - **A panic during evaluation no longer crashes the process (qfg-9dxb.1).**
   Every `Get*`/`EvaluateKey`/`EvaluateDetails` call now recovers a panic raised
   while evaluating a config, logs it at ERROR with a stack trace, and returns
