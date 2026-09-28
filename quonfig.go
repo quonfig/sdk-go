@@ -849,12 +849,15 @@ func (c *Client) startSSE() {
 	if url == "" {
 		return
 	}
-	// Chain the SDK's internal connection bookkeeping (supervisor state,
-	// Layer 2 poller engagement) with any caller-supplied
-	// OnSSEStateChange callback. The internal bookkeeping is the source of
-	// truth for ConnectionState() and FallbackPollerActive().
-	userCB := c.opts.OnSSEStateChange
-	onStateChange := func(connected bool) {
+	// The SDK's internal connection bookkeeping (supervisor state, Layer 2
+	// poller engagement) is the source of truth for ConnectionState() and
+	// FallbackPollerActive(). It runs synchronously on the SSE reader
+	// goroutine, separate from any caller-supplied OnSSEStateChange callback,
+	// so a slow or blocked user callback can never delay failover to polling.
+	// It only takes c.mu and the supervisor mutex briefly and never blocks
+	// (SetSSEConnected is non-blocking), and Close releases c.mu before it
+	// waits for the reader, so this cannot deadlock with Close.
+	internalStateChange := func(connected bool) {
 		if connected {
 			// The SSE stream is pinned to the primary leg (streamURLFor(0)) and
 			// deliberately never repoints to the secondary — failover is an
@@ -865,9 +868,6 @@ func (c *Client) startSSE() {
 			c.mu.Unlock()
 		}
 		c.handleSSEStateChange(connected)
-		if userCB != nil {
-			userCB(connected)
-		}
 	}
 	sse := newSSEClient(sseClientConfig{
 		URL:       url,
@@ -877,10 +877,11 @@ func (c *Client) startSSE() {
 		// needs HTTP/1.1 forced (an h2 stream stall is invisible in CI),
 		// and the runtime read-deadline machinery lives in newSSEClient's
 		// default transport. The polling path keeps using HTTPClient.
-		ReadTimeout:   c.opts.testSSEReadTimeout,
-		Logger:        c.opts.Logger,
-		OnEnvelope:    c.handleSSEEnvelope,
-		OnStateChange: onStateChange,
+		ReadTimeout:           c.opts.testSSEReadTimeout,
+		Logger:                c.opts.Logger,
+		OnEnvelope:            c.handleSSEEnvelope,
+		OnStateChange:         c.opts.OnSSEStateChange,
+		OnStateChangeInternal: internalStateChange,
 	})
 
 	// If Close ran before we got here, don't install or start the SSE

@@ -56,7 +56,16 @@ type sseClientConfig struct {
 	// established (after HTTP 200 response headers) and false when it drops
 	// (for any reason, including Stop). Never called twice in a row with the
 	// same value.
+	// It runs on a separate dispatcher goroutine, in order, so a slow or
+	// blocked callback never stalls the reader.
 	OnStateChange func(connected bool)
+
+	// OnStateChangeInternal, if non-nil, receives the same edges as
+	// OnStateChange but synchronously on the reader goroutine, in order,
+	// before the matching OnStateChange call is queued. It is for the SDK's
+	// own bookkeeping only: it must be quick and must never block, and it is
+	// never made to wait on user code.
+	OnStateChangeInternal func(connected bool)
 
 	// Reconnect backoff. Zero values get sane defaults.
 	InitialDelay time.Duration // default: 500ms
@@ -458,30 +467,38 @@ func (c *sseClient) incWorkerRestart(reason string) {
 }
 
 // setConnected records connection state transitions and fires the state
-// callback exactly once per actual edge.
+// callbacks exactly once per actual edge. It is only called from the runLoop
+// goroutine, so edges are produced in order.
 //
-// Edges are delivered off the reader goroutine so a slow callback can't stall
-// it, but in order: one goroutine at a time drains pendingStates and exits
-// when it is empty. A goroutine per edge let a later "disconnected" overtake
-// an earlier "connected", leaving the client believing it was connected for
-// a whole outage.
+// OnStateChangeInternal (the SDK's own bookkeeping) runs right here, on the
+// reader goroutine, so it sees every edge in order and never waits on user
+// code. OnStateChange (the user's callback) is delivered off the reader
+// goroutine so a slow callback can't stall it, but in order: one goroutine at
+// a time drains pendingStates and exits when it is empty. A goroutine per edge
+// let a later "disconnected" overtake an earlier "connected", leaving the
+// client believing it was connected for a whole outage.
 func (c *sseClient) setConnected(v bool) {
 	c.connectedMu.Lock()
-	defer c.connectedMu.Unlock()
-	if c.connected == v || c.cfg.OnStateChange == nil {
-		c.connected = v
-		return
-	}
+	changed := c.connected != v
 	c.connected = v
-	c.pendingStates = append(c.pendingStates, v)
-	if !c.dispatching {
-		c.dispatching = true
-		go c.dispatchStates()
+	if changed && c.cfg.OnStateChange != nil {
+		c.pendingStates = append(c.pendingStates, v)
+		if !c.dispatching {
+			c.dispatching = true
+			go c.dispatchStates()
+		}
+	}
+	c.connectedMu.Unlock()
+	if changed && c.cfg.OnStateChangeInternal != nil {
+		c.cfg.OnStateChangeInternal(v)
 	}
 }
 
 // dispatchStates delivers queued state edges to OnStateChange in order and
-// returns once the queue is empty.
+// returns once the queue is empty. If the user's callback never returns, this
+// goroutine stays blocked in it; the SDK cannot unblock user code. Nothing in
+// the SDK waits on this goroutine, so Stop and Close still return, and the
+// reader and internal bookkeeping keep running.
 func (c *sseClient) dispatchStates() {
 	for {
 		c.connectedMu.Lock()
