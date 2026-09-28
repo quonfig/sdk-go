@@ -8,19 +8,24 @@ to spot-check this report" section, and only dig further where you disagree.
 
 ## Latest
 
-**Grade C** (2026-09-26, `claude-opus-5-5`, commit `d1621f6`, prompt v1) —
-0 critical, 3 high, 7 medium, 8 low.
-[Full report](audit/reports/2026-09-26-claude-opus-5-5.md).
+**Grade B** (2026-09-28, `claude-opus-5-5`, commit `3677aea`, prompt v1) —
+0 critical, 1 high, 4 medium, 7 low.
+[Full report](audit/reports/2026-09-28b-claude-opus-5-5.md).
 
-This blind re-run came after the fixes for the 2026-09-25 findings (C1, H1,
-H2, H3) landed, and it confirms their tests pass. The auditor would run this
-version in production only after three new High findings are fixed or
-mitigated: an SSE event over 4 MiB causes a reconnect storm and the fallback
-poller never engages; one malformed value in any config rejects the whole
-workspace payload; and getter results for JSON and string-list values alias
-the shared store, so a caller that mutates them corrupts config for everyone.
-The first and third were Medium in the previous report (M2, M6) and were
-raised to High on re-examination.
+The code audited is what shipped as v1.4.0; the commits between `3677aea` and
+the tag touch only tests, the changelog and the CI pin. In the default
+delivery (SDK-key) mode the auditor would run it in production: evaluation is
+in-memory with no I/O after init, every getter sits behind a panic boundary,
+the reject-older guard covers every network install path, and telemetry is
+non-blocking and bounded. The remaining High is in the opt-in datadir mode: a
+malformed or half-written config file makes that key fall back to code
+defaults with no log. The mediums: `Close()` during init leaks a poller, a
+fast init failure ignores `ReturnZeroValue`, the SSE dial has no
+response-header timeout, and a type mismatch returns a zero value with
+`ok=true`.
+
+This run was blind (it did not read earlier reports), so it has no
+comparison section. The history below shows the trend.
 
 ## Files
 
@@ -36,6 +41,8 @@ raised to High on re-examination.
 |------|--------|-------|--------|-------|-------------------------|--------|
 | 2026-09-25 | `cda7829` | claude-opus-5-5 | 1 | C | 1 / 3 / 7 / 7 | [report](audit/reports/2026-09-25-claude-opus-5-5.md) |
 | 2026-09-26 | `d1621f6` | claude-opus-5-5 | 1 | C | 0 / 3 / 7 / 8 | [report](audit/reports/2026-09-26-claude-opus-5-5.md) |
+| 2026-09-28 | `c90b233` | claude-opus-5-5 | 1 | C | 0 / 2 / 5 / 7 | [report](audit/reports/2026-09-28-claude-opus-5-5.md) |
+| 2026-09-28 | `3677aea` | claude-opus-5-5 | 1 | B | 0 / 1 / 4 / 7 | [report](audit/reports/2026-09-28b-claude-opus-5-5.md) |
 
 ## Re-running the audit
 
