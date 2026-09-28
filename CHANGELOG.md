@@ -4,6 +4,22 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ## Unreleased
 
+### Changed
+
+- **Behavior change: a weighted rollout that hashes on a property missing
+  from the context now always serves the first variant (qfg-9dxb.8).**
+  Before, each such evaluation got a random variant, so the same caller could
+  see a different value on every call. This covers a call with no context, a
+  context without the named context (for example no `user`), and a named
+  context without the property. A property that is present with an empty
+  value is still hashed as before. The reason stays `SPLIT`, and
+  `EvaluateDetails` adds `hashPropertyMissing: true` to `FlagMetadata` only
+  when this happens. The SDK logs one WARN per flag per client. When the
+  property is present, every user lands in the same variant as in 1.3.0.
+  A rollout with no hash property configured at all also serves the first
+  variant now, without the metadata or the WARN. This matches the .NET and
+  Java SDKs.
+
 ### Added
 
 - **Example contexts are sent at most once per hour per context
@@ -24,8 +40,8 @@ All notable changes to the Quonfig Go SDK are documented here.
   (qfg-9dxb.1).** When a weighted rollout was evaluated for a context without
   its `hashByPropertyName` property, every goroutine shared one unsynchronized
   `*rand.Rand`; under concurrent `Get*` calls this was a data race that could
-  panic with `index out of range [-1]` and crash the process. The random
-  fallback source is now mutex-guarded.
+  panic with `index out of range [-1]` and crash the process. That path no
+  longer uses a random source at all (see qfg-9dxb.8 under Changed).
 - **A panic during evaluation no longer crashes the process (qfg-9dxb.1).**
   Every `Get*`/`EvaluateKey`/`EvaluateDetails` call now recovers a panic raised
   while evaluating a config, logs it at ERROR with a stack trace, and returns

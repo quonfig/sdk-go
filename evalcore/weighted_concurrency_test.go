@@ -7,10 +7,10 @@ import (
 
 // TestWeightedValueResolver_ConcurrentRandomFallback guards qfg-9dxb.1 (audit
 // C1). One WeightedValueResolver is shared by every goroutine evaluating
-// through an Evaluator, and when hashByPropertyName is missing from the
-// context the resolver falls back to its random source. That source must be
-// goroutine-safe: an unsynchronized *rand.Rand races (caught by -race) and can
-// panic with "index out of range [-1]", killing the host process.
+// through an Evaluator. When hashByPropertyName was missing from the context
+// the resolver used to fall back to a shared *rand.Rand, which raced and could
+// panic. Since qfg-9dxb.8 that path serves the first variant with no random
+// source; this test keeps it race-free under -race.
 func TestWeightedValueResolver_ConcurrentRandomFallback(t *testing.T) {
 	wv := &WeightedValuesData{
 		WeightedValues: []WeightedValue{
@@ -18,7 +18,7 @@ func TestWeightedValueResolver_ConcurrentRandomFallback(t *testing.T) {
 			{Weight: 1, Value: Value{Type: ValueTypeString, Value: "B"}},
 		},
 		// Hash key is set but absent from the (empty) context, so every
-		// Resolve takes the random fallback path.
+		// Resolve takes the missing-property fallback path.
 		HashByPropertyName: "user.key",
 	}
 	resolver := NewWeightedValueResolver(42)

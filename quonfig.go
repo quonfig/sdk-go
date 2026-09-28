@@ -83,6 +83,11 @@ type Client struct {
 	resolvedFromIndex int // baseURLs index of the last HTTP fetch that installed; -1 until set
 	sseStreamIndex    int // baseURLs index the SSE stream connected with; -1 until connected
 
+	// hashPropertyWarned holds the config keys already warned about a weighted
+	// rollout whose hash property was missing from the context, so each key
+	// logs once per client (qfg-9dxb.8). Only touched on that fallback path.
+	hashPropertyWarned sync.Map
+
 	// lastRefresh backs LastSuccessfulRefresh (guarded by mu). Stamped by
 	// every successful refresh: an envelope install (any path, including the
 	// init fetch and datadir loads), an HTTP fetch that completed successfully
@@ -595,6 +600,9 @@ func (c *Client) resolveDetailUnsafe(key string, ctx *ContextSet) (EvaluationDet
 	// If we have an evaluator, use it for full rule evaluation with context.
 	if evaluator != nil {
 		evalResult := evaluator.EvaluateConfigResponse(cfg, envID, mergedCtx)
+		if evalResult != nil && evalResult.MissingHashProperty != "" {
+			c.warnHashPropertyMissing(key, evalResult.MissingHashProperty)
+		}
 
 		// Record evaluation for telemetry
 		if telemetry != nil && evalResult != nil {
@@ -647,6 +655,17 @@ func (c *Client) resolveDetailUnsafe(key string, ctx *ContextSet) (EvaluationDet
 		Variant:      "default",
 		FlagMetadata: flagMetadataForConfig(cfg, envID),
 	}, nil
+}
+
+// warnHashPropertyMissing logs once per config key per client that a weighted
+// rollout hashes on a property missing from the context (qfg-9dxb.8).
+func (c *Client) warnHashPropertyMissing(key, prop string) {
+	if _, warned := c.hashPropertyWarned.LoadOrStore(key, struct{}{}); warned {
+		return
+	}
+	if c.opts.Logger != nil {
+		c.opts.Logger.Warn(fmt.Sprintf("quonfig: weighted rollout for %q hashes on %q which is missing from context; using first variant", key, prop))
+	}
 }
 
 // flagMetadataForConfig builds flagMetadata from a ConfigResponse alone (no

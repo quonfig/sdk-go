@@ -95,7 +95,9 @@ func TestWeightedValueResolver_UnevenWeights(t *testing.T) {
 	}
 }
 
-func TestWeightedValueResolver_NoHashProperty_UsesRandom(t *testing.T) {
+// With no hashByPropertyName configured the rollout serves the first variant,
+// matching sdk-net and sdk-java (qfg-9dxb.8).
+func TestWeightedValueResolver_NoHashProperty_ServesFirstVariant(t *testing.T) {
 	wv := &WeightedValuesData{
 		WeightedValues: []WeightedValue{
 			{Weight: 50, Value: Value{Type: ValueTypeString, Value: "A"}},
@@ -115,11 +117,8 @@ func TestWeightedValueResolver_NoHashProperty_UsesRandom(t *testing.T) {
 		t.Fatal("expected non-nil value")
 	}
 
-	if val1.StringValue() != val2.StringValue() {
-		t.Errorf("expected same values with same seed, got %q and %q", val1.StringValue(), val2.StringValue())
-	}
-	if idx1 != idx2 {
-		t.Errorf("expected same indices with same seed, got %d and %d", idx1, idx2)
+	if val1.StringValue() != "A" || val2.StringValue() != "A" || idx1 != 0 || idx2 != 0 {
+		t.Errorf("expected first variant A at index 0, got %q/%d and %q/%d", val1.StringValue(), idx1, val2.StringValue(), idx2)
 	}
 }
 
@@ -162,13 +161,12 @@ func TestWeightedValueResolver_HashPropertyNotInContext(t *testing.T) {
 		"email": "test@example.com",
 	}))
 
-	val, _ := resolver.Resolve(wv, "test", ctx)
+	val, idx := resolver.Resolve(wv, "test", ctx)
 	if val == nil {
 		t.Fatal("expected non-nil value")
 	}
-	sv := val.StringValue()
-	if sv != "A" && sv != "B" {
-		t.Errorf("expected A or B, got %q", sv)
+	if sv := val.StringValue(); sv != "A" || idx != 0 {
+		t.Errorf("expected first variant A at index 0, got %q/%d", sv, idx)
 	}
 }
 
