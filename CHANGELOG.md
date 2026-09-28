@@ -11,7 +11,8 @@ All notable changes to the Quonfig Go SDK are documented here.
   Go SDK used to re-send every distinct context it saw in every 60-second
   window, so a busy service sent up to 60 times more example-context data
   than the other Quonfig server SDKs. Now each context is sent once and not
-  again for an hour, matching those SDKs. The SDK remembers up to 100,000
+  again for an hour, matching those SDKs, so example-context telemetry
+  volume drops. The SDK remembers up to 100,000
   recently sent contexts for this; set the limit with the new
   `WithTelemetryMaxExampleContextsSeen` option. When the limit is full, a new
   context is not remembered and is picked up on a later evaluation once
@@ -44,7 +45,8 @@ All notable changes to the Quonfig Go SDK are documented here.
   `WithSSE(false)` left config frozen at the init snapshot and
   `ConnectionState()` stuck at `initializing`. The timer is now armed when the
   poller starts, and with `WithSSE(false)` the poller engages at once, as the
-  `WithSSE` doc already promised. `ConnectionState()` reports `falling_back`
+  `WithSSE` doc already promised: the SDK polls every 60 seconds (the default
+  interval) from startup, and `ConnectionState()` reports `falling_back`
   while it polls.
 - **A non-envelope response no longer wipes the config (qfg-9dxb.3).** A 200
   (or SSE event) whose body is not a config envelope, such as `{}` or a
@@ -53,25 +55,18 @@ All notable changes to the Quonfig Go SDK are documented here.
   non-empty `version`. Over HTTP a failed check counts as a leg error, so the
   hedge and failover run as they would for a 5xx, and the response's ETag is
   stored only after the body passes. An invalid SSE event is dropped, the same
-  way malformed JSON is. `qfg serve` payloads (version and environment, no
-  generation) still install.
-- **`HeldGeneration()` no longer drops to 0 after an unversioned install
-  (qfg-9dxb.3).** When a payload with no generation (or generation 0)
-  installs, the held generation keeps its previous value. Before, it reset
-  to 0, and the next older snapshot could then move an established client
-  backward.
+  way malformed JSON is. A payload with a version but no generation still
+  installs on a client that has never received a real generation.
 - **A generation-0 payload no longer replaces the config of a client that
-  holds a real generation (qfg-9dxb.9).** Today only an api-delivery machine
-  with a damaged git store sends a payload with no generation (or generation
-  0), and its content can be old. Before, the client installed it, so it could
-  briefly move back to old config until the next healthy fetch or update. Now a
-  client that holds a real generation ignores such a payload and keeps its
-  current config. The trade-off: while the client holds a real generation, a
-  generation-0 payload is never applied, even if its content is newer; the
-  client picks up that content when a response with a real generation arrives.
-  A client that has never held a real generation (for example, one pointed at
-  `qfg serve`) still installs every such payload. The ignored payload is not
-  counted as `guardRejected`.
+  holds a real generation, and `HeldGeneration()` never goes backward
+  (qfg-9dxb.3, qfg-9dxb.9).** Once the SDK has config with a real generation,
+  it ignores a payload without one (sent only by a damaged server). It keeps
+  its current config until a normal update arrives. Before, it installed such
+  a payload, so it could briefly move back to old config, and
+  `HeldGeneration()` dropped to 0, which let the next older snapshot move it
+  further back. A client that has never received a real generation still
+  installs every such payload. The ignored payload is not counted as
+  `guardRejected`.
 - **An SSE event larger than 4 MiB no longer causes a reconnect storm or
   frozen config (qfg-9dxb.6).** Before, once a workspace's config payload
   grew past 4 MiB, the SDK silently dropped it, reconnected about three
@@ -87,8 +82,9 @@ All notable changes to the Quonfig Go SDK are documented here.
   `"12a"`), the SDK rejected the entire payload: a new process failed to
   initialize, and running processes stopped receiving updates, with no log on
   the streaming path. Now the SDK skips just that config, logs a WARN naming
-  its key, and loads everything else. The skipped key behaves as not found
-  (your default applies) until a decodable version is published. If every
+  its key, and loads everything else. The warning names the key but never
+  prints the value. The skipped key behaves as not found (your default is
+  returned) until a decodable version is published. If every
   config in a payload fails to decode, the payload is still rejected as a
   whole, so it can never wipe your config.
 - **Changing a list or JSON value you got from the SDK no longer changes
@@ -99,7 +95,8 @@ All notable changes to the Quonfig Go SDK are documented here.
   read in the process saw the change, and two goroutines changing a map at
   the same time could crash the process with `concurrent map writes`. Each
   call now returns its own copy, which you are free to change. Scalar values
-  are unaffected.
+  are unaffected. Each call copies the value; for large JSON values read per
+  request, keep the result instead of calling repeatedly.
 
 ## 1.3.0 - 2026-09-25
 

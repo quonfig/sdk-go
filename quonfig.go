@@ -1187,17 +1187,14 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 //   - A same-generation snapshot is a no-op (not strictly greater), so an equal
 //     second leg can't re-install or flap.
 //   - An unversioned snapshot (generation absent or <= 0) installs ONLY while
-//     the client has never held a real generation (heldGeneration == 0) — e.g.
-//     a client pointed at qfg serve, which sends no generation, keeps
-//     installing every payload. Once a positive generation is held, a gen<=0
-//     payload is dropped (qfg-9dxb.9). The pre-watermark servers that sent gen
-//     0 on every payload are long dead; today gen 0 only comes from an
-//     api-delivery machine whose git object store is damaged (rev-count
-//     failed), whose content may be OLD. Installing it moved the client
-//     backward, and because the held generation is not lowered the healthy
-//     same-generation re-delivery was then rejected, sticking the client on
-//     OLD content until the next generation. Such a drop is a silent no-op,
-//     not a guardRejected (see isStrictlyOlderThanHeld).
+//     the client has never held a real generation (heldGeneration == 0), so a
+//     client that has never received a real generation keeps installing every
+//     payload. Once a positive generation is held, a gen<=0 payload is dropped
+//     and the client keeps its current config (qfg-9dxb.9): today gen 0 only
+//     comes from an api-delivery machine whose git object store is damaged,
+//     and its content may be old. The held generation never goes backward.
+//     Such a drop is a silent no-op, not a guardRejected (see
+//     isStrictlyOlderThanHeld).
 //
 // Callers must hold c.refreshMu so the decision and the install that follows are
 // atomic with respect to every other install path. Datadir install/reload is a
