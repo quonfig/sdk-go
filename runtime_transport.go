@@ -22,6 +22,10 @@ type fetchResult struct {
 	// result. 0 is the primary leg, 1 the secondary, etc. Used so the SDK can
 	// report which upstream a config was resolved from (failover observability).
 	SourceIndex int
+	// prevETag and storedETag let the caller undo this response's ETag write
+	// when the guard drops a gen<=0 payload (see rollbackETag).
+	prevETag   string
+	storedETag string
 }
 
 type runtimeTransport struct {
@@ -302,11 +306,27 @@ func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time
 
 	// Store the ETag only after the body decoded and validated. Storing it
 	// first let a truncated or junk 200 pin itself through later 304s.
-	if newEtag := resp.Header.Get("ETag"); newEtag != "" {
+	newEtag := resp.Header.Get("ETag")
+	if newEtag != "" {
 		c.etagMu.Lock()
 		c.etags[i] = newEtag
 		c.etagMu.Unlock()
 	}
 
-	return legResult{Res: &fetchResult{Envelope: envelope, SourceIndex: i}}
+	return legResult{Res: &fetchResult{Envelope: envelope, SourceIndex: i, prevETag: etag, storedETag: newEtag}}
+}
+
+// rollbackETag undoes the ETag write of a 200 whose gen<=0 payload the guard
+// dropped (qfg-9dxb.9). Keeping it would let the server's later same-sha
+// repaired-generation response 304 forever. Only rolls back if the slot still
+// holds the ETag this response wrote, so a concurrent leg's write is kept.
+func (c *runtimeTransport) rollbackETag(res *fetchResult) {
+	if res == nil || res.storedETag == "" || res.SourceIndex < 0 || res.SourceIndex >= len(c.etags) {
+		return
+	}
+	c.etagMu.Lock()
+	defer c.etagMu.Unlock()
+	if c.etags[res.SourceIndex] == res.storedETag {
+		c.etags[res.SourceIndex] = res.prevETag
+	}
 }

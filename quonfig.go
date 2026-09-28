@@ -1098,6 +1098,11 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 			// Classify the rejection while still holding refreshMu, so it sees
 			// the same held generation the guard decision saw (qfg-rr5b).
 			strictlyOlder = c.isStrictlyOlderThanHeld(res.Envelope)
+			// A dropped gen<=0 payload must not leave its ETag behind, or a
+			// later same-sha response with a repaired generation 304s.
+			if res.Envelope.Meta.Generation <= 0 {
+				c.transport.rollbackETag(res)
+			}
 		}
 		c.refreshMu.Unlock()
 		if installed {

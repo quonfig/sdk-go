@@ -193,3 +193,53 @@ func TestSSEDropsNonEnvelopeEvents(t *testing.T) {
 		t.Errorf("delivered version %q, want v9", got[0].Meta.Version)
 	}
 }
+
+// qfg-9dxb.9 follow-up: a gen<=0 200 dropped by the guard must not leave its
+// ETag remembered. api-delivery can later repair the generation for the SAME
+// sha (same ETag); if the dropped response's ETag were kept, every later poll
+// would 304 and the client would stay on the old config until the next commit.
+func TestDroppedGenZero200DoesNotPinItsETag(t *testing.T) {
+	envelope := func(flag bool, gen int) string {
+		return fmt.Sprintf(`{"configs":[{"id":"1","key":"flag.bool","type":"feature_flag","valueType":"bool","default":{"rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"bool","value":%t}}]}}],"meta":{"version":"v","environment":"Production","generation":%d}}`, flag, gen)
+	}
+	var phase atomic.Int32 // 0: A@gen5, 1: B@gen0, 2: B@gen6 (same ETag as phase 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch phase.Load() {
+		case 0:
+			w.Header().Set("ETag", `"shaA"`)
+			_, _ = w.Write([]byte(envelope(true, 5)))
+		case 1:
+			w.Header().Set("ETag", `"shaB"`)
+			_, _ = w.Write([]byte(envelope(false, 0)))
+		default:
+			if r.Header.Get("If-None-Match") == `"shaB"` {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			w.Header().Set("ETag", `"shaB"`)
+			_, _ = w.Write([]byte(envelope(false, 6)))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	client := newValidationClient(t, []string{srv.URL})
+	if v, ok, _ := client.GetBoolValue("flag.bool", nil); !v || !ok || client.HeldGeneration() != 5 {
+		t.Fatalf("setup: flag.bool=%v ok=%v held=%d, want true/true/5", v, ok, client.HeldGeneration())
+	}
+
+	phase.Store(1)
+	if err := client.Refresh(); err != nil {
+		t.Fatalf("Refresh (gen 0): %v", err)
+	}
+	if v, _, _ := client.GetBoolValue("flag.bool", nil); !v || client.HeldGeneration() != 5 {
+		t.Fatalf("gen-0 200 must be ignored: flag.bool=%v held=%d, want true/5", v, client.HeldGeneration())
+	}
+
+	phase.Store(2)
+	if err := client.Refresh(); err != nil {
+		t.Fatalf("Refresh (gen 6): %v", err)
+	}
+	if v, _, _ := client.GetBoolValue("flag.bool", nil); v || client.HeldGeneration() != 6 {
+		t.Fatalf("after repaired generation: flag.bool=%v held=%d, want false/6 (dropped gen-0 ETag must not pin a 304)", v, client.HeldGeneration())
+	}
+}

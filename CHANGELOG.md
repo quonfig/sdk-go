@@ -60,15 +60,18 @@ All notable changes to the Quonfig Go SDK are documented here.
   installs, the held generation keeps its previous value. Before, it reset
   to 0, and the next older snapshot could then move an established client
   backward.
-- **A generation-0 payload no longer overrides a held generation
-  (qfg-9dxb.9).** A client that holds a real generation now ignores a payload
-  with no generation (or generation 0). Today only an api-delivery machine with
-  a damaged git store sends generation 0, and its content can be old. Before,
-  the client installed that old content, then rejected the healthy
-  same-generation re-delivery and stayed on the old content until the next
-  generation. A client that has never held a real generation (for example, one
-  pointed at `qfg serve`) still installs every such payload. The ignored
-  payload is not counted as `guardRejected`.
+- **A generation-0 payload no longer replaces the config of a client that
+  holds a real generation (qfg-9dxb.9).** Today only an api-delivery machine
+  with a damaged git store sends a payload with no generation (or generation
+  0), and its content can be old. Before, the client installed it, so it could
+  briefly move back to old config until the next healthy fetch or update. Now a
+  client that holds a real generation ignores such a payload and keeps its
+  current config. The trade-off: while the client holds a real generation, a
+  generation-0 payload is never applied, even if its content is newer; the
+  client picks up that content when a response with a real generation arrives.
+  A client that has never held a real generation (for example, one pointed at
+  `qfg serve`) still installs every such payload. The ignored payload is not
+  counted as `guardRejected`.
 - **An SSE event larger than 4 MiB no longer causes a reconnect storm or
   frozen config (qfg-9dxb.6).** Before, once a workspace's config payload
   grew past 4 MiB, the SDK silently dropped it, reconnected about three
