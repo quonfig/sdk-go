@@ -75,6 +75,15 @@ All notable changes to the Quonfig Go SDK are documented here.
   (your default applies) until a decodable version is published. If every
   config in a payload fails to decode, the payload is still rejected as a
   whole, so it can never wipe your config.
+- **Changing a list or JSON value you got from the SDK no longer changes
+  config for the rest of your process (qfg-9dxb.6).** `GetStringSliceValue`,
+  `GetJSONValue`, `EvaluateKey` and `EvaluateDetails` used to return the
+  SDK's own copy of list and JSON-object values. If your code changed the
+  result (for example sorted a list or added a key to a map), every later
+  read in the process saw the change, and two goroutines changing a map at
+  the same time could crash the process with `concurrent map writes`. Each
+  call now returns its own copy, which you are free to change. Scalar values
+  are unaffected.
 
 ## 1.3.0 - 2026-09-25
 

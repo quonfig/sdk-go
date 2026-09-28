@@ -388,8 +388,8 @@ func (c *Client) GetDurationValue(key string, ctx *ContextSet) (time.Duration, b
 }
 
 // GetJSONValue returns the parsed JSON value for a config key.
-// Values are stored natively (object/array/number/boolean/null); this is a
-// direct pass-through of Value.Value.
+// Values are stored natively (object/array/number/boolean/null). Objects and
+// arrays are returned as a fresh copy, so the caller may modify the result.
 func (c *Client) GetJSONValue(key string, ctx *ContextSet) (interface{}, bool, error) {
 	val, ok, err := c.resolve(key, ctx)
 	if err != nil || !ok {
@@ -488,7 +488,55 @@ func (c *Client) resolveDetail(key string, ctx *ContextSet) (details EvaluationD
 			}
 		}
 	}()
-	return c.resolveDetailUnsafe(key, ctx)
+	details, err = c.resolveDetailUnsafe(key, ctx)
+	// Hand the caller its own copy of any slice or map value. The evaluated
+	// value shares these with the installed config store, so a caller that
+	// mutated a result (sort a list, merge into a JSON object) would change
+	// config for every other caller, and concurrent mutation could crash the
+	// process with "concurrent map writes" (qfg-9dxb.6).
+	if details.Value != nil {
+		switch details.Value.Value.(type) {
+		case map[string]interface{}, []interface{}, []string:
+			v := *details.Value
+			v.Value = deepCopyJSONValue(v.Value)
+			details.Value = &v
+		}
+	}
+	return details, err
+}
+
+// deepCopyJSONValue copies the reference types a decoded config value can
+// hold (JSON objects and arrays, string lists). Scalars are returned as is.
+func deepCopyJSONValue(v interface{}) interface{} {
+	switch t := v.(type) {
+	case map[string]interface{}:
+		if t == nil {
+			return v
+		}
+		out := make(map[string]interface{}, len(t))
+		for k, e := range t {
+			out[k] = deepCopyJSONValue(e)
+		}
+		return out
+	case []interface{}:
+		if t == nil {
+			return v
+		}
+		out := make([]interface{}, len(t))
+		for i, e := range t {
+			out[i] = deepCopyJSONValue(e)
+		}
+		return out
+	case []string:
+		if t == nil {
+			return v
+		}
+		out := make([]string, len(t))
+		copy(out, t)
+		return out
+	default:
+		return v
+	}
 }
 
 // resolveDetailUnsafe does the work of resolveDetail without the panic guard.
