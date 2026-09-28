@@ -86,6 +86,11 @@ type sseClient struct {
 	stopOnce    sync.Once
 	connected   bool
 	connectedMu sync.Mutex
+	// pendingStates queues state edges for OnStateChange, in order; a single
+	// dispatcher goroutine (running while dispatching is true) drains it.
+	// Both are guarded by connectedMu.
+	pendingStates []bool
+	dispatching   bool
 
 	// workerRestarts tracks the quonfig_sdk_worker_restart_total counter,
 	// labeled by reason (e.g. "callback_panic"). Layer 1 is implied — the SSE
@@ -454,16 +459,40 @@ func (c *sseClient) incWorkerRestart(reason string) {
 
 // setConnected records connection state transitions and fires the state
 // callback exactly once per actual edge.
+//
+// Edges are delivered off the reader goroutine so a slow callback can't stall
+// it, but in order: one goroutine at a time drains pendingStates and exits
+// when it is empty. A goroutine per edge let a later "disconnected" overtake
+// an earlier "connected", leaving the client believing it was connected for
+// a whole outage.
 func (c *sseClient) setConnected(v bool) {
 	c.connectedMu.Lock()
-	changed := c.connected != v
+	defer c.connectedMu.Unlock()
+	if c.connected == v || c.cfg.OnStateChange == nil {
+		c.connected = v
+		return
+	}
 	c.connected = v
-	cb := c.cfg.OnStateChange
-	c.connectedMu.Unlock()
-	if changed && cb != nil {
-		// Run in a goroutine so a slow callback can't stall the reader. The
-		// callback itself is expected to be cheap (metric update), but we
-		// don't want to pin that contract on every caller.
-		go cb(v)
+	c.pendingStates = append(c.pendingStates, v)
+	if !c.dispatching {
+		c.dispatching = true
+		go c.dispatchStates()
+	}
+}
+
+// dispatchStates delivers queued state edges to OnStateChange in order and
+// returns once the queue is empty.
+func (c *sseClient) dispatchStates() {
+	for {
+		c.connectedMu.Lock()
+		if len(c.pendingStates) == 0 {
+			c.dispatching = false
+			c.connectedMu.Unlock()
+			return
+		}
+		v := c.pendingStates[0]
+		c.pendingStates = c.pendingStates[1:]
+		c.connectedMu.Unlock()
+		c.cfg.OnStateChange(v)
 	}
 }

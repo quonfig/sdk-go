@@ -37,6 +37,13 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Fixed
 
+- **A stream that connects and drops at once no longer leaves the SDK
+  believing it is connected.** SSE connected/disconnected changes were
+  delivered on separate goroutines, so "disconnected" could arrive before
+  "connected". The SDK then reported `ConnectionState()` as `connected`, the
+  fallback poller never started, and config stopped updating for the whole
+  outage. Changes are now delivered in order, still off the stream reader,
+  including to a `WithSSEStateCallback` callback.
 - **Concurrent percentage-rollout evaluation no longer races or panics
   (qfg-9dxb.1).** When a weighted rollout was evaluated for a context without
   its `hashByPropertyName` property, every goroutine shared one unsynchronized
