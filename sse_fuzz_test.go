@@ -35,6 +35,6 @@ func FuzzSSEParseStream(f *testing.F) {
 				// safe on arbitrary input.
 			},
 		})
-		c.parseStream(bytes.NewReader(data))
+		_ = c.parseStream(bytes.NewReader(data))
 	})
 }

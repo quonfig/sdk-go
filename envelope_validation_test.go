@@ -185,7 +185,7 @@ func TestSSEDropsNonEnvelopeEvents(t *testing.T) {
 		`data: {"configs":[],"meta":{"environment":"Production"}}`, ``,
 		`data: {"configs":[],"meta":{"version":"v9","environment":"Production","generation":9}}`, ``,
 	}, "\n") + "\n"
-	c.parseStream(strings.NewReader(stream))
+	_ = c.parseStream(strings.NewReader(stream))
 	if len(got) != 1 {
 		t.Fatalf("OnEnvelope called %d times, want 1 (only the valid envelope)", len(got))
 	}
