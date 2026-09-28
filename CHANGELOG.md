@@ -4,6 +4,23 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ## Unreleased
 
+### Changed
+
+- **Behavior change: a weighted rollout that hashes on a property missing
+  from the context now hashes an empty value (qfg-9dxb.8).** Every caller
+  without the property gets the same variant for that flag, the same one a
+  caller with the property set to `""` gets. Before, each such evaluation got
+  a random variant, so the same caller could see a different value on every
+  call. This covers a call with no context, a context without the named
+  context (for example no `user`), a named context without the property, and
+  a property set to nil. A variant with weight 0 is not served to these
+  callers. The reason stays `SPLIT`, and `EvaluateDetails` adds
+  `hashPropertyMissing: true` to `FlagMetadata` only when the property is
+  missing (not when it is present and empty). The SDK logs one warning per
+  flag per client. When the property is present, every user lands in the
+  same variant as in 1.3.0. A rollout with no hash property configured still
+  picks a random variant on every evaluation, unchanged.
+
 ### Added
 
 - **Example contexts are sent at most once per hour per context

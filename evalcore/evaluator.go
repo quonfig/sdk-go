@@ -22,6 +22,10 @@ type EvalMatch struct {
 	// WeightedValueIndex is the 0-based bucket index when IsWeighted is true; 0
 	// otherwise. Only meaningful when IsWeighted is true.
 	WeightedValueIndex int
+	// MissingHashProperty is the weighted value's hashByPropertyName when that
+	// property was missing from the context (or nil), so an empty value was
+	// hashed (qfg-9dxb.8). Empty otherwise.
+	MissingHashProperty string
 }
 
 // Evaluator is the main evaluation engine. It evaluates configs against contexts,
@@ -105,11 +109,14 @@ func (e *Evaluator) evaluateRules(cfg *Config, rules []Rule, ctx ContextValueGet
 			if value.Type == ValueTypeWeightedValues {
 				wvData := value.WeightedValuesValue()
 				if wvData != nil {
-					resolved, wvIndex := e.weighted.Resolve(wvData, cfg.Key, ctx)
+					resolved, wvIndex, hashPropertyMissing := e.weighted.resolve(wvData, cfg.Key, ctx)
 					if resolved != nil {
 						match.Value = resolved
 						match.IsWeighted = true
 						match.WeightedValueIndex = wvIndex
+						if hashPropertyMissing {
+							match.MissingHashProperty = wvData.HashByPropertyName
+						}
 					}
 				}
 			}
