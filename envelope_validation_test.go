@@ -129,9 +129,9 @@ func TestNonEnvelope200DoesNotStoreETag(t *testing.T) {
 	}
 }
 
-// qfg serve sends version+environment but no generation. A client that has
-// only ever seen such payloads (held generation 0) keeps installing each one;
-// a client already holding a real generation does not (qfg-9dxb.9).
+// A payload with version+environment but no generation installs every time on
+// a client that has never received a real generation (held generation 0); a
+// client already holding a real generation does not (qfg-9dxb.9).
 func TestQfgServeStylePayloadStillInstalls(t *testing.T) {
 	var serve atomic.Bool
 	var n atomic.Int64

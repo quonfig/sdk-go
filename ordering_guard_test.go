@@ -183,9 +183,9 @@ func TestInstallGuardUnversionedDoesNotOverrideHeldGeneration(t *testing.T) {
 }
 
 // TestInstallGuardUnversionedOnlyClientKeepsInstalling pins the other half of
-// qfg-9dxb.9: a client that has never held a real generation (heldGeneration
-// == 0 — e.g. pointed at qfg serve, which sends no generation) keeps installing
-// every unversioned payload, so it never freezes on its first snapshot.
+// qfg-9dxb.9: a client that has never received a real generation
+// (heldGeneration == 0) keeps installing every unversioned payload, so it
+// never freezes on its first snapshot.
 func TestInstallGuardUnversionedOnlyClientKeepsInstalling(t *testing.T) {
 	var body atomic.Value
 	body.Store(contentEnvelopeJSON(0, true))

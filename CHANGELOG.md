@@ -28,11 +28,11 @@ All notable changes to the Quonfig Go SDK are documented here.
   window, so a busy service sent up to 60 times more example-context data
   than the other Quonfig server SDKs. Now each context is sent once and not
   again for an hour, matching those SDKs, so example-context telemetry
-  volume drops. The SDK remembers up to 100,000
-  recently sent contexts for this; set the limit with the new
-  `WithTelemetryMaxExampleContextsSeen` option. When the limit is full, a new
-  context is not remembered and is picked up on a later evaluation once
-  older entries expire. Evaluations and targeting are not affected.
+  volume drops. The SDK remembers up to 100,000 recently sent contexts for
+  this; set the limit with the new `WithTelemetryMaxExampleContextsSeen`
+  option. When the limit is full, a new context is not remembered and is
+  picked up on a later evaluation once older entries expire. Evaluations and
+  targeting are not affected.
 
 ### Fixed
 
@@ -100,9 +100,9 @@ All notable changes to the Quonfig Go SDK are documented here.
   the streaming path. Now the SDK skips just that config, logs a WARN naming
   its key, and loads everything else. The warning names the key but never
   prints the value. The skipped key behaves as not found (your default is
-  returned) until a decodable version is published. If every
-  config in a payload fails to decode, the payload is still rejected as a
-  whole, so it can never wipe your config.
+  returned) until a decodable version is published. If every config in a
+  payload fails to decode, the payload is still rejected as a whole, so it
+  can never wipe your config.
 - **Changing a list or JSON value you got from the SDK no longer changes
   config for the rest of your process (qfg-9dxb.6).** `GetStringSliceValue`,
   `GetJSONValue`, `EvaluateKey` and `EvaluateDetails` used to return the
