@@ -334,8 +334,9 @@ func (c *sseClient) parseStream(r io.Reader) error {
 		if dataBuf.Len() == 0 {
 			return
 		}
-		var env ConfigEnvelope
-		if err := json.Unmarshal(dataBuf.Bytes(), &env); err == nil && env.validate() == nil {
+		data := dataBuf.Bytes()
+		env, err := decodeEnvelope(func(v any) error { return json.Unmarshal(data, v) }, c.cfg.Logger)
+		if err == nil && env.validate() == nil {
 			if c.oversized {
 				// An event got through after an oversized one: the stream is
 				// usable again, so report the connection now.
@@ -343,7 +344,7 @@ func (c *sseClient) parseStream(r io.Reader) error {
 				c.setConnected(true)
 			}
 			if c.cfg.OnEnvelope != nil {
-				c.invokeOnEnvelope(&env)
+				c.invokeOnEnvelope(env)
 			}
 		}
 		// else: malformed payload, or valid JSON that is not a config

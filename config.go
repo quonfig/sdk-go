@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 )
 
@@ -313,6 +314,62 @@ func (e *ConfigEnvelope) validate() error {
 		return errors.New("not a config envelope: missing meta.version")
 	}
 	return nil
+}
+
+// decodeEnvelope decodes a delivery payload (HTTP body or SSE event) into a
+// ConfigEnvelope, decoding each config entry on its own. An entry that fails
+// to decode (for example a json value in the legacy stringified form, or an
+// int value "12a") is skipped with a WARN naming its key, and the rest of the
+// envelope installs. Before, one bad entry failed the whole decode, which
+// blocked init or froze the workspace (qfg-9dxb.6).
+//
+// If every entry fails, the whole envelope is rejected as before, so a
+// payload that is entirely undecodable can never install as an empty
+// workspace and wipe every key.
+//
+// decode reads the payload's top level into its argument; callers pass
+// json.Unmarshal over a byte slice or a json.Decoder's Decode, keeping their
+// existing strictness about trailing data.
+func decodeEnvelope(decode func(any) error, logger *slog.Logger) (*ConfigEnvelope, error) {
+	var raw struct {
+		Configs []json.RawMessage `json:"configs"`
+		Meta    Meta              `json:"meta"`
+	}
+	if err := decode(&raw); err != nil {
+		return nil, err
+	}
+	env := &ConfigEnvelope{Meta: raw.Meta}
+	if raw.Configs == nil {
+		return env, nil
+	}
+	env.Configs = make([]ConfigResponse, 0, len(raw.Configs))
+	var firstErr error
+	for _, entry := range raw.Configs {
+		var cfg ConfigResponse
+		if err := json.Unmarshal(entry, &cfg); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			var id struct {
+				Key string `json:"key"`
+			}
+			_ = json.Unmarshal(entry, &id)
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.Warn("quonfig: skipping config that failed to decode; other configs are unaffected",
+				slog.String("key", id.Key),
+				slog.String("version", raw.Meta.Version),
+				slog.Any("err", err),
+			)
+			continue
+		}
+		env.Configs = append(env.Configs, cfg)
+	}
+	if len(env.Configs) == 0 && firstErr != nil {
+		return nil, firstErr
+	}
+	return env, nil
 }
 
 // Meta holds response metadata.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -54,6 +55,9 @@ type runtimeTransport struct {
 	// forward instead of aborting, and must be < InitTimeout so the init-path heal
 	// leg is not clipped. Zero means DefaultConfigFetchHedgeAbort.
 	hedgeAbort time.Duration
+	// logger receives the WARN for a config entry skipped during decode.
+	// Nil means slog.Default(). Set once at construction.
+	logger *slog.Logger
 }
 
 // legResult carries one hedged leg's outcome to the caller. Exactly one
@@ -286,8 +290,8 @@ func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time
 		return legResult{Err: fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, baseURL, string(body))}
 	}
 
-	var envelope ConfigEnvelope
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+	envelope, err := decodeEnvelope(json.NewDecoder(resp.Body).Decode, c.logger)
+	if err != nil {
 		return legResult{Err: fmt.Errorf("decoding response: %w", err)}
 	}
 	// A 200 that is not a config envelope is a leg error, so the hedge and
@@ -304,5 +308,5 @@ func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time
 		c.etagMu.Unlock()
 	}
 
-	return legResult{Res: &fetchResult{Envelope: &envelope, SourceIndex: i}}
+	return legResult{Res: &fetchResult{Envelope: envelope, SourceIndex: i}}
 }

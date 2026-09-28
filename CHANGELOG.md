@@ -65,6 +65,16 @@ All notable changes to the Quonfig Go SDK are documented here.
   connection, reports the stream as disconnected, and the fallback poller
   keeps config current over HTTP. When a normal-size event arrives again,
   streaming resumes.
+- **One malformed config no longer blocks the whole workspace
+  (qfg-9dxb.6).** Before, if any single config held a value the SDK could
+  not decode (for example a `json` value saved as a string, or an `int` of
+  `"12a"`), the SDK rejected the entire payload: a new process failed to
+  initialize, and running processes stopped receiving updates, with no log on
+  the streaming path. Now the SDK skips just that config, logs a WARN naming
+  its key, and loads everything else. The skipped key behaves as not found
+  (your default applies) until a decodable version is published. If every
+  config in a payload fails to decode, the payload is still rejected as a
+  whole, so it can never wipe your config.
 
 ## 1.3.0 - 2026-09-25
 

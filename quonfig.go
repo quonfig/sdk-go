@@ -140,6 +140,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		transport.fetchTimeout = o.ConfigFetchTimeout
 		transport.hedgeDelay = o.ConfigFetchHedgeDelay
 		transport.hedgeAbort = o.ConfigFetchHedgeAbort
+		transport.logger = o.Logger
 
 		// The init-path heal leg runs under a context whose deadline is the
 		// InitTimeout; if the per-leg hedge abort is >= InitTimeout the heal leg is
