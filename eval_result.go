@@ -76,10 +76,6 @@ type EvalResult struct {
 	// block. It drives the SPLIT reason unambiguously, including the bucket-0
 	// case where WeightedValueIndex is 0 (see qfg-hknp).
 	IsWeighted bool
-	// MissingHashProperty is the weighted value's hashByPropertyName when that
-	// property was absent from the context, so the first variant was served
-	// (qfg-9dxb.8). Empty otherwise.
-	MissingHashProperty string
 }
 
 // EvaluationDetails is the public, OpenFeature-shaped record of an evaluation.
@@ -99,9 +95,7 @@ type EvaluationDetails struct {
 	// "targeting:0", "split:1", "default"). Always set, never empty.
 	Variant string
 	// FlagMetadata carries provider-specific data (configId, configType,
-	// environment, ruleIndex, weightedValueIndex, and hashPropertyMissing:
-	// true when a weighted rollout's hash property was absent from the
-	// context). Always non-nil; keys
+	// environment, ruleIndex, weightedValueIndex). Always non-nil; keys
 	// follow camelCase (Go idiom) per the cross-SDK spec.
 	FlagMetadata map[string]any
 }
@@ -151,9 +145,6 @@ func flagMetadataFor(result *EvalResult, envID string) map[string]any {
 	}
 	if result.Reason == ReasonSplit {
 		md["weightedValueIndex"] = int64(result.WeightedValueIndex)
-	}
-	if result.MissingHashProperty != "" {
-		md["hashPropertyMissing"] = true
 	}
 	return md
 }

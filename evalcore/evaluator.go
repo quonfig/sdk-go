@@ -22,10 +22,6 @@ type EvalMatch struct {
 	// WeightedValueIndex is the 0-based bucket index when IsWeighted is true; 0
 	// otherwise. Only meaningful when IsWeighted is true.
 	WeightedValueIndex int
-	// MissingHashProperty is the weighted value's hashByPropertyName when that
-	// property was absent from the context, so the rollout served its first
-	// variant (qfg-9dxb.8). Empty otherwise.
-	MissingHashProperty string
 }
 
 // Evaluator is the main evaluation engine. It evaluates configs against contexts,
@@ -43,9 +39,7 @@ func NewEvaluator(configStore ConfigStoreGetter) *Evaluator {
 	}
 }
 
-// NewEvaluatorWithSeed creates a new Evaluator. The seed is ignored since
-// weighted resolution stopped using a random source (qfg-9dxb.8); it is kept so
-// the exported signature is unchanged.
+// NewEvaluatorWithSeed creates a new Evaluator with a fixed random seed (for testing).
 func NewEvaluatorWithSeed(configStore ConfigStoreGetter, seed int64) *Evaluator {
 	return &Evaluator{
 		configStore: configStore,
@@ -111,14 +105,11 @@ func (e *Evaluator) evaluateRules(cfg *Config, rules []Rule, ctx ContextValueGet
 			if value.Type == ValueTypeWeightedValues {
 				wvData := value.WeightedValuesValue()
 				if wvData != nil {
-					resolved, wvIndex, hashPropertyMissing := e.weighted.resolve(wvData, cfg.Key, ctx)
+					resolved, wvIndex := e.weighted.Resolve(wvData, cfg.Key, ctx)
 					if resolved != nil {
 						match.Value = resolved
 						match.IsWeighted = true
 						match.WeightedValueIndex = wvIndex
-						if hashPropertyMissing {
-							match.MissingHashProperty = wvData.HashByPropertyName
-						}
 					}
 				}
 			}

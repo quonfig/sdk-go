@@ -76,8 +76,7 @@ func NewEvaluator(configStore ConfigStoreGetter) *Evaluator {
 	}
 }
 
-// NewEvaluatorWithSeed creates a new Evaluator. The seed is ignored since
-// weighted resolution stopped using a random source (qfg-9dxb.8).
+// NewEvaluatorWithSeed creates a new Evaluator with a fixed random seed (for testing).
 func NewEvaluatorWithSeed(configStore ConfigStoreGetter, seed int64) *Evaluator {
 	adapter := &sharedConfigStoreAdapter{store: configStore}
 	return &Evaluator{

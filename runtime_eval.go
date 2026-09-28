@@ -50,7 +50,6 @@ func (e *runtimeEvaluator) EvaluateConfigResponse(cfg *ConfigResponse, envID str
 	result.RuleIndex = match.RuleIndex
 	result.WeightedValueIndex = match.WeightedValueIndex
 	result.IsWeighted = match.IsWeighted
-	result.MissingHashProperty = match.MissingHashProperty
 
 	// Determine evaluation reason
 	switch {
