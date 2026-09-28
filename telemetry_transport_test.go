@@ -910,8 +910,17 @@ func TestTelemetryTransport_T5_ShippedQueueDefaults(t *testing.T) {
 		t.Fatalf("aggregator defaults = %d / %d / %d, want 10000 each",
 			o.TelemetryMaxEvaluationSummaries, o.TelemetryMaxContextShapeFields, o.TelemetryMaxExampleContexts)
 	}
+	if o.TelemetryMaxExampleContextsSeen != 100000 {
+		t.Fatalf("example-context seen-map default = %d, want 100000", o.TelemetryMaxExampleContextsSeen)
+	}
+	if err := WithTelemetryMaxExampleContextsSeen(0)(&o); err == nil {
+		t.Fatalf("WithTelemetryMaxExampleContextsSeen(0) accepted, want error")
+	}
 	h := newTransportHarness(t)
 	cfg := h.sub.ResolvedConfig()
+	if cfg.MaxExampleContextsSeen != 100000 {
+		t.Fatalf("resolved MaxExampleContextsSeen = %d, want 100000", cfg.MaxExampleContextsSeen)
+	}
 	if cfg.MaxRetainedBatches != 5 || cfg.MaxRetainedBytes != 2097152 || cfg.MaxRetainedAge != 5*time.Minute ||
 		cfg.MaxEvaluationSummaries != 10000 || cfg.MaxContextShapeFields != 10000 || cfg.MaxExampleContexts != 10000 {
 		t.Fatalf("resolved caps = %+v", cfg)
@@ -1025,6 +1034,40 @@ func TestTelemetryTransport_T5_AggregatorCaps(t *testing.T) {
 		}
 		if n != 3 {
 			t.Fatalf("example contexts = %d, want 3", n)
+		}
+	})
+
+	// qfg-cg1e: the once-per-hour seen-map is capped; a new context past the
+	// cap is dropped (and retried later), not sent.
+	t.Run("example contexts seen cap", func(t *testing.T) {
+		h := newTransportHarness(t, WithTelemetryMaxExampleContextsSeen(2), WithCollectEvaluationSummaries(false))
+		if got := h.sub.ResolvedConfig().MaxExampleContextsSeen; got != 2 {
+			t.Fatalf("resolved MaxExampleContextsSeen = %d, want 2", got)
+		}
+		for i := 0; i < 5; i++ {
+			ctx := NewContextSet().WithNamedContextValues("user", map[string]interface{}{"key": fmt.Sprintf("u%d", i)})
+			_, _, _ = h.client.GetStringValue("cfg-00", ctx)
+		}
+		h.waitRecorded()
+		h.advance(60 * time.Second)
+		var payload struct {
+			Events []struct {
+				ExampleContexts *struct {
+					Examples []json.RawMessage `json:"examples"`
+				} `json:"exampleContexts"`
+			} `json:"events"`
+		}
+		if err := json.Unmarshal(h.stub.Body(0), &payload); err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, ev := range payload.Events {
+			if ev.ExampleContexts != nil {
+				n += len(ev.ExampleContexts.Examples)
+			}
+		}
+		if n != 2 {
+			t.Fatalf("example contexts = %d, want 2", n)
 		}
 	})
 }

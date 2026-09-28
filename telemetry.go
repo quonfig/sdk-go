@@ -58,6 +58,7 @@ func newTelemetrySubmitter(opts Options) *telemetrySubmitter {
 		MaxEvaluationSummaries:     opts.TelemetryMaxEvaluationSummaries,
 		MaxContextShapeFields:      opts.TelemetryMaxContextShapeFields,
 		MaxExampleContexts:         opts.TelemetryMaxExampleContexts,
+		MaxExampleContextsSeen:     opts.TelemetryMaxExampleContextsSeen,
 		Clock:                      opts.testTelemetryClock,
 	}
 	if opts.HTTPClient != nil {

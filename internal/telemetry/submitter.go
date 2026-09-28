@@ -91,6 +91,9 @@ type Config struct {
 	MaxEvaluationSummaries int
 	MaxContextShapeFields  int
 	MaxExampleContexts     int
+	// MaxExampleContextsSeen caps the example-context rate-limit seen-map
+	// (each context-group key sent at most once per hour).
+	MaxExampleContextsSeen int
 
 	// Clock is a test seam; nil means the wall clock.
 	Clock Clock
@@ -120,6 +123,7 @@ func (c Config) resolved() Config {
 	c.MaxEvaluationSummaries = intOr(c.MaxEvaluationSummaries, DefaultMaxEvaluationSummaries)
 	c.MaxContextShapeFields = intOr(c.MaxContextShapeFields, DefaultMaxContextShapeFields)
 	c.MaxExampleContexts = intOr(c.MaxExampleContexts, DefaultMaxExampleContexts)
+	c.MaxExampleContextsSeen = intOr(c.MaxExampleContextsSeen, DefaultMaxExampleContextsSeen)
 	if c.Logger == nil {
 		c.Logger = slog.Default()
 	}
@@ -190,7 +194,7 @@ func NewSubmitter(cfg Config) *Submitter {
 	switch cfg.ContextTelemetryMode {
 	case "periodic_example":
 		s.shapeAggregator = NewContextShapeAggregatorWithCap(cfg.MaxContextShapeFields)
-		s.exampleAggregator = NewExampleContextAggregatorWithCap(cfg.MaxExampleContexts)
+		s.exampleAggregator = NewExampleContextAggregatorWithCaps(cfg.MaxExampleContexts, cfg.MaxExampleContextsSeen)
 	case "shapes_only", "shapes":
 		// "shapes" is the pre-1.0 wire value, kept as a deprecated alias
 		// for one minor cycle while consumers migrate to "shapes_only".

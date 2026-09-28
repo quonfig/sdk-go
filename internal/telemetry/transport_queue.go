@@ -33,6 +33,9 @@ const (
 	DefaultMaxEvaluationSummaries = 10_000
 	DefaultMaxContextShapeFields  = 10_000
 	DefaultMaxExampleContexts     = 10_000
+	// DefaultMaxExampleContextsSeen bounds the example-context rate-limit
+	// seen-map (qfg-cg1e), matching the other server SDKs.
+	DefaultMaxExampleContextsSeen = 100_000
 )
 
 const (

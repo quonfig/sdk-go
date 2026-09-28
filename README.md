@@ -262,7 +262,10 @@ telemetry endpoint hangs.
 (`WithTelemetryMaxContextShapeFields`) and 10,000 example contexts
 (`WithTelemetryMaxExampleContexts`) per window, with counters already seen
 still counting at the cap; a 10,000-item record queue; and the 2MB retained
-queue.
+queue. Each distinct context is sent as an example at most once per hour; the
+SDK remembers up to 100,000 recently sent contexts for this
+(`WithTelemetryMaxExampleContextsSeen`), and when that is full a new context
+waits until older entries expire.
 
 ```go
 client, err := quonfig.NewClient(
@@ -276,6 +279,7 @@ client, err := quonfig.NewClient(
     quonfig.WithTelemetryMaxEvaluationSummaries(10000),  // default 10,000
     quonfig.WithTelemetryMaxContextShapeFields(10000),   // default 10,000
     quonfig.WithTelemetryMaxExampleContexts(10000),      // default 10,000
+    quonfig.WithTelemetryMaxExampleContextsSeen(100000), // default 100,000
 )
 ```
 

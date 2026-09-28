@@ -4,6 +4,19 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ## Unreleased
 
+### Added
+
+- **Example contexts are sent at most once per hour per context
+  (qfg-cg1e).** With the default `periodic_example` context telemetry, the
+  Go SDK used to re-send every distinct context it saw in every 60-second
+  window, so a busy service sent up to 60 times more example-context data
+  than the other Quonfig server SDKs. Now each context is sent once and not
+  again for an hour, matching those SDKs. The SDK remembers up to 100,000
+  recently sent contexts for this; set the limit with the new
+  `WithTelemetryMaxExampleContextsSeen` option. When the limit is full, a new
+  context is not remembered and is picked up on a later evaluation once
+  older entries expire. Evaluations and targeting are not affected.
+
 ### Fixed
 
 - **Concurrent percentage-rollout evaluation no longer races or panics

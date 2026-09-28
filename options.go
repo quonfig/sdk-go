@@ -197,6 +197,10 @@ type Options struct {
 	// TelemetryMaxExampleContexts caps example contexts per window (default
 	// 10,000).
 	TelemetryMaxExampleContexts int
+	// TelemetryMaxExampleContextsSeen caps how many distinct contexts the SDK
+	// remembers for its once-per-hour example-context rate limit (default
+	// 100,000). When full, a new context is not sent until room frees up.
+	TelemetryMaxExampleContextsSeen int
 
 	// testTelemetryClock, if non-nil, replaces the wall clock of the telemetry
 	// transport (ticks, per-POST deadline, resend floor, Retry-After, batch
@@ -272,6 +276,7 @@ func defaultOptions() Options {
 		TelemetryMaxEvaluationSummaries: DefaultTelemetryMaxEvaluationSummaries,
 		TelemetryMaxContextShapeFields:  DefaultTelemetryMaxContextShapeFields,
 		TelemetryMaxExampleContexts:     DefaultTelemetryMaxExampleContexts,
+		TelemetryMaxExampleContextsSeen: DefaultTelemetryMaxExampleContextsSeen,
 	}
 }
 
@@ -285,6 +290,7 @@ const (
 	DefaultTelemetryMaxEvaluationSummaries = telemetry.DefaultMaxEvaluationSummaries
 	DefaultTelemetryMaxContextShapeFields  = telemetry.DefaultMaxContextShapeFields
 	DefaultTelemetryMaxExampleContexts     = telemetry.DefaultMaxExampleContexts
+	DefaultTelemetryMaxExampleContextsSeen = telemetry.DefaultMaxExampleContextsSeen
 )
 
 // apiURLsForDomain returns the ordered list of api base URLs derived from
@@ -707,6 +713,20 @@ func WithTelemetryMaxExampleContexts(n int) Option {
 			return errors.New("telemetry max example contexts must be positive")
 		}
 		o.TelemetryMaxExampleContexts = n
+		return nil
+	}
+}
+
+// WithTelemetryMaxExampleContextsSeen caps how many distinct contexts the SDK
+// remembers for its example-context rate limit (default 100,000). Each
+// context is sent as an example at most once per hour; when this many are
+// remembered, a new context waits until older entries expire.
+func WithTelemetryMaxExampleContextsSeen(n int) Option {
+	return func(o *Options) error {
+		if n <= 0 {
+			return errors.New("telemetry max example contexts seen must be positive")
+		}
+		o.TelemetryMaxExampleContextsSeen = n
 		return nil
 	}
 }
