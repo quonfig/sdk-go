@@ -43,15 +43,18 @@ func (c *workspaceConfig) FindEnvironment(envID string) *Environment {
 	return nil
 }
 
-func loadWorkspaceEnvelope(dir, environmentOverride string) (*ConfigEnvelope, error) {
-	configs, err := loadWorkspaceConfigs(dir)
+// loadWorkspaceEnvelope builds an envelope from a workspace directory. Files
+// that fail to read or parse are left out of the envelope and reported in
+// skipped; the caller decides whether a partial envelope is acceptable.
+func loadWorkspaceEnvelope(dir, environmentOverride string) (envelope *ConfigEnvelope, skipped error, err error) {
+	configs, skipped, err := loadWorkspaceConfigs(dir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	environment, err := resolveWorkspaceEnvironment(dir, environmentOverride, configs)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	responses := make([]ConfigResponse, 0, len(configs))
@@ -75,10 +78,10 @@ func loadWorkspaceEnvelope(dir, environmentOverride string) (*ConfigEnvelope, er
 			Environment: environment,
 			WorkspaceID: filepath.Base(filepath.Clean(dir)),
 		},
-	}, nil
+	}, skipped, nil
 }
 
-func loadWorkspaceConfigs(dir string) ([]workspaceConfig, error) {
+func loadWorkspaceConfigs(dir string) ([]workspaceConfig, error, error) {
 	var configs []workspaceConfig
 	var errs []error
 
@@ -89,7 +92,7 @@ func loadWorkspaceConfigs(dir string) ([]workspaceConfig, error) {
 			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, fmt.Errorf("stat %s: %w", path, err)
+			return nil, nil, fmt.Errorf("stat %s: %w", path, err)
 		}
 		if !info.IsDir() {
 			continue
@@ -123,10 +126,10 @@ func loadWorkspaceConfigs(dir string) ([]workspaceConfig, error) {
 	}
 
 	if len(configs) == 0 && len(errs) > 0 {
-		return nil, fmt.Errorf("failed to load any workspace configs: %w", errors.Join(errs...))
+		return nil, nil, fmt.Errorf("failed to load any workspace configs: %w", errors.Join(errs...))
 	}
 
-	return configs, nil
+	return configs, errors.Join(errs...), nil
 }
 
 func loadWorkspaceConfigFile(path string) (*workspaceConfig, error) {

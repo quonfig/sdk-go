@@ -2,6 +2,24 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Fixed
+
+- **Datadir auto-reload no longer drops a key when one config file is
+  malformed (qfg-9dxb.10).** A truncated or invalid file used to be skipped
+  while the rest of the reload was installed, so that key silently fell back
+  to code defaults and `OnConfigUpdate` fired. Now any unreadable file
+  rejects the whole reload: the SDK logs a warning and keeps serving the
+  previous envelope, as the README promises. At startup a bad file is still
+  skipped so the client can boot, but it is now logged instead of dropped
+  silently.
+- **`Close()` during the initial fetch no longer leaks background workers
+  (qfg-9dxb.10).** The supervisor and fallback poller started after the
+  fetch returned and kept polling with the SDK key forever. They now see the
+  client is closed and never start. This also fixes a data race between
+  `Close()` and startup.
+
 ## 1.4.0 - 2026-09-28
 
 ### Changed

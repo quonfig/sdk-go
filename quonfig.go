@@ -196,12 +196,18 @@ func NewClient(opts ...Option) (*Client, error) {
 	}
 
 	if o.DataDir != "" {
-		envelope, err := loadWorkspaceEnvelope(o.DataDir, o.Environment)
+		envelope, skipped, err := loadWorkspaceEnvelope(o.DataDir, o.Environment)
 		if err != nil {
 			if client.telemetry != nil {
 				client.telemetry.Stop()
 			}
 			return nil, err
+		}
+		if skipped != nil {
+			o.Logger.Warn("quonfig: datadir load skipped unreadable config files",
+				slog.String("datadir", o.DataDir),
+				slog.Any("err", skipped),
+			)
 		}
 		client.installEnvelope(envelope, -1)
 		client.finishInitialization(true)
@@ -310,9 +316,13 @@ func (c *Client) startDatadirWatcher() {
 
 // reloadDatadir is the parse-then-swap fire site invoked by the watcher
 // after a debounced burst. On parse failure we keep the old envelope and log
-// rather than expose a broken state to readers.
+// rather than expose a broken state to readers. A single bad file counts as a
+// parse failure: installing the rest would silently drop that key.
 func (c *Client) reloadDatadir() {
-	envelope, err := loadWorkspaceEnvelope(c.opts.DataDir, c.opts.Environment)
+	envelope, skipped, err := loadWorkspaceEnvelope(c.opts.DataDir, c.opts.Environment)
+	if err == nil {
+		err = skipped
+	}
 	if err != nil {
 		c.opts.Logger.Warn("quonfig: datadir auto-reload skipped (parse failed)",
 			slog.String("datadir", c.opts.DataDir),
@@ -815,11 +825,6 @@ func (c *Client) startBackgroundWorkers() {
 		})
 	}
 
-	c.mu.Lock()
-	c.sup = sup
-	c.fallback = fp
-	c.mu.Unlock()
-
 	if fp != nil {
 		// Register the Layer 2 worker with the supervisor so a panic inside
 		// Run gets caught and the poller restarts with exponential backoff.
@@ -829,7 +834,21 @@ func (c *Client) startBackgroundWorkers() {
 		})
 	}
 
+	// If Close ran while the init fetch was in flight, it found no
+	// supervisor to stop; starting one now would poll forever. Start under
+	// the lock that publishes sup so Close's Stop (wg.Wait) cannot overlap
+	// Start (wg.Add).
+	c.mu.Lock()
+	select {
+	case <-c.closeCh:
+		c.mu.Unlock()
+		return
+	default:
+	}
 	sup.Start()
+	c.sup = sup
+	c.fallback = fp
+	c.mu.Unlock()
 
 	if c.opts.SSEEnabled {
 		c.startSSE()

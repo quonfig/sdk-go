@@ -170,9 +170,9 @@ func TestLoadWorkspaceEnvelopeForcesSendToClientSdkTrueForFeatureFlag(t *testing
 		}`,
 	})
 
-	envelope, err := loadWorkspaceEnvelope(dir, "Production")
-	if err != nil {
-		t.Fatalf("loadWorkspaceEnvelope returned error: %v", err)
+	envelope, skipped, err := loadWorkspaceEnvelope(dir, "Production")
+	if err != nil || skipped != nil {
+		t.Fatalf("loadWorkspaceEnvelope returned error: %v (skipped: %v)", err, skipped)
 	}
 
 	byKey := map[string]ConfigResponse{}
@@ -210,9 +210,9 @@ func TestLoadWorkspaceConfigsExcludesSchemasDirectory(t *testing.T) {
 		}`,
 	})
 
-	configs, err := loadWorkspaceConfigs(dir)
-	if err != nil {
-		t.Fatalf("loadWorkspaceConfigs returned error: %v", err)
+	configs, skipped, err := loadWorkspaceConfigs(dir)
+	if err != nil || skipped != nil {
+		t.Fatalf("loadWorkspaceConfigs returned error: %v (skipped: %v)", err, skipped)
 	}
 
 	for _, cfg := range configs {

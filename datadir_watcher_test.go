@@ -295,3 +295,52 @@ func TestDataDirAutoReloadFollowsSymlinks(t *testing.T) {
 		t.Fatal("expected at least one callback through symlinked datadir")
 	}
 }
+
+// One malformed file among several must not produce a partial envelope: the
+// reload is rejected as a whole and the previous envelope keeps serving
+// every key (README "Parse-then-swap").
+func TestDataDirAutoReloadKeepsPreviousEnvelopeWhenOneFileIsMalformed(t *testing.T) {
+	datadir := writeDatadirWithGreeting(t, "hola")
+	otherPath := filepath.Join(datadir, "configs", "other-message.json")
+	if err := os.WriteFile(otherPath, []byte(`{
+		"id":"other-message","key":"other-message","type":"config","valueType":"string","sendToClientSdk":false,
+		"default":{"rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"string","value":"adios"}}]}
+	}`), 0o644); err != nil {
+		t.Fatalf("write other-message.json: %v", err)
+	}
+
+	var extra atomic.Int64
+	var initialDone atomic.Bool
+	client, err := NewClient(
+		WithDataDir(datadir),
+		WithEnvironment("Production"),
+		WithAllTelemetryDisabled(),
+		WithDataDirAutoReload(true),
+		WithDataDirAutoReloadDebounce(30*time.Millisecond),
+		WithOnConfigUpdate(func() {
+			if initialDone.Load() {
+				extra.Add(1)
+			}
+		}),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(client.Close)
+	initialDone.Store(true)
+
+	if err := os.WriteFile(otherPath, []byte(`{"id":"other-mess`), 0o644); err != nil {
+		t.Fatalf("write truncated file: %v", err)
+	}
+	time.Sleep(300 * time.Millisecond)
+
+	for key, want := range map[string]string{"welcome-message": "hola", "other-message": "adios"} {
+		v, ok, err := client.GetStringValue(key, nil)
+		if err != nil || !ok || v != want {
+			t.Fatalf("%s: expected previous envelope value %q after partial parse failure, got v=%q ok=%v err=%v", key, want, v, ok, err)
+		}
+	}
+	if got := extra.Load(); got != 0 {
+		t.Fatalf("expected no OnConfigUpdate on parse failure, got %d", got)
+	}
+}
