@@ -1,9 +1,11 @@
 package quonfig
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/quonfig/sdk-go/internal/encryption"
 )
@@ -131,6 +133,29 @@ func coerceValue(value string, valueType ValueType) (interface{}, error) {
 			return nil, fmt.Errorf("parsing bool: %w", err)
 		}
 		return parsed, nil
+	case ValueTypeStringList:
+		// Comma-separated, each item trimmed; an empty variable is an empty list.
+		if value == "" {
+			return []string{}, nil
+		}
+		parts := strings.Split(value, ",")
+		for i, p := range parts {
+			parts[i] = strings.TrimSpace(p)
+		}
+		return parts, nil
+	case ValueTypeJSON:
+		var parsed interface{}
+		if err := json.Unmarshal([]byte(value), &parsed); err != nil {
+			return nil, fmt.Errorf("parsing json: %w", err)
+		}
+		return parsed, nil
+	case ValueTypeDuration:
+		// Validated here so a malformed env var fails at resolution like any
+		// other uncoercible value; the ISO string is kept for the getter.
+		if _, err := ParseISO8601Duration(value); err != nil {
+			return nil, fmt.Errorf("parsing duration: %w", err)
+		}
+		return value, nil
 	default:
 		return value, nil
 	}
@@ -146,6 +171,10 @@ func valueTypeToType(valueType ValueType) ValueType {
 		return ValueTypeBool
 	case ValueTypeStringList:
 		return ValueTypeStringList
+	case ValueTypeJSON:
+		return ValueTypeJSON
+	case ValueTypeDuration:
+		return ValueTypeDuration
 	default:
 		return ValueTypeString
 	}

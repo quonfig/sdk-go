@@ -6,6 +6,14 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Fixed
 
+- **ENV_VAR-provided `string_list`, `json` and `duration` values now coerce
+  to their type (qfg-2agi.21).** A `string_list` variable is split on commas
+  with each item trimmed (`"a, b,c"` -> `["a","b","c"]`; an empty variable is
+  an empty list); `GetStringSliceValue` used to return `nil`. A `json`
+  variable is parsed; `GetJSONValue` used to return the raw string. An
+  unparseable `json` variable or a `duration` variable outside the grammar
+  now fails resolution with `ErrUnableToCoerce` (absent value, `ok=false`),
+  like an uncoercible `int`, `double` or `bool`.
 - **Duration parsing now follows the shared Quonfig grammar exactly
   (qfg-2agi.13).** `ParseISO8601Duration` accepts only
   `P[nD][T[nH][nM][n[.fff]S]]`: at least one component, no dangling `T`, a
