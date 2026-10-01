@@ -149,12 +149,19 @@ func hasIdentifyingKey(ctx ContextData) bool {
 	return false
 }
 
-// contextGroupKey produces a stable key for deduplication based on context names and their key values.
+// contextGroupKey produces a stable key for deduplication and rate-limiting
+// based on context names and their identifying values. Each context is
+// identified by "key", falling back to "trackingId" when "key" is absent or
+// nil (sdk-node's groupedKey: ctx.key ?? ctx.trackingId), so context sets
+// identified only by trackingId do not collapse into one bucket.
 func contextGroupKey(ctx ContextData) string {
 	parts := make([]string, 0, len(ctx.Contexts))
 	for name, props := range ctx.Contexts {
-		// Use the "key" property if present, otherwise use the context name alone
-		if keyVal, ok := props["key"]; ok {
+		keyVal := props["key"]
+		if keyVal == nil {
+			keyVal = props["trackingId"]
+		}
+		if keyVal != nil {
 			parts = append(parts, fmt.Sprintf("%s=%v", name, keyVal))
 		} else {
 			parts = append(parts, name)

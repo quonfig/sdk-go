@@ -146,3 +146,52 @@ func TestExampleContextAggregator_TrackingIdCountsAsKey(t *testing.T) {
 		t.Fatalf("expected 1 example for a trackingId context, got %+v", event)
 	}
 }
+
+// Two context sets identified only by trackingId (no "key") are distinct
+// examples: the dedup/rate-limit key must group on key ?? trackingId, as
+// sdk-node's groupedKey does, not collapse to one bucket per context name.
+func TestExampleContextAggregator_GroupsOnTrackingIdWhenNoKey(t *testing.T) {
+	agg := NewExampleContextAggregator()
+
+	agg.Record(ContextData{
+		Contexts: map[string]map[string]interface{}{
+			"user": {"trackingId": "anon-1"},
+		},
+	})
+	agg.Record(ContextData{
+		Contexts: map[string]map[string]interface{}{
+			"user": {"trackingId": "anon-2"},
+		},
+	})
+	// Same trackingId again: still deduplicated.
+	agg.Record(ContextData{
+		Contexts: map[string]map[string]interface{}{
+			"user": {"trackingId": "anon-1"},
+		},
+	})
+
+	event := agg.GetAndClear()
+	if event == nil {
+		t.Fatal("expected non-nil event")
+	}
+	if got := len(event.ExampleContexts.Examples); got != 2 {
+		t.Fatalf("expected 2 examples (one per trackingId), got %d", got)
+	}
+
+	// The rate-limit window is keyed the same way: a new trackingId seen
+	// after the flush is still reported, the repeat is not.
+	agg.Record(ContextData{
+		Contexts: map[string]map[string]interface{}{
+			"user": {"trackingId": "anon-1"},
+		},
+	})
+	agg.Record(ContextData{
+		Contexts: map[string]map[string]interface{}{
+			"user": {"trackingId": "anon-3"},
+		},
+	})
+	event = agg.GetAndClear()
+	if event == nil || len(event.ExampleContexts.Examples) != 1 {
+		t.Fatalf("expected 1 example (anon-3 only) after flush, got %+v", event)
+	}
+}
