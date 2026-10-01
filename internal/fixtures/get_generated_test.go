@@ -100,57 +100,32 @@ func TestGet_CanDecryptAndReturnASecretValueWithDecryptionKeyInInEnvVar(t *testi
 
 // duration 200 ms
 func TestGet_Duration200Ms(t *testing.T) {
-	cfg := mustLookupConfig(t, "test.duration.PT0.2S")
-	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertDurationMillis(t, match, 200)
+	ctx := buildPublicContext(nil, nil, nil)
+	assertDurationMillis(t, "test.duration.PT0.2S", ctx, 200)
 }
 
 // duration 90S
 func TestGet_Duration90S(t *testing.T) {
-	cfg := mustLookupConfig(t, "test.duration.PT90S")
-	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertDurationMillis(t, match, 90000)
+	ctx := buildPublicContext(nil, nil, nil)
+	assertDurationMillis(t, "test.duration.PT90S", ctx, 90000)
 }
 
 // duration 1.5M
 func TestGet_Duration15M(t *testing.T) {
-	cfg := mustLookupConfig(t, "test.duration.PT1.5M")
-	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertDurationMillis(t, match, 90000)
+	ctx := buildPublicContext(nil, nil, nil)
+	assertDurationMillis(t, "test.duration.PT1.5M", ctx, 90000)
 }
 
 // duration 0.5H
 func TestGet_Duration05H(t *testing.T) {
-	cfg := mustLookupConfig(t, "test.duration.PT0.5H")
-	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertDurationMillis(t, match, 1800000)
+	ctx := buildPublicContext(nil, nil, nil)
+	assertDurationMillis(t, "test.duration.PT0.5H", ctx, 1800000)
 }
 
 // duration test.duration.P1DT6H2M1.5S
 func TestGet_DurationTestDurationP1DT6H2M15S(t *testing.T) {
-	cfg := mustLookupConfig(t, "test.duration.P1DT6H2M1.5S")
-	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertDurationMillis(t, match, 108121500)
+	ctx := buildPublicContext(nil, nil, nil)
+	assertDurationMillis(t, "test.duration.P1DT6H2M1.5S", ctx, 108121500)
 }
 
 // json test

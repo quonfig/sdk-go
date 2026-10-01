@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -373,19 +374,53 @@ func assertJSONValue(t *testing.T, match *eval.EvalMatch, expected map[string]in
 	}
 }
 
-// assertDurationMillis asserts that the resolved value is a duration with the expected milliseconds.
-func assertDurationMillis(t *testing.T, match *eval.EvalMatch, expectedMillis int64) {
+// publicClient is a real quonfig.Client over the integration-test datadir,
+// built once and shared by every case that asserts through a PUBLIC typed
+// getter (what a customer calls) rather than the internal resolver.
+var (
+	publicClientOnce sync.Once
+	publicClient     *quonfig.Client
+	publicClientErr  error
+)
+
+func mustPublicClient(t *testing.T) *quonfig.Client {
 	t.Helper()
-	if !match.IsMatch {
-		t.Fatalf("expected duration but got no match")
+	publicClientOnce.Do(func() {
+		publicClient, publicClientErr = quonfig.NewClient(
+			quonfig.WithDataDir(dataDir),
+			quonfig.WithEnvironment("Production"),
+		)
+	})
+	if publicClientErr != nil {
+		t.Fatalf("quonfig.NewClient(WithDataDir) error: %v", publicClientErr)
 	}
-	durationStr := match.Value.StringValue()
-	millis, err := parseISO8601Duration(durationStr)
+	return publicClient
+}
+
+// buildPublicContext builds the merged *quonfig.ContextSet passed to the
+// public Client getters (nil when every tier is empty).
+func buildPublicContext(global, block, local map[string]map[string]interface{}) *quonfig.ContextSet {
+	if global == nil && block == nil && local == nil {
+		return nil
+	}
+	return quonfig.Merge(buildContextSet(global), buildContextSet(block), buildContextSet(local))
+}
+
+// assertDurationMillis asserts a DURATION case through the PUBLIC typed
+// getter Client.GetDurationValue, comparing the returned time.Duration
+// integer-exactly against expectedMillis (no tolerance, no test-only parser).
+func assertDurationMillis(t *testing.T, key string, ctx *quonfig.ContextSet, expectedMillis int64) {
+	t.Helper()
+	got, ok, err := mustPublicClient(t).GetDurationValue(key, ctx)
 	if err != nil {
-		t.Fatalf("failed to parse duration %q: %v", durationStr, err)
+		t.Fatalf("GetDurationValue(%q) error: %v", key, err)
 	}
-	if math.Abs(float64(millis)-float64(expectedMillis)) > 1 {
-		t.Errorf("expected %d millis but got %d (from duration %q)", expectedMillis, millis, durationStr)
+	if !ok {
+		t.Fatalf("GetDurationValue(%q) found no value", key)
+	}
+	want := time.Duration(expectedMillis) * time.Millisecond
+	if got != want {
+		t.Errorf("GetDurationValue(%q) = %v (%dns), want exactly %dms (%v)", key, got, got.Nanoseconds(), expectedMillis, want)
 	}
 }
 
@@ -431,72 +466,6 @@ func assertResolveError(t *testing.T, err error, expectedError string) {
 	default:
 		t.Errorf("unknown expected error type: %q, got: %v", expectedError, err)
 	}
-}
-
-// parseISO8601Duration parses an ISO 8601 duration string and returns milliseconds.
-// Supports: P[n]DT[n]H[n]M[n]S (e.g., PT0.2S, PT90S, PT1.5M, PT0.5H, P1DT6H2M1.5S)
-func parseISO8601Duration(s string) (int64, error) {
-	if len(s) < 2 || s[0] != 'P' {
-		return 0, fmt.Errorf("invalid ISO 8601 duration: %s", s)
-	}
-
-	var totalMillis float64
-	i := 1 // skip 'P'
-	inTimePart := false
-
-	for i < len(s) {
-		if s[i] == 'T' {
-			inTimePart = true
-			i++
-			continue
-		}
-
-		// Parse the number
-		start := i
-		for i < len(s) && (s[i] == '.' || (s[i] >= '0' && s[i] <= '9')) {
-			i++
-		}
-		if i >= len(s) {
-			return 0, fmt.Errorf("invalid ISO 8601 duration: unexpected end: %s", s)
-		}
-
-		numStr := s[start:i]
-		var num float64
-		if _, err := fmt.Sscanf(numStr, "%f", &num); err != nil {
-			return 0, fmt.Errorf("invalid number in duration %q: %w", numStr, err)
-		}
-
-		unit := s[i]
-		i++
-
-		if inTimePart {
-			switch unit {
-			case 'H':
-				totalMillis += num * 3600000
-			case 'M':
-				totalMillis += num * 60000
-			case 'S':
-				totalMillis += num * 1000
-			default:
-				return 0, fmt.Errorf("unknown time unit %c in duration %s", unit, s)
-			}
-		} else {
-			switch unit {
-			case 'Y':
-				totalMillis += num * 365.25 * 86400000
-			case 'M':
-				totalMillis += num * 30 * 86400000
-			case 'W':
-				totalMillis += num * 7 * 86400000
-			case 'D':
-				totalMillis += num * 86400000
-			default:
-				return 0, fmt.Errorf("unknown date unit %c in duration %s", unit, s)
-			}
-		}
-	}
-
-	return int64(math.Round(totalMillis)), nil
 }
 
 // configTypeToTelemetryType converts a quonfig.ConfigType to the uppercase format used in telemetry payloads.
