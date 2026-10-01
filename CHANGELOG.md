@@ -25,6 +25,10 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Fixed
 
+- **Example contexts without a key are no longer reported (qfg-2agi.31
+  review fix).** A context set where no context has a non-empty `key` or
+  `trackingId` is now dropped by the example-context telemetry aggregator,
+  matching sdk-node. It used to be sent in `example_contexts`.
 - **ENV_VAR-provided `string_list`, `json` and `duration` values now coerce
   to their type (qfg-2agi.21).** A `string_list` variable is split on commas
   with each item trimmed (`"a, b,c"` -> `["a","b","c"]`; an empty variable is

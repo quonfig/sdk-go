@@ -107,3 +107,42 @@ func TestExampleContextAggregator_ClearsAfterGet(t *testing.T) {
 		t.Fatal("expected nil after clear")
 	}
 }
+
+// A context set with no "key" (or "trackingId") on any context cannot be
+// identified, so it is dropped rather than reported (matches sdk-node).
+func TestExampleContextAggregator_DropsContextsWithoutKey(t *testing.T) {
+	agg := NewExampleContextAggregator()
+
+	agg.Record(ContextData{
+		Contexts: map[string]map[string]interface{}{
+			"user":   {"name": "michael", "age": 38},
+			"device": {"mobile": false},
+			"team":   {"id": 3.5},
+		},
+	})
+	agg.Record(ContextData{
+		Contexts: map[string]map[string]interface{}{
+			"user": {"key": ""},
+		},
+	})
+
+	if event := agg.GetAndClear(); event != nil {
+		t.Fatalf("expected keyless contexts to be dropped, got %+v", event.ExampleContexts)
+	}
+}
+
+func TestExampleContextAggregator_TrackingIdCountsAsKey(t *testing.T) {
+	agg := NewExampleContextAggregator()
+
+	agg.Record(ContextData{
+		Contexts: map[string]map[string]interface{}{
+			"user":   {"trackingId": "t-1"},
+			"device": {"mobile": false},
+		},
+	})
+
+	event := agg.GetAndClear()
+	if event == nil || len(event.ExampleContexts.Examples) != 1 {
+		t.Fatalf("expected 1 example for a trackingId context, got %+v", event)
+	}
+}

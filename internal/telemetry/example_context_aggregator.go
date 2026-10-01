@@ -67,6 +67,9 @@ func newExampleContextAggregator(maxExamples, maxSeen int, now func() time.Time)
 // Record stores a context example, deduplicating by grouped key within the
 // window and rate-limiting each key to once per ExampleContextSeenTTL.
 func (a *ExampleContextAggregator) Record(ctx ContextData) {
+	if !hasIdentifyingKey(ctx) {
+		return // no "key"/"trackingId" on any context: not reportable (matches sdk-node)
+	}
 	key := contextGroupKey(ctx)
 
 	a.mu.Lock()
@@ -131,6 +134,19 @@ func (a *ExampleContextAggregator) pruneSeen() {
 			delete(a.seen, k)
 		}
 	}
+}
+
+// hasIdentifyingKey reports whether any context in ctx carries a non-empty
+// "key" or "trackingId" property. Example contexts without one are dropped.
+func hasIdentifyingKey(ctx ContextData) bool {
+	for _, props := range ctx.Contexts {
+		for _, name := range [...]string{"key", "trackingId"} {
+			if v, ok := props[name]; ok && v != nil && fmt.Sprintf("%v", v) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // contextGroupKey produces a stable key for deduplication based on context names and their key values.
