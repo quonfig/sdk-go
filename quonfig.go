@@ -35,7 +35,7 @@ type configStore interface {
 }
 
 // ConfigEvaluator evaluates a config against a context.
-// This interface breaks the import cycle between quonfig and internal/eval.
+// The client's implementation is runtimeEvaluator (runtime_eval.go).
 type ConfigEvaluator interface {
 	// EvaluateConfigResponse evaluates a ConfigResponse for the given environment and context.
 	// Returns the full evaluation result including match metadata for telemetry and reasons.
