@@ -6,6 +6,20 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Fixed
 
+- **Duration parsing now follows the shared Quonfig grammar exactly
+  (qfg-2agi.13).** `ParseISO8601Duration` accepts only
+  `P[nD][T[nH][nM][n[.fff]S]]`: at least one component, no dangling `T`, a
+  fraction only on seconds (at most 9 digits), ASCII digits, and a magnitude
+  of at most `P36500D`. It used to accept `PT` (as 0), `P1DT`, years, months
+  and weeks, out-of-order and repeated units, `.5`/`5.`, trailing junk after
+  a number (`P1.2.3D` == `P1.2D`), and overflowed silently past ~292 years.
+  Fractional seconds now use exact decimal arithmetic rounded half up to
+  whole milliseconds instead of float math.
+- **`GetDurationValue` reports a malformed duration as absent with a
+  coercion error (qfg-2agi.13).** A stored or ENV_VAR-provided value outside
+  the grammar now returns `(0, false, err)` with `errors.Is(err,
+  ErrUnableToCoerce)`, instead of `ok=true` with an untyped parse error (or,
+  for values like `PT0.5H` and `P1DT`, a silently accepted value).
 - **Datadir auto-reload no longer drops a key when one config file is
   malformed (qfg-9dxb.10).** A truncated or invalid file used to be skipped
   while the rest of the reload was installed, so that key silently fell back

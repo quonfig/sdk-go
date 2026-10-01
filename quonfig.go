@@ -388,16 +388,18 @@ func (c *Client) GetStringSliceValue(key string, ctx *ContextSet) ([]string, boo
 }
 
 // GetDurationValue returns the time.Duration value for a config key.
-// The stored value should be an ISO 8601 duration string (e.g., "PT90S", "PT1.5M", "P1DT6H2M1.5S").
+// The value must be an ISO 8601 duration string in the Quonfig grammar
+// (e.g., "PT90S", "PT30M", "P1DT6H2M1.5S"; see ParseISO8601Duration).
+// A malformed value, stored or ENV_VAR-provided, returns (0, false, err)
+// with err wrapping ErrUnableToCoerce.
 func (c *Client) GetDurationValue(key string, ctx *ContextSet) (time.Duration, bool, error) {
 	val, ok, err := c.resolve(key, ctx)
 	if err != nil || !ok {
 		return 0, false, err
 	}
-	s := val.StringValue()
-	d, parseErr := ParseISO8601Duration(s)
+	d, parseErr := ParseISO8601Duration(val.StringValue())
 	if parseErr != nil {
-		return 0, true, fmt.Errorf("parsing duration %q: %w", s, parseErr)
+		return 0, false, fmt.Errorf("%w: config %q: %v", ErrUnableToCoerce, key, parseErr)
 	}
 	return d, true, nil
 }

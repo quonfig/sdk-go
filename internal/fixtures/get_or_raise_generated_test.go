@@ -68,3 +68,111 @@ func TestGetOrRaise_RaisesAnErrorForDecryptionFailure(t *testing.T) {
 	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
 	assertResolveError(t, err, "unable_to_decrypt")
 }
+
+// raises an error if an env-var-provided duration 30s cannot be coerced
+func TestGetOrRaise_RaisesAnErrorIfAnEnvVarProvidedDuration30sCannotBeCoerced(t *testing.T) {
+	cfg := mustLookupConfig(t, "provided.duration.malformed.30s")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+	if !match.IsMatch || match.Value == nil {
+		t.Fatalf("expected a match for %q", "provided.duration.malformed.30s")
+	}
+	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+	assertResolveError(t, err, "unable_to_coerce_env_var")
+}
+
+// raises an error if an env-var-provided duration PT0.5H cannot be coerced
+func TestGetOrRaise_RaisesAnErrorIfAnEnvVarProvidedDurationPT05HCannotBeCoerced(t *testing.T) {
+	cfg := mustLookupConfig(t, "provided.duration.malformed.PT0.5H")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+	if !match.IsMatch || match.Value == nil {
+		t.Fatalf("expected a match for %q", "provided.duration.malformed.PT0.5H")
+	}
+	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+	assertResolveError(t, err, "unable_to_coerce_env_var")
+}
+
+// raises an error if an env-var-provided duration P1DT cannot be coerced
+func TestGetOrRaise_RaisesAnErrorIfAnEnvVarProvidedDurationP1DTCannotBeCoerced(t *testing.T) {
+	cfg := mustLookupConfig(t, "provided.duration.malformed.P1DT")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+	if !match.IsMatch || match.Value == nil {
+		t.Fatalf("expected a match for %q", "provided.duration.malformed.P1DT")
+	}
+	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+	assertResolveError(t, err, "unable_to_coerce_env_var")
+}
+
+// raises an error if an env-var-provided duration garbage cannot be coerced
+func TestGetOrRaise_RaisesAnErrorIfAnEnvVarProvidedDurationGarbageCannotBeCoerced(t *testing.T) {
+	cfg := mustLookupConfig(t, "provided.duration.malformed.garbage")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+	if !match.IsMatch || match.Value == nil {
+		t.Fatalf("expected a match for %q", "provided.duration.malformed.garbage")
+	}
+	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+	assertResolveError(t, err, "unable_to_coerce_env_var")
+}
+
+// raises an error if a stored duration 30s cannot be coerced
+func TestGetOrRaise_RaisesAnErrorIfAStoredDuration30sCannotBeCoerced(t *testing.T) {
+	cfg := mustLookupConfig(t, "test.duration.malformed.30s")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+	if !match.IsMatch || match.Value == nil {
+		t.Fatalf("expected a match for %q", "test.duration.malformed.30s")
+	}
+	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+	assertResolveError(t, err, "unable_to_coerce_env_var")
+}
+
+// raises an error if a stored duration PT0.5H cannot be coerced
+func TestGetOrRaise_RaisesAnErrorIfAStoredDurationPT05HCannotBeCoerced(t *testing.T) {
+	cfg := mustLookupConfig(t, "test.duration.malformed.PT0.5H")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+	if !match.IsMatch || match.Value == nil {
+		t.Fatalf("expected a match for %q", "test.duration.malformed.PT0.5H")
+	}
+	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+	assertResolveError(t, err, "unable_to_coerce_env_var")
+}
+
+// raises an error if a stored duration P1DT cannot be coerced
+func TestGetOrRaise_RaisesAnErrorIfAStoredDurationP1DTCannotBeCoerced(t *testing.T) {
+	cfg := mustLookupConfig(t, "test.duration.malformed.P1DT")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+	if !match.IsMatch || match.Value == nil {
+		t.Fatalf("expected a match for %q", "test.duration.malformed.P1DT")
+	}
+	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+	assertResolveError(t, err, "unable_to_coerce_env_var")
+}
+
+// raises an error if a stored duration garbage cannot be coerced
+func TestGetOrRaise_RaisesAnErrorIfAStoredDurationGarbageCannotBeCoerced(t *testing.T) {
+	cfg := mustLookupConfig(t, "test.duration.malformed.garbage")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+	if !match.IsMatch || match.Value == nil {
+		t.Fatalf("expected a match for %q", "test.duration.malformed.garbage")
+	}
+	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+	assertResolveError(t, err, "unable_to_coerce_env_var")
+}
+
+// raises an error if a stored duration empty cannot be coerced
+func TestGetOrRaise_RaisesAnErrorIfAStoredDurationEmptyCannotBeCoerced(t *testing.T) {
+	cfg := mustLookupConfig(t, "test.duration.malformed.empty")
+	ctx := buildContextFromMaps(nil, nil, nil)
+	match := evaluator.EvaluateConfig(cfg, "Production", ctx)
+	if !match.IsMatch || match.Value == nil {
+		t.Fatalf("expected a match for %q", "test.duration.malformed.empty")
+	}
+	_, err := testResolver.Resolve(match.Value, cfg, "Production", ctx)
+	assertResolveError(t, err, "unable_to_coerce_env_var")
+}

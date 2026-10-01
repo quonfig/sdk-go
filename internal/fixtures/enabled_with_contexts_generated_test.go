@@ -56,12 +56,23 @@ func TestEnabledWithContexts_ReturnsFalseDueToPartialScopeContextOverrideOfUserK
 // returns false due to partial scope context override of domain
 func TestEnabledWithContexts_ReturnsFalseDueToPartialScopeContextOverrideOfDomain(t *testing.T) {
 	cfg := mustLookupConfig(t, "feature-flag.in-seg.segment-and")
-	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"": {"domain": "example.com"}, "user": {"key": "nobody"}}, map[string]map[string]interface{}{"": {"key": "prefab.cloud"}})
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"": {"domain": "example.com"}, "user": {"key": "nobody"}}, map[string]map[string]interface{}{"": {"domain": "prefab.cloud"}})
 	match, err := evaluateAndResolve(t, cfg, ctx)
 	if err != nil {
 		t.Fatalf("resolver error: %v", err)
 	}
 	assertEnabledValue(t, match, false)
+}
+
+// returns true due to local override of domain when scope user.key already matches
+func TestEnabledWithContexts_ReturnsTrueDueToLocalOverrideOfDomainWhenScopeUserKeyAlreadyMatches(t *testing.T) {
+	cfg := mustLookupConfig(t, "feature-flag.in-seg.segment-and")
+	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"": {"domain": "example.com"}, "user": {"key": "michael"}}, map[string]map[string]interface{}{"": {"domain": "prefab.cloud"}})
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertEnabledValue(t, match, true)
 }
 
 // returns true due to full scope context override of user.key and domain

@@ -184,3 +184,25 @@ func TestContextPrecedence_ReturnsTheCorrectGetValueWhenLocalContextClobbersBloc
 	}
 	assertStringValue(t, match, "override")
 }
+
+// returns the correct `get` value when local context replaces the whole global named context (disjoint attributes)
+func TestContextPrecedence_ReturnsTheCorrectGetValueWhenLocalContextReplacesTheWholeGlobalNamedContextDisjointAttributes(t *testing.T) {
+	cfg := mustLookupConfig(t, "basic.rule.config")
+	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, nil, map[string]map[string]interface{}{"user": {"plan": "pro"}})
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertStringValue(t, match, "default")
+}
+
+// returns the correct `get` value when a named context the local context does not mention survives
+func TestContextPrecedence_ReturnsTheCorrectGetValueWhenANamedContextTheLocalContextDoesNotMentionSurvives(t *testing.T) {
+	cfg := mustLookupConfig(t, "basic.rule.config")
+	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, nil, map[string]map[string]interface{}{"team": {"plan": "pro"}})
+	match, err := evaluateAndResolve(t, cfg, ctx)
+	if err != nil {
+		t.Fatalf("resolver error: %v", err)
+	}
+	assertStringValue(t, match, "override")
+}
