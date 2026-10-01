@@ -4,6 +4,15 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ## Unreleased
 
+### Tests
+
+- **Pin the context-merge rule (qfg-2agi.38).** New tests with disjoint
+  attributes in the same named context prove that a newer tier's named
+  context replaces the whole same-named context and that contexts it does not
+  name survive: global + per-call, global + `WithContext`, nested
+  `WithContext`, and the dev `quonfig-user` context merged under a customer
+  `WithGlobalContext`. No behaviour change.
+
 ### Fixed
 
 - **ENV_VAR-provided `string_list`, `json` and `duration` values now coerce
