@@ -22,6 +22,12 @@ All notable changes to the Quonfig Go SDK are documented here.
   name survive: global + per-call, global + `WithContext`, nested
   `WithContext`, and the dev `quonfig-user` context merged under a customer
   `WithGlobalContext`. No behaviour change.
+- **Integration-test DURATION cases now go through the public
+  `Client.GetDurationValue` (qfg-2agi.4).** The fixtures harness used to
+  parse the raw resolved string with a test-only copy of the parser and
+  allowed +/-1ms, so a green corpus said nothing about the getter customers
+  call. Each case now calls `GetDurationValue` and compares the returned
+  `time.Duration` exactly against the expected milliseconds.
 
 ### Fixed
 
@@ -64,15 +70,6 @@ All notable changes to the Quonfig Go SDK are documented here.
   fetch returned and kept polling with the SDK key forever. They now see the
   client is closed and never start. This also fixes a data race between
   `Close()` and startup.
-
-### Tests
-
-- **Integration-test DURATION cases now go through the public
-  `Client.GetDurationValue` (qfg-2agi.4).** The fixtures harness used to
-  parse the raw resolved string with a test-only copy of the parser and
-  allowed +/-1ms, so a green corpus said nothing about the getter customers
-  call. Each case now calls `GetDurationValue` and compares the returned
-  `time.Duration` exactly against the expected milliseconds.
 
 ## 1.4.0 - 2026-09-28
 
