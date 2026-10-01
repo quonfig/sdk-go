@@ -7,202 +7,164 @@ package fixtures
 
 import (
 	"testing"
+
+	quonfig "github.com/quonfig/sdk-go"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // returns the correct `flag` value using the global context (1)
 func TestContextPrecedence_ReturnsTheCorrectFlagValueUsingTheGlobalContext1(t *testing.T) {
-	cfg := mustLookupConfig(t, "mixed.case.property.name")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"isHuman": "verified"}}, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertEnabledValue(t, match, true)
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "verified"}})))
+	on, _ := c.FeatureIsOn("mixed.case.property.name", nil)
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "mixed.case.property.name")
 }
 
 // returns the correct `flag` value using the global context (2)
 func TestContextPrecedence_ReturnsTheCorrectFlagValueUsingTheGlobalContext2(t *testing.T) {
-	cfg := mustLookupConfig(t, "mixed.case.property.name")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"isHuman": "?"}}, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertEnabledValue(t, match, false)
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "?"}})))
+	on, _ := c.FeatureIsOn("mixed.case.property.name", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "mixed.case.property.name")
 }
 
 // returns the correct `flag` value when local context clobbers global context (1)
 func TestContextPrecedence_ReturnsTheCorrectFlagValueWhenLocalContextClobbersGlobalContext1(t *testing.T) {
-	cfg := mustLookupConfig(t, "mixed.case.property.name")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"isHuman": "?"}}, nil, map[string]map[string]interface{}{"user": {"isHuman": "verified"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertEnabledValue(t, match, true)
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "?"}})))
+	on, _ := c.FeatureIsOn("mixed.case.property.name", contextSet(map[string]map[string]interface{}{"user": {"isHuman": "verified"}}))
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "mixed.case.property.name")
 }
 
 // returns the correct `flag` value when local context clobbers global context (2)
 func TestContextPrecedence_ReturnsTheCorrectFlagValueWhenLocalContextClobbersGlobalContext2(t *testing.T) {
-	cfg := mustLookupConfig(t, "mixed.case.property.name")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"isHuman": "verified"}}, nil, map[string]map[string]interface{}{"user": {"isHuman": "?"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertEnabledValue(t, match, false)
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "verified"}})))
+	on, _ := c.FeatureIsOn("mixed.case.property.name", contextSet(map[string]map[string]interface{}{"user": {"isHuman": "?"}}))
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "mixed.case.property.name")
 }
 
 // returns the correct `flag` value when block context clobbers global context (1)
 func TestContextPrecedence_ReturnsTheCorrectFlagValueWhenBlockContextClobbersGlobalContext1(t *testing.T) {
-	cfg := mustLookupConfig(t, "mixed.case.property.name")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"isHuman": "verified"}}, map[string]map[string]interface{}{"user": {"isHuman": "?"}}, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertEnabledValue(t, match, false)
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "verified"}})))
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "?"}})).FeatureIsOn("mixed.case.property.name")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "mixed.case.property.name")
 }
 
 // returns the correct `flag` value when block context clobbers global context (2)
 func TestContextPrecedence_ReturnsTheCorrectFlagValueWhenBlockContextClobbersGlobalContext2(t *testing.T) {
-	cfg := mustLookupConfig(t, "mixed.case.property.name")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"isHuman": "?"}}, map[string]map[string]interface{}{"user": {"isHuman": "verified"}}, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertEnabledValue(t, match, true)
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "?"}})))
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "verified"}})).FeatureIsOn("mixed.case.property.name")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "mixed.case.property.name")
 }
 
 // returns the correct `flag` value when local context clobbers block context (1)
 func TestContextPrecedence_ReturnsTheCorrectFlagValueWhenLocalContextClobbersBlockContext1(t *testing.T) {
-	cfg := mustLookupConfig(t, "mixed.case.property.name")
-	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"isHuman": "verified"}}, map[string]map[string]interface{}{"user": {"isHuman": "?"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertEnabledValue(t, match, false)
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "verified"}})).WithContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "?"}})).FeatureIsOn("mixed.case.property.name")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "mixed.case.property.name")
 }
 
 // returns the correct `flag` value when local context clobbers block context (2)
 func TestContextPrecedence_ReturnsTheCorrectFlagValueWhenLocalContextClobbersBlockContext2(t *testing.T) {
-	cfg := mustLookupConfig(t, "mixed.case.property.name")
-	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"isHuman": "?"}}, map[string]map[string]interface{}{"user": {"isHuman": "verified"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertEnabledValue(t, match, true)
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "?"}})).WithContext(contextSet(map[string]map[string]interface{}{"user": {"isHuman": "verified"}})).FeatureIsOn("mixed.case.property.name")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "mixed.case.property.name")
 }
 
 // returns the correct `get` value using the global context (1)
 func TestContextPrecedence_ReturnsTheCorrectGetValueUsingTheGlobalContext1(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "override")
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})))
+	got, ok, err := c.GetStringValue("basic.rule.config", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "override"
+	assert.Equal(t, want, got)
 }
 
 // returns the correct `get` value using the global context (2)
 func TestContextPrecedence_ReturnsTheCorrectGetValueUsingTheGlobalContext2(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@example.com"}}, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "default")
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@example.com"}})))
+	got, ok, err := c.GetStringValue("basic.rule.config", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "default"
+	assert.Equal(t, want, got)
 }
 
 // returns the correct `get` value when local context clobbers global context (1)
 func TestContextPrecedence_ReturnsTheCorrectGetValueWhenLocalContextClobbersGlobalContext1(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@example.com"}}, nil, map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "override")
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@example.com"}})))
+	got, ok, err := c.GetStringValue("basic.rule.config", contextSet(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "override"
+	assert.Equal(t, want, got)
 }
 
 // returns the correct `get` value when local context clobbers global context (2)
 func TestContextPrecedence_ReturnsTheCorrectGetValueWhenLocalContextClobbersGlobalContext2(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, nil, map[string]map[string]interface{}{"user": {"email": "test@example.com"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "default")
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})))
+	got, ok, err := c.GetStringValue("basic.rule.config", contextSet(map[string]map[string]interface{}{"user": {"email": "test@example.com"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "default"
+	assert.Equal(t, want, got)
 }
 
 // returns the correct `get` value when block context clobbers global context (1)
 func TestContextPrecedence_ReturnsTheCorrectGetValueWhenBlockContextClobbersGlobalContext1(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, map[string]map[string]interface{}{"user": {"email": "test@example.com"}}, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "default")
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})))
+	got, ok, err := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@example.com"}})).GetStringValue("basic.rule.config")
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "default"
+	assert.Equal(t, want, got)
 }
 
 // returns the correct `get` value when block context clobbers global context (2)
 func TestContextPrecedence_ReturnsTheCorrectGetValueWhenBlockContextClobbersGlobalContext2(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@example.com"}}, map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "override")
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@example.com"}})))
+	got, ok, err := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})).GetStringValue("basic.rule.config")
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "override"
+	assert.Equal(t, want, got)
 }
 
 // returns the correct `get` value when local context clobbers block context (1)
 func TestContextPrecedence_ReturnsTheCorrectGetValueWhenLocalContextClobbersBlockContext1(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, map[string]map[string]interface{}{"user": {"email": "test@example.com"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "default")
+	c := mustPublicClient(t)
+	got, ok, err := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})).WithContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@example.com"}})).GetStringValue("basic.rule.config")
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "default"
+	assert.Equal(t, want, got)
 }
 
 // returns the correct `get` value when local context clobbers block context (2)
 func TestContextPrecedence_ReturnsTheCorrectGetValueWhenLocalContextClobbersBlockContext2(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(nil, map[string]map[string]interface{}{"user": {"email": "test@example.com"}}, map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "override")
+	c := mustPublicClient(t)
+	got, ok, err := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@example.com"}})).WithContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})).GetStringValue("basic.rule.config")
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "override"
+	assert.Equal(t, want, got)
 }
 
 // returns the correct `get` value when local context replaces the whole global named context (disjoint attributes)
 func TestContextPrecedence_ReturnsTheCorrectGetValueWhenLocalContextReplacesTheWholeGlobalNamedContextDisjointAttributes(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, nil, map[string]map[string]interface{}{"user": {"plan": "pro"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "default")
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})))
+	got, ok, err := c.GetStringValue("basic.rule.config", contextSet(map[string]map[string]interface{}{"user": {"plan": "pro"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "default"
+	assert.Equal(t, want, got)
 }
 
 // returns the correct `get` value when a named context the local context does not mention survives
 func TestContextPrecedence_ReturnsTheCorrectGetValueWhenANamedContextTheLocalContextDoesNotMentionSurvives(t *testing.T) {
-	cfg := mustLookupConfig(t, "basic.rule.config")
-	ctx := buildContextFromMaps(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}}, nil, map[string]map[string]interface{}{"team": {"plan": "pro"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertStringValue(t, match, "override")
+	c := newPublicClient(t, quonfig.WithGlobalContext(contextSet(map[string]map[string]interface{}{"user": {"email": "test@prefab.cloud"}})))
+	got, ok, err := c.GetStringValue("basic.rule.config", contextSet(map[string]map[string]interface{}{"team": {"plan": "pro"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "basic.rule.config")
+	want := "override"
+	assert.Equal(t, want, got)
 }

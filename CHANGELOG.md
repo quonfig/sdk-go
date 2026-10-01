@@ -6,6 +6,16 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Tests
 
+- **Integration suite drives the public `Client` (qfg-2agi.31).** The
+  generated `internal/fixtures` tests now call the typed getters,
+  `FeatureIsOn`, `WithGlobalContext` / `WithContext` and the per-call context
+  exactly as a customer does, and assert telemetry on the bytes the real
+  client flushes on `Close()`. The test-only config loader, evaluator
+  (`internal/eval`) and resolver (`internal/resolver`, with its duplicate
+  error sentinels) are deleted. A planted bug in the duration getter,
+  `FeatureIsOn`, default handling, `WithGlobalContext`, the telemetry reason
+  rule, confidential redaction or error propagation now fails the suite. No
+  behaviour change.
 - **Pin the context-merge rule (qfg-2agi.38).** New tests with disjoint
   attributes in the same named context prove that a newer tier's named
   context replaces the whole same-named context and that contexts it does not

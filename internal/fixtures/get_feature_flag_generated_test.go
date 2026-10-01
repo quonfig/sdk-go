@@ -7,26 +7,27 @@ package fixtures
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // get returns the underlying value for a feature flag
 func TestGetFeatureFlag_GetReturnsTheUnderlyingValueForAFeatureFlag(t *testing.T) {
-	cfg := mustLookupConfig(t, "feature-flag.integer")
-	ctx := buildContextFromMaps(nil, nil, nil)
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertIntValue(t, match, 3)
+	c := mustPublicClient(t)
+	got, ok, err := c.GetIntValue("feature-flag.integer", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "feature-flag.integer")
+	want := int64(3)
+	assert.Equal(t, want, got)
 }
 
 // get returns the underlying value for a feature flag that matches the highest precedent rule
 func TestGetFeatureFlag_GetReturnsTheUnderlyingValueForAFeatureFlagThatMatchesTheHighestPrecedentRule(t *testing.T) {
-	cfg := mustLookupConfig(t, "feature-flag.integer")
-	ctx := buildContextFromMaps(nil, nil, map[string]map[string]interface{}{"user": {"key": "michael"}})
-	match, err := evaluateAndResolve(t, cfg, ctx)
-	if err != nil {
-		t.Fatalf("resolver error: %v", err)
-	}
-	assertIntValue(t, match, 5)
+	c := mustPublicClient(t)
+	got, ok, err := c.GetIntValue("feature-flag.integer", contextSet(map[string]map[string]interface{}{"user": {"key": "michael"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "feature-flag.integer")
+	want := int64(5)
+	assert.Equal(t, want, got)
 }
