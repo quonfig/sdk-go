@@ -2,7 +2,7 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
-## Unreleased
+## 1.5.0 - 2026-10-02
 
 ### Tests
 
