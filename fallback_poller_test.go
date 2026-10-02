@@ -173,6 +173,10 @@ func TestFallbackPollerDisengagesOnReconnect(t *testing.T) {
 
 	waitFor(t, 500*time.Millisecond, func() bool { return !p.Active() },
 		"poller never disengaged after reconnect")
+	// Run clears `active` before invoking OnDisengage, so Active()==false can
+	// be observed before the callback has fired. Wait for the callback itself.
+	waitFor(t, 500*time.Millisecond, func() bool { return disengageCount.Load() >= 1 },
+		"OnDisengage callback never fired after reconnect")
 
 	if got := disengageCount.Load(); got != 1 {
 		t.Errorf("expected exactly 1 disengage callback, got %d", got)
