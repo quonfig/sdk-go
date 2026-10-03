@@ -82,6 +82,36 @@ func TestGetWeightedValues_EvenSplitOnesServesSecondVariantAtHighHashFraction2(t
 	assert.Equal(t, want, got)
 }
 
+// non-ascii tracking_id emoji hashes utf-8 bytes
+func TestGetWeightedValues_NonAsciiTrackingIdEmojiHashesUtf8Bytes(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("feature-flag.weighted.even-split-ones", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "🚀-rocket"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "feature-flag.weighted.even-split-ones")
+	want := "a"
+	assert.Equal(t, want, got)
+}
+
+// non-ascii tracking_id latin hashes utf-8 bytes
+func TestGetWeightedValues_NonAsciiTrackingIdLatinHashesUtf8Bytes(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("feature-flag.weighted.even-split-ones", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "münchen-7"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "feature-flag.weighted.even-split-ones")
+	want := "a"
+	assert.Equal(t, want, got)
+}
+
+// non-ascii tracking_id cjk hashes utf-8 bytes
+func TestGetWeightedValues_NonAsciiTrackingIdCjkHashesUtf8Bytes(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("feature-flag.weighted.even-split-ones", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "ユーザー1"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "feature-flag.weighted.even-split-ones")
+	want := "b"
+	assert.Equal(t, want, got)
+}
+
 // non-standard sum still serves normalized true bucket
 func TestGetWeightedValues_NonStandardSumStillServesNormalizedTrueBucket(t *testing.T) {
 	c := mustPublicClient(t)
