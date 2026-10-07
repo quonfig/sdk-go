@@ -114,3 +114,20 @@ func TestSetNamedContext(t *testing.T) {
 		t.Errorf("expected device.os=linux, got %v", val)
 	}
 }
+
+// The zero value of ContextSet must be usable, as Go convention expects
+// (qfg-goi1.2.4 item 7). Before the fix both writers panicked with
+// "assignment to entry in nil map".
+func TestContextSetZeroValueIsUsable(t *testing.T) {
+	var cs ContextSet
+	cs.WithNamedContextValues("user", map[string]interface{}{"email": "a@b.c"})
+	if v, ok := cs.GetContextValue("user.email"); !ok || v != "a@b.c" {
+		t.Fatalf("GetContextValue(user.email) = %v, %v; want a@b.c, true", v, ok)
+	}
+
+	var cs2 ContextSet
+	cs2.SetNamedContext(&NamedContext{Name: "team", Data: map[string]interface{}{"id": 7}})
+	if v, ok := cs2.GetContextValue("team.id"); !ok || v != 7 {
+		t.Fatalf("GetContextValue(team.id) = %v, %v; want 7, true", v, ok)
+	}
+}

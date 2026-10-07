@@ -53,6 +53,10 @@ exported API is removed.
   (`unexpected status 401 from ...: <body>`), so a large proxy error page
   ended up in every getter error and log line. The body is now read through a
   1 KiB limit and trimmed of surrounding whitespace.
+- **The zero value of `ContextSet` is usable (qfg-goi1.2.4).** `var cs
+  quonfig.ContextSet; cs.WithNamedContextValues(...)` (or `SetNamedContext`)
+  panicked with `assignment to entry in nil map`. Both writers now create the
+  map on first use. `NewContextSet` is unchanged.
 
 ### Tests
 

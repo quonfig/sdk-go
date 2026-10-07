@@ -22,6 +22,9 @@ func NewContextSet() *ContextSet {
 
 // WithNamedContextValues adds or replaces a named context with the given values, returning the ContextSet for chaining.
 func (cs *ContextSet) WithNamedContextValues(name string, values map[string]interface{}) *ContextSet {
+	if cs.data == nil {
+		cs.data = make(map[string]*NamedContext)
+	}
 	cs.data[name] = &NamedContext{
 		Name: name,
 		Data: values,
@@ -31,6 +34,9 @@ func (cs *ContextSet) WithNamedContextValues(name string, values map[string]inte
 
 // SetNamedContext adds or replaces a named context.
 func (cs *ContextSet) SetNamedContext(nc *NamedContext) {
+	if cs.data == nil {
+		cs.data = make(map[string]*NamedContext)
+	}
 	cs.data[nc.Name] = nc
 }
 
