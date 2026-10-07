@@ -91,6 +91,21 @@ func (a *ContextShapeAggregator) GetAndClear() *TelemetryEvent {
 	return event
 }
 
+// ShapeValue returns a stand-in for v with the same inferFieldType, for
+// recording a context in shapes-only mode. It never shares memory with v (so
+// the caller may keep writing to its own maps and slices), and it never
+// reflects on v or calls v's methods.
+func ShapeValue(v interface{}) interface{} {
+	switch v.(type) {
+	case bool, int, int32, int64, float32, float64:
+		return v
+	case []string, []interface{}:
+		return []interface{}(nil)
+	default:
+		return ""
+	}
+}
+
 // inferFieldType returns the telemetry field type code for a value.
 func inferFieldType(v interface{}) int {
 	switch v.(type) {

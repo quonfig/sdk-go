@@ -164,17 +164,18 @@ func TestContextSetToTelemetryData_CopiesScalarSlices(t *testing.T) {
 		}
 	}
 
+	// The full converted context, dropped keys included, reaches the example
+	// aggregator as one reportable example.
 	agg := telemetry.NewExampleContextAggregator()
-	agg.Record(telemetry.ContextData{Contexts: map[string]map[string]interface{}{
-		"user": {"key": props["key"], "ids": props["ids"]},
-	}})
+	agg.Record(data)
 	ev := agg.GetAndClear()
 	if ev == nil || ev.ExampleContexts == nil || len(ev.ExampleContexts.Examples) != 1 {
 		t.Fatalf("example context was discarded: %#v", ev)
 	}
 	values := ev.ExampleContexts.Examples[0].ContextSet.Contexts[0].Values
-	if got, _ := json.Marshal(values); string(got) != `{"ids":[1,2],"key":"`+hex.EncodeToString(id[:])+`"}` {
-		t.Errorf("example context values = %s", got)
+	want := `{"bytes":"aGk=","i64s":[3,4],"ids":[1,2],"key":"` + hex.EncodeToString(id[:]) + `","nil":null}`
+	if got, _ := json.Marshal(values); string(got) != want {
+		t.Errorf("example context values = %s, want %s", got, want)
 	}
 }
 
@@ -256,4 +257,120 @@ func TestTelemetryNestedContextMutationDoesNotRace(t *testing.T) {
 		}(w)
 	}
 	wg.Wait()
+}
+
+// telemetryTestNullable mirrors google/uuid's uuid.NullUUID: MarshalJSON
+// returns null when the value is not set, and MarshalText returns "".
+type telemetryTestNullable struct {
+	ID    telemetryTestUUID
+	Valid bool
+}
+
+func (n telemetryTestNullable) MarshalJSON() ([]byte, error) {
+	if !n.Valid {
+		return []byte("null"), nil
+	}
+	return json.Marshal(n.ID)
+}
+
+func (n telemetryTestNullable) MarshalText() ([]byte, error) {
+	if !n.Valid {
+		return []byte{}, nil
+	}
+	return n.ID.MarshalText()
+}
+
+// json.Marshal (the v1.5.0 flush) sends null for a MarshalJSON that returns
+// null, so telemetry must record nil, not the empty string.
+func TestContextSetToTelemetryData_MarshalJSONNullStaysNull(t *testing.T) {
+	cs := NewContextSet().WithNamedContextValues("user", map[string]interface{}{
+		"key":   "u-1",
+		"unset": telemetryTestNullable{},
+		"set":   telemetryTestNullable{ID: telemetryTestUUID{0xab}, Valid: true},
+	})
+
+	props := contextSetToTelemetryData(cs).Contexts["user"]
+	if got, ok := props["unset"]; !ok || got != nil {
+		t.Errorf("unset = %#v (present %v), want nil (JSON null)", got, ok)
+	}
+	want := telemetryTestUUID{0xab}
+	if got := props["set"]; got != hex.EncodeToString(want[:]) {
+		t.Errorf("set = %#v, want the MarshalJSON string", got)
+	}
+}
+
+// telemetryTestPanicMarshaler panics if anything renders it. With example
+// contexts off, v1.5.0 never rendered a context value, so recording a context
+// must not run the value's MarshalText or MarshalJSON.
+type telemetryTestPanicMarshaler [4]byte
+
+func (telemetryTestPanicMarshaler) MarshalText() ([]byte, error) {
+	panic("telemetry rendered a context value with example contexts off")
+}
+
+func TestTelemetrySubmitter_RecordContextRendersNothingWithoutExampleContexts(t *testing.T) {
+	for _, mode := range []ContextTelemetryMode{ContextTelemetryNone, ContextTelemetryShapes} {
+		t.Run("mode="+string(mode), func(t *testing.T) {
+			ts := newTelemetrySubmitter(Options{
+				APIKey:                     "test-backend-key",
+				CollectEvaluationSummaries: true,
+				ContextTelemetryMode:       mode,
+			})
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("RecordContext panicked on the evaluation path: %v", r)
+				}
+			}()
+			ts.RecordContext(NewContextSet().WithNamedContextValues("user", map[string]interface{}{
+				"key": "u-1",
+				"id":  telemetryTestPanicMarshaler{1},
+			}))
+		})
+	}
+}
+
+// In shapes_only mode, the shapes recorded from the converted context must be
+// exactly the ones v1.5.0 recorded from the caller's own values, for every
+// kind (v1.5.0 dropped nothing from shapes), and the converted context must
+// not hold the caller's nested objects.
+func TestContextSetToTelemetryShapes_MatchesV150Shapes(t *testing.T) {
+	nested := map[string]interface{}{"a": 1}
+	values := map[string]interface{}{
+		"key":   "u-1",
+		"n":     1,
+		"i32":   int32(2),
+		"i64":   int64(3),
+		"u8":    uint8(4),
+		"f32":   float32(1.5),
+		"f64":   2.5,
+		"b":     true,
+		"nil":   nil,
+		"time":  time.Unix(0, 0),
+		"strs":  []string{"a"},
+		"list":  []interface{}{1},
+		"meta":  nested,
+		"tags":  map[string]string{"t": "1"},
+		"ids":   []int{1, 2},
+		"uuid":  telemetryTestUUID{1},
+		"ptr":   &telemetryTestStruct{},
+		"st":    telemetryTestStruct{},
+		"panic": telemetryTestPanicMarshaler{},
+		"ch":    make(chan int),
+	}
+	cs := NewContextSet().WithNamedContextValues("user", values)
+
+	data := contextSetToTelemetryShapes(cs)
+
+	want := telemetry.NewContextShapeAggregator()
+	want.Record(telemetry.ContextData{Contexts: map[string]map[string]interface{}{"user": values}})
+	got := telemetry.NewContextShapeAggregator()
+	got.Record(data)
+	wantShapes, _ := json.Marshal(want.GetAndClear())
+	gotShapes, _ := json.Marshal(got.GetAndClear())
+	if string(gotShapes) != string(wantShapes) {
+		t.Errorf("shapes = %s, want the v1.5.0 shapes %s", gotShapes, wantShapes)
+	}
+	if m, ok := data.Contexts["user"]["meta"].(map[string]interface{}); ok && m != nil {
+		t.Errorf("meta = %#v: the shapes context must not hold the caller's map", m)
+	}
 }

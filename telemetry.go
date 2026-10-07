@@ -110,8 +110,16 @@ func (t *telemetrySubmitter) RecordContext(ctx *ContextSet) {
 		return
 	}
 
-	ctxData := contextSetToTelemetryData(ctx)
-	t.submitter.RecordContext(ctxData)
+	// Convert only as much as the context telemetry mode uses. With example
+	// contexts off, nothing renders a context value: v1.5.0 never ran a
+	// value's MarshalText/MarshalJSON in those modes, and this runs on every
+	// evaluation.
+	switch {
+	case t.submitter.ExampleContextsEnabled():
+		t.submitter.RecordContext(contextSetToTelemetryData(ctx))
+	case t.submitter.ContextShapesEnabled():
+		t.submitter.RecordContext(contextSetToTelemetryShapes(ctx))
+	}
 }
 
 // RecordHedgeFired records one config-fetch cycle whose hedge fired the
@@ -169,13 +177,31 @@ func contextSetToTelemetryData(ctx *ContextSet) telemetry.ContextData {
 	return telemetry.ContextData{Contexts: contexts}
 }
 
+// contextSetToTelemetryShapes converts a ContextSet for shapes_only context
+// telemetry. Each value is replaced by telemetry.ShapeValue, which has the same
+// inferred field type and shares nothing with the caller, so the shapes are
+// exactly the ones v1.5.0 recorded (no kind is dropped) and no value is
+// copied, reflected on or rendered.
+func contextSetToTelemetryShapes(ctx *ContextSet) telemetry.ContextData {
+	contexts := make(map[string]map[string]interface{}, len(ctx.data))
+	for name, nc := range ctx.data {
+		props := make(map[string]interface{}, len(nc.Data))
+		for k, v := range nc.Data {
+			props[k] = telemetry.ShapeValue(v)
+		}
+		contexts[name] = props
+	}
+	return telemetry.ContextData{Contexts: contexts}
+}
+
 // telemetryContextValue returns a copy of v that is safe to hand to the
 // telemetry goroutine, or ok=false when v is a kind telemetry drops. It
 // deep-copies JSON-shaped values like deepCopyJSONValue, but drops an unknown
 // reference kind (at any depth) instead of returning it as is, because here it
 // would still be the caller's object. It also copies slices of scalars and
 // renders TextMarshalers (see telemetryMarshalledValue); the user's
-// MarshalJSON/MarshalText therefore runs here, on the evaluating goroutine.
+// MarshalJSON/MarshalText therefore runs here, on the evaluating goroutine,
+// once per evaluation. Only periodic_example context telemetry calls it.
 func telemetryContextValue(v interface{}) (interface{}, bool) {
 	switch t := v.(type) {
 	case nil, string, bool,
@@ -238,8 +264,8 @@ func telemetryContextValue(v interface{}) (interface{}, bool) {
 // shares nothing with the caller. It follows json.Marshal, which is what the
 // flush would have run: MarshalJSON wins over MarshalText. A JSON string
 // becomes a Go string (so a uuid key still identifies an example context);
-// any other JSON becomes a json.RawMessage, which marshals verbatim. A marshal
-// error drops the value.
+// JSON null becomes nil; any other JSON becomes a json.RawMessage, which
+// marshals verbatim. A marshal error drops the value.
 func telemetryMarshalledValue(v interface{}) (interface{}, bool) {
 	if _, ok := v.(json.Marshaler); !ok {
 		text, err := v.(encoding.TextMarshaler).MarshalText()
@@ -251,6 +277,10 @@ func telemetryMarshalledValue(v interface{}) (interface{}, bool) {
 	out, err := json.Marshal(v)
 	if err != nil {
 		return nil, false
+	}
+	if string(out) == "null" {
+		// json.Unmarshal("null", &s) succeeds and leaves s == "".
+		return nil, true
 	}
 	var s string
 	if json.Unmarshal(out, &s) == nil {

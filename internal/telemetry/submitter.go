@@ -484,6 +484,18 @@ func (s *Submitter) RecordResolvedFrom(sourceIndex int) {
 	}
 }
 
+// ContextShapesEnabled reports whether recorded contexts feed context shapes
+// (shapes_only or periodic_example mode) and telemetry is still sending.
+func (s *Submitter) ContextShapesEnabled() bool {
+	return s.shapeAggregator != nil && !s.tq.isDisabled()
+}
+
+// ExampleContextsEnabled reports whether recorded contexts feed example
+// contexts (periodic_example mode) and telemetry is still sending.
+func (s *Submitter) ExampleContextsEnabled() bool {
+	return s.exampleAggregator != nil && !s.tq.isDisabled()
+}
+
 // RecordContext enqueues a context for shape and example aggregation.
 func (s *Submitter) RecordContext(ctx ContextData) {
 	if s.shapeAggregator == nil && s.exampleAggregator == nil {
