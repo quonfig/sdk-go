@@ -3,6 +3,7 @@ package quonfig
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -93,5 +94,42 @@ func TestEnvVar_ValidDurationStillReads(t *testing.T) {
 	got, ok, err := envVarClient(t, ValueTypeDuration, "PT1.5S").GetDurationValue("env.cfg", nil)
 	if err != nil || !ok || got.Milliseconds() != 1500 {
 		t.Fatalf("GetDurationValue(PT1.5S) = %v ok=%v err=%v, want 1.5s", got, ok, err)
+	}
+}
+
+// An ENV_VAR value that cannot be coerced must not appear in the error text
+// (qfg-goi1.2.4 item 2): env vars carry secrets, and the error reaches getter
+// callers, logs and OpenFeature error events. That covers the outer message
+// and the wrapped parse error (strconv's NumError quotes its input, and so do
+// the duration parser and some JSON syntax errors). The message still names
+// the env var, the target type and the config key.
+func TestEnvVar_CoercionErrorDoesNotEchoValue(t *testing.T) {
+	const secret = "s3cr3t-xyz"
+	cases := []struct {
+		valueType ValueType
+		env       string
+		get       func(c *Client) error
+	}{
+		{ValueTypeInt, secret, func(c *Client) error { _, _, err := c.GetIntValue("env.cfg", nil); return err }},
+		{ValueTypeInt, "99999999999999999999" + secret, func(c *Client) error { _, _, err := c.GetIntValue("env.cfg", nil); return err }},
+		{ValueTypeDouble, secret, func(c *Client) error { _, _, err := c.GetFloatValue("env.cfg", nil); return err }},
+		{ValueTypeBool, secret, func(c *Client) error { _, _, err := c.GetBoolValue("env.cfg", nil); return err }},
+		{ValueTypeJSON, `{"k":"` + secret + `"`, func(c *Client) error { _, _, err := c.GetJSONValue("env.cfg", nil); return err }},
+		{ValueTypeDuration, "P" + secret, func(c *Client) error { _, _, err := c.GetDurationValue("env.cfg", nil); return err }},
+	}
+	for _, c := range cases {
+		err := c.get(envVarClient(t, c.valueType, c.env))
+		if !errors.Is(err, ErrUnableToCoerce) {
+			t.Fatalf("%s: err=%v, want ErrUnableToCoerce", c.valueType, err)
+		}
+		msg := err.Error()
+		if strings.Contains(msg, secret) {
+			t.Errorf("%s: error echoes the env value: %s", c.valueType, msg)
+		}
+		for _, want := range []string{"QF_ENV", "env.cfg", string(c.valueType)} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("%s: error %q does not mention %q", c.valueType, msg, want)
+			}
+		}
 	}
 }

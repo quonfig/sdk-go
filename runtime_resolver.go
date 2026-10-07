@@ -2,6 +2,7 @@ package quonfig
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -62,7 +63,10 @@ func (r *runtimeResolver) resolveProvided(val *Value, configKey string, valueTyp
 
 	coerced, err := coerceValue(envValue, valueType)
 	if err != nil {
-		return nil, fmt.Errorf("%w: cannot convert %q to %s for config %q: %v", ErrUnableToCoerce, envValue, valueType, configKey, err)
+		// Never echo envValue (or a parse error that quotes it): env vars carry
+		// secrets, and this error reaches getter callers, logs and OpenFeature
+		// error events. Name the variable, the type and the config instead.
+		return nil, fmt.Errorf("%w: environment variable %q cannot be converted to %s for config %q: %v", ErrUnableToCoerce, provided.Lookup, valueType, configKey, err)
 	}
 
 	return &Value{
@@ -111,6 +115,8 @@ func (r *runtimeResolver) resolveDecryption(val *Value, configKey, envID string,
 	}, nil
 }
 
+// coerceValue converts an env var string to valueType. Its errors give a
+// reason only and never contain value (see resolveProvided).
 func coerceValue(value string, valueType ValueType) (interface{}, error) {
 	switch valueType {
 	case ValueTypeString, "":
@@ -118,19 +124,19 @@ func coerceValue(value string, valueType ValueType) (interface{}, error) {
 	case ValueTypeInt:
 		parsed, err := strconv.ParseInt(value, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("parsing int: %w", err)
+			return nil, fmt.Errorf("parsing int: %w", numErrReason(err))
 		}
 		return parsed, nil
 	case ValueTypeDouble:
 		parsed, err := strconv.ParseFloat(value, 64)
 		if err != nil {
-			return nil, fmt.Errorf("parsing double: %w", err)
+			return nil, fmt.Errorf("parsing double: %w", numErrReason(err))
 		}
 		return parsed, nil
 	case ValueTypeBool:
 		parsed, err := strconv.ParseBool(value)
 		if err != nil {
-			return nil, fmt.Errorf("parsing bool: %w", err)
+			return nil, fmt.Errorf("parsing bool: %w", numErrReason(err))
 		}
 		return parsed, nil
 	case ValueTypeStringList:
@@ -146,19 +152,31 @@ func coerceValue(value string, valueType ValueType) (interface{}, error) {
 	case ValueTypeJSON:
 		var parsed interface{}
 		if err := json.Unmarshal([]byte(value), &parsed); err != nil {
-			return nil, fmt.Errorf("parsing json: %w", err)
+			// A json.SyntaxError can quote a character of the input.
+			return nil, errors.New("parsing json: not valid JSON")
 		}
 		return parsed, nil
 	case ValueTypeDuration:
 		// Validated here so a malformed env var fails at resolution like any
 		// other uncoercible value; the ISO string is kept for the getter.
 		if _, err := ParseISO8601Duration(value); err != nil {
-			return nil, fmt.Errorf("parsing duration: %w", err)
+			// ParseISO8601Duration's error quotes its input.
+			return nil, errors.New("parsing duration: not a valid ISO 8601 duration")
 		}
 		return value, nil
 	default:
 		return value, nil
 	}
+}
+
+// numErrReason strips a *strconv.NumError down to its reason (ErrSyntax or
+// ErrRange): NumError.Error() quotes the input it failed to parse.
+func numErrReason(err error) error {
+	var ne *strconv.NumError
+	if errors.As(err, &ne) {
+		return ne.Err
+	}
+	return err
 }
 
 func valueTypeToType(valueType ValueType) ValueType {

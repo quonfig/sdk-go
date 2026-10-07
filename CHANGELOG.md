@@ -20,6 +20,15 @@ exported API is removed.
   deep-copied at record time. Other reference kinds (custom map types, structs,
   pointers) are left out of telemetry (context shapes and example contexts).
   Evaluation is unchanged.
+- **ENV_VAR coercion errors no longer contain the env var's value
+  (qfg-goi1.2.4).** When an ENV_VAR-provided value could not be converted to
+  the config's type, the error quoted the raw value twice: in the message and
+  inside the wrapped parse error (`strconv.ParseInt: parsing "..."`, and the
+  duration parser's message). Env vars often hold secrets, and this error
+  reaches getter callers, logs and OpenFeature error events. The message now
+  names the env var, the target type and the config key, plus a reason only
+  (`invalid syntax`, `value out of range`, `not valid JSON`, `not a valid ISO
+  8601 duration`). `errors.Is(err, ErrUnableToCoerce)` still holds.
 
 ### Tests
 
