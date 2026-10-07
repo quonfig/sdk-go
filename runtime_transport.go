@@ -45,10 +45,6 @@ type runtimeTransport struct {
 	// response ETag back after — the network wait happens with no lock held.
 	etagMu sync.Mutex
 	etags  []string
-	// fetchTimeout bounds a single per-URL attempt on the SEQUENTIAL FetchConfigs
-	// path (unchanged semantics; default DefaultConfigFetchTimeout). The hedged
-	// path uses hedgeAbort instead. Set once at construction; read-only thereafter.
-	fetchTimeout time.Duration
 	// hedgeDelay is how long the hedge waits for the primary leg before ALSO
 	// firing the secondary in parallel (it does not cancel the primary). A primary
 	// that succeeds or errors before this fires the secondary immediately on error
@@ -141,29 +137,6 @@ func (c *runtimeTransport) streamURLFor(i int) string {
 		return ""
 	}
 	return c.streamURLs[i] + "/api/v2/sse/config"
-}
-
-// FetchConfigs tries each base URL in order, returning the first successful
-// result. This is the SEQUENTIAL path, retained for any non-hedged caller; the
-// init/refresh install path uses FetchConfigsHedged.
-func (c *runtimeTransport) FetchConfigs(ctx context.Context) (*fetchResult, error) {
-	timeout := c.fetchTimeout
-	if timeout <= 0 {
-		timeout = DefaultConfigFetchTimeout
-	}
-	var lastErr error
-	for i := range c.baseURLs {
-		lr := c.fetchFromURLAt(ctx, i, timeout)
-		if lr.Err != nil {
-			lastErr = lr.Err
-			continue
-		}
-		return lr.Res, nil
-	}
-	if lastErr != nil {
-		return nil, lastErr
-	}
-	return nil, fmt.Errorf("all API URLs failed")
 }
 
 // FetchConfigsHedged fires the primary leg (index 0) and, if it has not settled

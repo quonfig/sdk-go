@@ -58,6 +58,16 @@ exported API is removed.
   panicked with `assignment to entry in nil map`. Both writers now create the
   map on first use. `NewContextSet` is unchanged.
 
+### Removed
+
+- **Dead code (qfg-goi1.2.4).** Deleted the unused `internal/transport`
+  package (nothing imported it; it still had the old store-ETag-before-decode
+  bug and accounted for most `govulncheck` call traces) and the unexported
+  sequential `runtimeTransport.FetchConfigs` path with its `fetchTimeout`
+  field, whose only caller was a test. Init and refresh have used the hedged
+  fetch since 1.x. No exported API changes; `ConfigEvaluator` and
+  `ValueResolver` stay exported until the next major.
+
 ### Tests
 
 - **Chaos `server_metric(...)` is now SKIPPED with a reason, not a silent 0

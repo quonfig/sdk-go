@@ -139,10 +139,9 @@ func NewClient(opts ...Option) (*Client, error) {
 	if o.DataDir == "" && o.APIKey != "" {
 		transport = newRuntimeTransportWithStreamOverride(o.APIURLs, o.APIKey, o.HTTPClient, o.testStreamURLOverride)
 		// Per-leg config-fetch deadlines. Set once, before any goroutine reads the
-		// transport, so they stay effectively immutable. fetchTimeout bounds the
-		// sequential FetchConfigs path (qfg-7h5d.1.4); hedgeDelay/hedgeAbort bound
-		// the parallel hedge that the init/refresh install path uses (qfg-7h5d.1.14).
-		transport.fetchTimeout = o.ConfigFetchTimeout
+		// transport, so they stay effectively immutable. hedgeDelay/hedgeAbort
+		// bound the parallel hedge that the init/refresh install path uses
+		// (qfg-7h5d.1.14).
 		transport.hedgeDelay = o.ConfigFetchHedgeDelay
 		transport.hedgeAbort = o.ConfigFetchHedgeAbort
 		transport.logger = o.Logger
