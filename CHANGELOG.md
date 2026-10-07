@@ -48,6 +48,11 @@ exported API is removed.
   `recover`, unlike `OnConfigUpdate`. Each call is now recovered and logged at
   ERROR with the panic value and stack, and later state edges are still
   delivered.
+- **Config-fetch error bodies are capped at 1 KiB (qfg-goi1.2.4).** A non-200
+  response body was read in full and embedded in the error that getters return
+  (`unexpected status 401 from ...: <body>`), so a large proxy error page
+  ended up in every getter error and log line. The body is now read through a
+  1 KiB limit and trimmed of surrounding whitespace.
 
 ### Tests
 

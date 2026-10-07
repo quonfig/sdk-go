@@ -251,6 +251,10 @@ func (c *runtimeTransport) FetchConfigsHedged(ctx context.Context, hedgeDelay, h
 // bounded by its own abort deadline. It fully reads/decodes the body before
 // returning, so cancelling on return is safe. The returned legResult.Res
 // (when non-nil) carries SourceIndex=i.
+// maxErrorBodyBytes caps how much of a non-200 config-fetch body is read
+// into the returned error.
+const maxErrorBodyBytes = 1024
+
 func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time.Duration) legResult {
 	if i < 0 || i >= len(c.baseURLs) {
 		return legResult{Err: fmt.Errorf("leg index %d out of range", i)}
@@ -290,8 +294,10 @@ func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return legResult{Err: fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, baseURL, string(body))}
+		// The body ends up in the error getters return and in logs, so cap
+		// it: a proxy error page must not ride along in full.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+		return legResult{Err: fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, baseURL, strings.TrimSpace(string(body)))}
 	}
 
 	envelope, err := decodeEnvelope(json.NewDecoder(resp.Body).Decode, c.logger)
