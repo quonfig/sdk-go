@@ -374,3 +374,88 @@ func TestContextSetToTelemetryShapes_MatchesV150Shapes(t *testing.T) {
 		t.Errorf("meta = %#v: the shapes context must not hold the caller's map", m)
 	}
 }
+
+// A context value that contains itself must not kill the process
+// (qfg-goi1.2.46). The deep copy above recursed with no cycle guard, so a
+// self-referential map or slice recursed until Go's stack limit: "fatal error:
+// stack overflow", which resolveDetail's recover cannot catch. v1.5.0
+// shallow-copied the context and json.Marshal reported the cycle as an ordinary
+// error at flush. The copy drops the edge that closes the cycle and keeps the
+// rest of the value.
+func TestTelemetryCyclicContextValueSurvivesEvaluation(t *testing.T) {
+	t.Setenv("QUONFIG_BACKEND_SDK_KEY", "")
+	rec := newTelemetryPostRecorder(t)
+
+	client, err := NewClient(
+		WithSdkKey("test-backend-key"),
+		WithDataDir(telemetryWorkspaceFixture(t)),
+		WithEnvironment("Production"),
+		WithTelemetryURL(rec.server.URL),
+		WithContextTelemetryMode(ContextTelemetryPeriodicExample),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer client.Close()
+
+	m := map[string]interface{}{"plan": "pro"}
+	m["self"] = m
+	ctx := NewContextSet().WithNamedContextValues("user", map[string]interface{}{"key": "u1", "blob": m})
+	if _, _, err := client.GetStringValue("welcome-message", ctx); err != nil {
+		t.Fatalf("GetStringValue: %v", err)
+	}
+}
+
+func TestContextSetToTelemetryData_DropsCyclicEdges(t *testing.T) {
+	m := map[string]interface{}{"plan": "pro"}
+	m["self"] = m
+	m["list"] = []interface{}{"a", m}
+
+	s := []interface{}{"x", nil}
+	s[1] = s
+
+	// A map that refers to itself many times: dropping only on the current
+	// path keeps this linear instead of exponential.
+	wide := map[string]interface{}{}
+	for i := 0; i < 64; i++ {
+		wide[string(rune('a'+i%26))+string(rune('a'+i/26))] = wide
+	}
+
+	// The same acyclic map reached twice is not a cycle and is kept both times.
+	shared := map[string]interface{}{"k": "v"}
+
+	cs := NewContextSet().WithNamedContextValues("user", map[string]interface{}{
+		"key":    "u1",
+		"blob":   m,
+		"slice":  s,
+		"wide":   wide,
+		"shared": []interface{}{shared, shared},
+	})
+
+	data := contextSetToTelemetryData(cs)
+	if _, err := json.Marshal(data.Contexts); err != nil {
+		t.Fatalf("json.Marshal(copy): %v", err)
+	}
+
+	props := data.Contexts["user"]
+	blob, _ := props["blob"].(map[string]interface{})
+	if blob["plan"] != "pro" {
+		t.Errorf("blob.plan = %v, want pro", blob["plan"])
+	}
+	if _, ok := blob["self"]; ok {
+		t.Errorf("blob.self kept, want the cyclic edge dropped: %#v", blob["self"])
+	}
+	if l, _ := blob["list"].([]interface{}); len(l) != 1 || l[0] != "a" {
+		t.Errorf("blob.list = %#v, want [a]", blob["list"])
+	}
+	if sl, _ := props["slice"].([]interface{}); len(sl) != 1 || sl[0] != "x" {
+		t.Errorf("slice = %#v, want [x]", props["slice"])
+	}
+	if w, _ := props["wide"].(map[string]interface{}); len(w) != 0 {
+		t.Errorf("wide = %#v, want empty map", props["wide"])
+	}
+	sh, _ := props["shared"].([]interface{})
+	if len(sh) != 2 || sh[0].(map[string]interface{})["k"] != "v" || sh[1].(map[string]interface{})["k"] != "v" {
+		t.Errorf("shared = %#v, want both copies of {k:v}", props["shared"])
+	}
+}
