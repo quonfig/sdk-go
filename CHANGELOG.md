@@ -19,6 +19,14 @@ Semver: none. Test harness and CI only; no change to the published module.
   are still enforced. Each chaos run ends with a "skipped expressions" tally.
   An `sdkMetric` name the probe does not implement now fails loudly instead of
   comparing against 0.
+- **De-flaked `TestDataDirAutoReloadDebouncesBursts` (qfg-a595).** It wrote
+  five non-atomic replaces 5ms apart against an 80ms debounce, so on a starved
+  `-race` runner a descheduled writer could split the burst into two reloads
+  (one of them reading a truncated file) and fail with "got 2 debounced
+  callbacks, want 1". The test now stages the five versions in a hidden
+  directory and renames them into place back to back (~1ms) against a 1s
+  debounce. The exactly-one-callback assertion is unchanged; no SDK code
+  changed.
 
 ### CI
 
