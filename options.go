@@ -61,12 +61,11 @@ type Options struct {
 	InitTimeout   time.Duration
 	OnInitFailure OnInitFailure
 
-	// ConfigFetchTimeout bounds a single per-URL config-fetch attempt on the
-	// SEQUENTIAL fetch path. Zero means use DefaultConfigFetchTimeout (~3s). This
-	// is a per-attempt deadline on the HTTP config path only; it does not affect
-	// the long-lived SSE stream. The hedged init/refresh path uses
-	// ConfigFetchHedgeDelay / ConfigFetchHedgeAbort instead, so this option's
-	// default and semantics are unchanged by the hedge.
+	// ConfigFetchTimeout is set by WithConfigFetchTimeout and read by nothing:
+	// the hedged init/refresh fetch uses ConfigFetchHedgeDelay /
+	// ConfigFetchHedgeAbort.
+	//
+	// Deprecated: no effect since the hedged fetch; use ConfigFetchHedgeAbort.
 	ConfigFetchTimeout time.Duration
 
 	// ConfigFetchHedgeDelay is how long the hedged config-fetch waits for the
@@ -451,22 +450,14 @@ func WithInitTimeout(d time.Duration) Option {
 	}
 }
 
-// WithConfigFetchTimeout sets the per-URL deadline for a single config-fetch
-// attempt. It applies uniformly to the initial fetch and to every
-// fallback-poller fetch. Each base URL in the failover list gets its own
-// timeout, so a hung primary aborts after this duration and the secondary is
-// tried within the remaining InitTimeout budget.
+// WithConfigFetchTimeout used to set the per-URL deadline of the sequential
+// config fetch. Init and refresh now use the hedged fetch, which never reads
+// this value, so the option has no effect. It is kept so existing callers
+// still compile; it still rejects a non-positive duration.
 //
-// Additive and backward-compatible: the default (DefaultConfigFetchTimeout,
-// ~3s) already makes a hung upstream fail over, so existing callers need not
-// set this. Pass a larger value only if a healthy upstream legitimately takes
-// longer than 3s to answer a config fetch; pass a smaller value to fail over
-// even faster. Must be positive.
-//
-// All-URLs-fail behavior is unchanged: if every leg times out (or otherwise
-// errors), the initial fetch surfaces that failure through the configured
-// OnInitFailure policy — ReturnError makes getters return
-// ErrInitializationTimeout, ReturnZeroValue makes them return zero values.
+// Deprecated: no effect since the hedged fetch; use WithConfigFetchHedgeAbort
+// to bound a single config-fetch leg (and WithConfigFetchHedgeDelay for when
+// the secondary is tried).
 func WithConfigFetchTimeout(d time.Duration) Option {
 	return func(o *Options) error {
 		if d <= 0 {

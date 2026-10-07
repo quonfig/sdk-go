@@ -58,6 +58,18 @@ exported API is removed.
   panicked with `assignment to entry in nil map`. Both writers now create the
   map on first use. `NewContextSet` is unchanged.
 
+### Deprecated
+
+- **`WithConfigFetchTimeout` (qfg-goi1.2.4).** It has had no effect since init
+  and refresh moved to the hedged fetch: it set the deadline of the sequential
+  fetch path, which nothing called (and which is now deleted, see Removed).
+  Its godoc described a per-URL deadline that did not exist. It now carries a
+  `Deprecated:` notice pointing at `WithConfigFetchHedgeAbort` (and
+  `WithConfigFetchHedgeDelay`). The matching `Options.ConfigFetchTimeout` field
+  and `DefaultConfigFetchTimeout` constant are marked deprecated too. All
+  three stay, so existing code still compiles; staticcheck will flag uses
+  (SA1019).
+
 ### Removed
 
 - **Dead code (qfg-goi1.2.4).** Deleted the unused `internal/transport`

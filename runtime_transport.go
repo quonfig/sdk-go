@@ -67,13 +67,11 @@ type legResult struct {
 	Err error
 }
 
-// DefaultConfigFetchTimeout bounds one per-URL config-fetch attempt on the
-// SEQUENTIAL FetchConfigs path when no explicit WithConfigFetchTimeout is
-// supplied. ~3s is short enough that a hung primary fails over to the secondary
-// well inside a default 10s InitTimeout, yet long enough to tolerate a
-// slow-but-healthy upstream. This is a per-attempt deadline only — it does NOT
-// touch the long-lived SSE stream, which keeps its own 120s disconnect
-// threshold. The hedged config-fetch path uses hedgeDelay/hedgeAbort instead.
+// DefaultConfigFetchTimeout is the default of the ConfigFetchTimeout option,
+// which no fetch path reads any more.
+//
+// Deprecated: no effect since the hedged fetch; see
+// DefaultConfigFetchHedgeAbort.
 const DefaultConfigFetchTimeout = 3 * time.Second
 
 // DefaultConfigFetchHedgeDelay is how long the hedge waits for the primary leg
