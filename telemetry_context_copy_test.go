@@ -1,9 +1,13 @@
 package quonfig
 
 import (
+	"encoding/hex"
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/quonfig/sdk-go/internal/telemetry"
 )
 
 // Telemetry must not keep references to caller-owned nested context values
@@ -62,6 +66,53 @@ func TestContextSetToTelemetryData_DeepCopiesNestedValues(t *testing.T) {
 		if v, ok := props[k]; ok {
 			t.Errorf("%s = %#v: non-JSON reference kinds must be dropped from telemetry", k, v)
 		}
+	}
+}
+
+// telemetryTestUUID mirrors google/uuid's uuid.UUID: a [16]byte array with a
+// value-receiver MarshalText, which json.Marshal renders as a string.
+type telemetryTestUUID [16]byte
+
+func (u telemetryTestUUID) MarshalText() ([]byte, error) {
+	return []byte(hex.EncodeToString(u[:])), nil
+}
+
+// Value kinds are not shared with the caller, so they must survive the
+// telemetry copy (qfg-goi1.2.44). A uuid.UUID-style key was dropped, which made
+// the example context look key-less and discarded it entirely.
+func TestContextSetToTelemetryData_KeepsArraysAndTextMarshalers(t *testing.T) {
+	id := telemetryTestUUID{0xde, 0xad, 0xbe, 0xef}
+	cs := NewContextSet().WithNamedContextValues("user", map[string]interface{}{
+		"key":     id,
+		"ids":     [2]int{1, 2},
+		"idPtr":   &id,
+		"structs": [1]telemetryTestStruct{},
+	})
+
+	data := contextSetToTelemetryData(cs)
+
+	props := data.Contexts["user"]
+	if got, want := props["key"], hex.EncodeToString(id[:]); got != want {
+		t.Errorf("key = %#v, want %q (TextMarshaler pre-marshalled to a string)", got, want)
+	}
+	if got, _ := json.Marshal(props["ids"]); string(got) != "[1,2]" {
+		t.Errorf("ids = %#v (json %s), want [1,2]", props["ids"], got)
+	}
+	for _, k := range []string{"idPtr", "structs"} {
+		if v, ok := props[k]; ok {
+			t.Errorf("%s = %#v: pointers and arrays of non-scalars must stay dropped", k, v)
+		}
+	}
+
+	agg := telemetry.NewExampleContextAggregator()
+	agg.Record(data)
+	ev := agg.GetAndClear()
+	if ev == nil || ev.ExampleContexts == nil || len(ev.ExampleContexts.Examples) != 1 {
+		t.Fatalf("example context with a uuid key was discarded: %#v", ev)
+	}
+	values := ev.ExampleContexts.Examples[0].ContextSet.Contexts[0].Values
+	if got, _ := json.Marshal(values); string(got) != `{"ids":[1,2],"key":"`+hex.EncodeToString(id[:])+`"}` {
+		t.Errorf("example context values = %s", got)
 	}
 }
 

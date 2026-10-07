@@ -3,6 +3,7 @@ package quonfig
 import (
 	"crypto/md5"
 	"crypto/rand"
+	"encoding"
 	"encoding/hex"
 	"fmt"
 	"reflect"
@@ -146,8 +147,10 @@ func generateInstanceHash() string {
 // the submitter aggregates it on another goroutine and json.Marshals it at
 // flush time, so a caller write to a shared nested map after the call returned
 // would crash the process ("concurrent map iteration and map write"). Scalars
-// pass through, JSON-shaped values are deep-copied, and any other reference
-// kind (custom maps, structs, pointers) is left out of telemetry.
+// pass through, JSON-shaped values are deep-copied, encoding.TextMarshaler
+// values (uuid.UUID) become their text, arrays of scalars pass through, and
+// anything else (custom map and slice types, structs, pointers, channels,
+// funcs) is left out of telemetry.
 func contextSetToTelemetryData(ctx *ContextSet) telemetry.ContextData {
 	contexts := make(map[string]map[string]interface{}, len(ctx.data))
 	for name, nc := range ctx.data {
@@ -199,13 +202,34 @@ func telemetryContextValue(v interface{}) (interface{}, bool) {
 	case []string:
 		return deepCopyJSONValue(t), true
 	}
-	// Named scalar types (type Plan string) are values, so they are safe.
-	switch reflect.TypeOf(v).Kind() {
+	rt := reflect.TypeOf(v)
+	// A TextMarshaler (uuid.UUID, netip.Addr) is what json.Marshal would
+	// render as a string, so render it now: the string shares nothing with
+	// the caller. Pointers stay dropped, like every other pointer.
+	if tm, ok := v.(encoding.TextMarshaler); ok && rt.Kind() != reflect.Ptr {
+		text, err := tm.MarshalText()
+		if err != nil {
+			return nil, false
+		}
+		return string(text), true
+	}
+	// Named scalar types (type Plan string) are values, so they are safe, and
+	// so is an array of them: the interface holds its own copy of an array.
+	if isTelemetryScalarKind(rt.Kind()) ||
+		(rt.Kind() == reflect.Array && isTelemetryScalarKind(rt.Elem().Kind())) {
+		return v, true
+	}
+	return nil, false
+}
+
+// isTelemetryScalarKind reports whether k is a bool, string or numeric kind.
+func isTelemetryScalarKind(k reflect.Kind) bool {
+	switch k {
 	case reflect.String, reflect.Bool,
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Float32, reflect.Float64:
-		return v, true
+		return true
 	}
-	return nil, false
+	return false
 }

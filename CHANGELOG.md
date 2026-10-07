@@ -19,9 +19,15 @@ deprecated (semver 2.0.0 item 7). Ship as a patch if that rule is waived.
   on it. A caller that wrote to that map after the call returned crashed the
   process with `fatal error: concurrent map iteration and map write`. Nested
   `map[string]interface{}`, `[]interface{}` and `[]string` values are now
-  deep-copied at record time. Other reference kinds (custom map types, structs,
-  pointers) are left out of telemetry (context shapes and example contexts).
-  Evaluation is unchanged.
+  deep-copied at record time. Values that share nothing with the caller still
+  reach telemetry: scalars and named scalar types, `time.Time`, arrays of
+  scalars (`[2]int`), and `encoding.TextMarshaler` values such as
+  `uuid.UUID`, which are recorded as their text (qfg-goi1.2.44: a
+  `uuid.UUID` key is what makes an example context reportable). Everything
+  else is left out of telemetry (context shapes and example contexts): custom
+  map and slice types, structs, arrays of non-scalars, pointers (including
+  pointers to TextMarshalers), channels and funcs, plus any TextMarshaler
+  whose `MarshalText` returns an error. Evaluation is unchanged.
 - **ENV_VAR coercion errors no longer contain the env var's value
   (qfg-goi1.2.4).** When an ENV_VAR-provided value could not be converted to
   the config's type, the error quoted the raw value twice: in the message and
