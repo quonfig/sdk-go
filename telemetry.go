@@ -235,7 +235,7 @@ func telemetryContextValue(v interface{}) (interface{}, bool) {
 		return deepCopyJSONValue(t), true
 	}
 	rt := reflect.TypeOf(v)
-	if _, ok := v.(encoding.TextMarshaler); ok && rt.Kind() != reflect.Ptr {
+	if _, ok := v.(encoding.TextMarshaler); ok && rt.Kind() != reflect.Pointer {
 		return telemetryMarshalledValue(v)
 	}
 	switch {
