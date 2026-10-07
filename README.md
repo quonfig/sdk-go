@@ -207,6 +207,16 @@ reload per second than per save. Lower it only if you have measured that
 See the [open-source / local how-to](https://docs.quonfig.com/docs/how-tos/open-source-local)
 for the cross-SDK story (sdk-node, sdk-go, sdk-ruby, sdk-python, sdk-java).
 
+## Developer context (`qfg login`)
+
+By default `NewClient` reads the tokens file that `qfg login` writes
+(`~/.quonfig/tokens.json`, or `tokens-<domain>.json` for a non-production
+domain) and, when it holds a `userEmail`, adds `quonfig-user.email` to the
+global context of every evaluation (and so to telemetry contexts). That happens
+in any process on a machine where someone ran `qfg login`, production jobs
+included; turn it off with `quonfig.WithQuonfigUserContext(false)` or
+`QUONFIG_DEV_CONTEXT=false`.
+
 ## Telemetry
 
 The SDK sends usage telemetry to the telemetry URL (`WithTelemetryURL`,

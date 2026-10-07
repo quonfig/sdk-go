@@ -58,6 +58,16 @@ exported API is removed.
   panicked with `assignment to entry in nil map`. Both writers now create the
   map on first use. `NewContextSet` is unchanged.
 
+### Docs
+
+- **README documents dev-context injection (qfg-goi1.2.4).** A new
+  "Developer context (`qfg login`)" section says that `NewClient` reads the
+  `qfg login` tokens file by default and adds `quonfig-user.email` to the
+  global context, that this applies on any machine where someone ran
+  `qfg login` (production jobs included), and how to turn it off
+  (`WithQuonfigUserContext(false)` or `QUONFIG_DEV_CONTEXT=false`). Behavior
+  is unchanged.
+
 ### Deprecated
 
 - **`WithConfigFetchTimeout` (qfg-goi1.2.4).** It has had no effect since init
