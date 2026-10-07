@@ -37,6 +37,12 @@ exported API is removed.
   read timeout (90s by default). It is not shorter because api-delivery sends
   headers with the first event, which on a cold workspace is the 30s
   heartbeat.
+- **A rejected SDK key on the SSE stream is logged at WARN (qfg-goi1.2.4).**
+  A 401 or 403 from the stream endpoint was logged at Debug only, so a bad or
+  revoked key was invisible at the default log level. The first 401/403 now
+  logs one WARN (status and URL, never the key); repeats of the same status
+  stay quiet until a successful connect re-arms it. Other non-200 statuses
+  stay at Debug. Retry behavior is unchanged.
 
 ### Tests
 

@@ -115,6 +115,12 @@ type sseClient struct {
 	// would emit a connected edge and cancel the fallback poller's engage
 	// timer forever (qfg-9dxb.6). Touched only by the runLoop goroutine.
 	oversized bool
+
+	// authWarnedStatus is the 401/403 status last logged at WARN, or 0. A
+	// rejected key is logged once per distinct status instead of on every
+	// reconnect, and re-armed by a 200 so a key revoked later is reported
+	// again. Touched only by the runLoop goroutine.
+	authWarnedStatus int
 }
 
 func newSSEClient(cfg sseClientConfig) *sseClient {
@@ -274,6 +280,15 @@ func (c *sseClient) connectOnce() bool {
 		// failure — a customer rotating their key should eventually be
 		// picked up by the next reconnect.
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		if (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) &&
+			c.authWarnedStatus != resp.StatusCode {
+			c.authWarnedStatus = resp.StatusCode
+			c.cfg.Logger.Warn("quonfig: SSE connection rejected: unauthorized (check the SDK key); retrying with backoff",
+				slog.String("url", c.cfg.URL),
+				slog.Int("status", resp.StatusCode),
+			)
+			return false
+		}
 		c.cfg.Logger.Debug("quonfig: SSE connect non-200",
 			slog.String("url", c.cfg.URL),
 			slog.Int("status", resp.StatusCode),
@@ -281,6 +296,7 @@ func (c *sseClient) connectOnce() bool {
 		return false
 	}
 
+	c.authWarnedStatus = 0
 	if !c.oversized {
 		c.setConnected(true)
 	}
