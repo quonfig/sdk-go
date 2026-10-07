@@ -152,6 +152,13 @@ func newSSEClient(cfg sseClientConfig) *sseClient {
 			tr.TLSClientConfig = tr.TLSClientConfig.Clone()
 		}
 		tr.TLSClientConfig.NextProtos = []string{"http/1.1"}
+		// Bound the wait for response headers. The inactivity watchdog is
+		// armed only after Do returns, so without this a peer that accepts
+		// the connection but never answers (half-open LB, stuck proxy) wedges
+		// streaming until Close. Reuse ReadTimeout rather than something
+		// shorter: api-delivery flushes headers with the first event, which
+		// on a cold workspace is the 30s heartbeat.
+		tr.ResponseHeaderTimeout = cfg.ReadTimeout
 		cfg.Client = &http.Client{Transport: tr}
 	}
 	ctx, cancel := context.WithCancel(context.Background())

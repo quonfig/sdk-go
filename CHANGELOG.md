@@ -29,6 +29,14 @@ exported API is removed.
   names the env var, the target type and the config key, plus a reason only
   (`invalid syntax`, `value out of range`, `not valid JSON`, `not a valid ISO
   8601 duration`). `errors.Is(err, ErrUnableToCoerce)` still holds.
+- **The SSE connect now gives up on a peer that never sends response headers
+  (qfg-goi1.2.4).** The stream's inactivity watchdog was armed only after
+  response headers arrived, so a peer that accepted the connection and never
+  answered (a half-open load balancer, a stuck proxy) wedged real-time updates
+  until `Close`. The SSE transport now sets `ResponseHeaderTimeout` to the SSE
+  read timeout (90s by default). It is not shorter because api-delivery sends
+  headers with the first event, which on a cold workspace is the 30s
+  heartbeat.
 
 ### Tests
 
