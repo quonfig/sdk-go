@@ -81,6 +81,7 @@ func TestChaos(t *testing.T) {
 		pollInterval = 250 * time.Millisecond
 	}
 
+	tally := newChaosSkipTally()
 	for _, file := range files {
 		base := filepath.Base(file)
 		num := scenarioNumber(base)
@@ -94,18 +95,19 @@ func TestChaos(t *testing.T) {
 			scenario := loadChaosScenario(t, file)
 			for _, run := range scenario.Tests {
 				t.Run(safeRunName(run.Name), func(t *testing.T) {
-					runChaosScenario(t, tp, run, httpPort, ssePort, pollInterval)
+					runChaosScenario(t, tp, run, httpPort, ssePort, pollInterval, tally)
 				})
 			}
 		})
 	}
+	tally.report(t)
 }
 
 // runChaosScenario executes one scenario end-to-end against a fresh SDK
 // client and records pass/fail per expectation. Failed expectations call
 // t.Errorf so red shows up in test output — that is the whole point of this
 // bead.
-func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, httpPort, ssePort int, poll time.Duration) {
+func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, httpPort, ssePort int, poll time.Duration, tally *chaosSkipTally) {
 	t.Helper()
 	// Reset proxy state (idempotent — leftover toxics from a prior scenario
 	// would make this one start dirty).
@@ -202,10 +204,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		wallClock = 30 * time.Second
 	}
 
-	ec := &evalCtx{
-		probe:        probe,
-		serverMetric: func(name string) float64 { return 0 },
-	}
+	ec := &evalCtx{probe: probe}
 
 	type expState struct {
 		idx        int
@@ -214,7 +213,9 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		heldSince  time.Time
 		passed     bool
 		failed     bool // within_ms elapsed without pass
+		skipped    bool // the rig cannot evaluate it; see serverMetricSkipReason
 		lastReason string
+		skipNotes  []skipNote
 	}
 	states := make([]*expState, len(run.Expectations))
 	for i, exp := range run.Expectations {
@@ -228,12 +229,17 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	for now := time.Now(); now.Before(deadline); now = <-ticker.C {
 		elapsed := now.Sub(baseline)
 		for _, s := range states {
-			if s.passed || s.failed {
+			if s.passed || s.failed || s.skipped {
 				continue
 			}
-			ok, why := evaluate(s.exp.Assert, ec)
-			s.lastReason = why
-			if ok {
+			r := evaluate(s.exp.Assert, ec)
+			s.lastReason = r.why
+			s.skipNotes = r.skipped
+			if r.verdict == verdictSkipped {
+				s.skipped = true
+				continue
+			}
+			if r.verdict == verdictPass {
 				if s.heldSince.IsZero() {
 					s.heldSince = now
 					s.hitAt = elapsed
@@ -254,7 +260,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		}
 		allTerminal := true
 		for _, s := range states {
-			if !s.passed && !s.failed {
+			if !s.passed && !s.failed && !s.skipped {
 				allTerminal = false
 				break
 			}
@@ -266,27 +272,33 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 
 	// Anything still not passed at this point is a fail.
 	for _, s := range states {
-		if !s.passed {
+		if !s.passed && !s.skipped {
 			s.failed = true
 		}
 	}
 
 	// Report — failed expectations fail the test so the red proof shows up
-	// in `go test` output.
-	passCount, failCount := 0, 0
+	// in `go test` output; skipped ones are logged with their reason.
+	passCount, failCount, skipCount := 0, 0, 0
 	for _, s := range states {
-		if s.passed {
+		verdict := verdictFail
+		switch {
+		case s.passed:
 			passCount++
-			t.Logf("PASS  exp[%d] within=%dms hold=%dms: %s  (hit at %s)", s.idx, s.exp.WithinMs, s.exp.MustHoldForMs, s.exp.Assert, s.hitAt)
-		} else {
+			verdict = verdictPass
+		case s.skipped:
+			skipCount++
+			verdict = verdictSkipped
+		default:
 			failCount++
-			t.Errorf("FAIL  exp[%d] within=%dms hold=%dms: %s  — last reason: %s", s.idx, s.exp.WithinMs, s.exp.MustHoldForMs, s.exp.Assert, s.lastReason)
 		}
+		reportChaosExpectation(t, tally, s.idx, s.exp, verdict, s.hitAt, s.lastReason, s.skipNotes)
 	}
-	t.Logf("scenario summary: %d passed, %d failed (state=%s, sdkMetric.layer1=%v, fallback=%v, lastRefreshMs=%v)",
-		passCount, failCount,
+	layer1, _ := probe.sdkMetric("quonfig_sdk_worker_restart_total", map[string]string{"layer": "1"})
+	t.Logf("scenario summary: %d passed, %d failed, %d skipped (state=%s, sdkMetric.layer1=%v, fallback=%v, lastRefreshMs=%v)",
+		passCount, failCount, skipCount,
 		probe.connectionState(),
-		probe.sdkMetric("quonfig_sdk_worker_restart_total", map[string]string{"layer": "1"}),
+		layer1,
 		probe.fallbackPollerActive(),
 		probe.lastSuccessfulRefreshMs(),
 	)

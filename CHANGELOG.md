@@ -2,6 +2,24 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+Semver: none. Test harness and CI only; no change to the published module.
+
+### Tests
+
+- **Chaos `server_metric(...)` is now SKIPPED with a reason, not a silent 0
+  (qfg-goi1.1.1).** The harness used to stub every `server_metric` to 0, so
+  `server_metric('quonfig_subscriber_lag_seconds') == 0` passed without
+  checking anything (scenarios 01, 02, 04, 06, 07, 11). It now reports
+  `SKIP` with the reason: api-delivery exports metrics via OTLP push only,
+  there is no scrape endpoint in the rig, and server lag is covered by the
+  staging drill qfg-47c2.19 and the `QuonfigSubscriberLagHigh` alert. In a
+  compound expression (02) the skipped leaf is neutral and the other leaves
+  are still enforced. Each chaos run ends with a "skipped expressions" tally.
+  An `sdkMetric` name the probe does not implement now fails loudly instead of
+  comparing against 0.
+
 ## 1.5.0 - 2026-10-02
 
 ### Tests

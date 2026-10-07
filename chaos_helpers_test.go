@@ -435,23 +435,26 @@ func (p *chaosProbe) connectionState() string {
 	return string(c.ConnectionState())
 }
 
-func (p *chaosProbe) sdkMetric(name string, labels map[string]string) float64 {
+// sdkMetric returns the probe's value for an SDK-side metric. known is false
+// for a metric name the probe does not implement, so the evaluator fails the
+// expectation loudly instead of comparing against a silent 0.
+func (p *chaosProbe) sdkMetric(name string, labels map[string]string) (value float64, known bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	switch name {
 	case "quonfig_sdk_worker_restart_total":
 		switch labels["layer"] {
 		case "1":
-			return float64(p.restartLayer1)
+			return float64(p.restartLayer1), true
 		case "2":
-			return float64(p.restartLayer2)
+			return float64(p.restartLayer2), true
 		default:
-			return float64(p.restartLayer1 + p.restartLayer2)
+			return float64(p.restartLayer1 + p.restartLayer2), true
 		}
 	case "quonfig_sse_connect_attempts_total":
-		return float64(p.connAttempts)
+		return float64(p.connAttempts), true
 	}
-	return 0
+	return 0, false
 }
 
 func (p *chaosProbe) fallbackPollerActive() bool {
@@ -619,19 +622,60 @@ func (h *chaosLogHandler) WithGroup(_ string) slog.Handler      { return h }
 
 type evalCtx struct {
 	probe *chaosProbe
-	// server-side metrics are not yet implemented (server-side highwater work
-	// lives in a separate bead). Stub to 0 so scenarios that reference
-	// server_metric do not synthetically fail before SDK-side red proof.
-	serverMetric func(name string) float64
 }
 
+// exprVerdict is the tri-state outcome of evaluating an assert expression.
+type exprVerdict int
+
+const (
+	verdictFail exprVerdict = iota
+	verdictPass
+	// verdictSkipped: this rig cannot evaluate the expression, for a stated
+	// reason. A standalone skipped expectation is reported as SKIPPED, never
+	// as PASS. Inside AND/OR a skipped leaf is neutral: it neither satisfies
+	// nor fails the compound, and the other leaves are still enforced.
+	verdictSkipped
+)
+
+func (v exprVerdict) String() string {
+	switch v {
+	case verdictPass:
+		return "pass"
+	case verdictSkipped:
+		return "skipped"
+	}
+	return "fail"
+}
+
+// skipNote records one leaf the rig skipped and why.
+type skipNote struct {
+	expr   string
+	reason string
+}
+
+func (n skipNote) String() string { return n.expr + " — SKIPPED: " + n.reason }
+
+// exprResult is what evaluate returns: the verdict, a reason string for
+// FAIL/SKIP logging, and every skipped leaf encountered (also on a PASS of a
+// compound expression, so the report can show which leaves were not checked).
+type exprResult struct {
+	verdict exprVerdict
+	why     string
+	skipped []skipNote
+}
+
+// serverMetricSkipReason is why server_metric(...) is skipped rather than
+// evaluated (qfg-goi1.1.1). It used to be stubbed to 0, which made every
+// `server_metric(...) == 0` expectation pass without checking anything.
+const serverMetricSkipReason = "server-side metric; api-delivery exports metrics via OTLP push only, " +
+	"no scrape endpoint in the rig; server lag is covered by the staging drill qfg-47c2.19 " +
+	"and the QuonfigSubscriberLagHigh alert"
+
 // evaluate parses and evaluates one assert string against the current state.
-// Returns (true, "") on hit, (false, reason) on miss. The reason string is for
-// debug logging only.
-func evaluate(expr string, ec *evalCtx) (bool, string) {
+func evaluate(expr string, ec *evalCtx) exprResult {
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
-		return true, ""
+		return exprResult{verdict: verdictPass}
 	}
 	// Top-level: split on " OR " (lowest precedence). Each OR-leaf is then
 	// split on " AND " (higher precedence). Parentheses are not used by any
@@ -639,26 +683,113 @@ func evaluate(expr string, ec *evalCtx) (bool, string) {
 	if strings.Contains(expr, " OR ") {
 		parts := splitOutsideQuotesAndRegex(expr, " OR ")
 		var reasons []string
+		var skipped []skipNote
+		anyFail := false
 		for _, p := range parts {
-			ok, why := evaluate(p, ec)
-			if ok {
-				return true, ""
+			r := evaluate(p, ec)
+			skipped = append(skipped, r.skipped...)
+			switch r.verdict {
+			case verdictPass:
+				return exprResult{verdict: verdictPass, skipped: skipped}
+			case verdictFail:
+				anyFail = true
+				reasons = append(reasons, r.why)
 			}
-			reasons = append(reasons, why)
 		}
-		return false, "OR: " + strings.Join(reasons, " | ")
+		if anyFail {
+			return exprResult{verdict: verdictFail, why: "OR: " + strings.Join(reasons, " | "), skipped: skipped}
+		}
+		return exprResult{verdict: verdictSkipped, why: joinSkipNotes(skipped), skipped: skipped}
 	}
 	if strings.Contains(expr, " AND ") {
 		parts := splitOutsideQuotesAndRegex(expr, " AND ")
+		var skipped []skipNote
+		anyPass := false
 		for _, p := range parts {
-			ok, why := evaluate(p, ec)
-			if !ok {
-				return false, "AND: " + why
+			r := evaluate(p, ec)
+			skipped = append(skipped, r.skipped...)
+			switch r.verdict {
+			case verdictFail:
+				return exprResult{verdict: verdictFail, why: "AND: " + r.why, skipped: skipped}
+			case verdictPass:
+				anyPass = true
 			}
 		}
-		return true, ""
+		if anyPass {
+			return exprResult{verdict: verdictPass, skipped: skipped}
+		}
+		return exprResult{verdict: verdictSkipped, why: joinSkipNotes(skipped), skipped: skipped}
 	}
 	return evalLeaf(expr, ec)
+}
+
+func joinSkipNotes(notes []skipNote) string {
+	parts := make([]string, len(notes))
+	for i, n := range notes {
+		parts[i] = n.String()
+	}
+	return strings.Join(parts, " | ")
+}
+
+// chaosSkipTally collects every skipped leaf across one chaos run so the run
+// ends with a single "skipped expressions" summary (qfg-goi1.1.1).
+type chaosSkipTally struct {
+	mu      sync.Mutex
+	order   []string
+	counts  map[string]int
+	reasons map[string]string
+}
+
+func newChaosSkipTally() *chaosSkipTally {
+	return &chaosSkipTally{counts: map[string]int{}, reasons: map[string]string{}}
+}
+
+func (t *chaosSkipTally) record(notes []skipNote) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, n := range notes {
+		if _, seen := t.counts[n.expr]; !seen {
+			t.order = append(t.order, n.expr)
+			t.reasons[n.expr] = n.reason
+		}
+		t.counts[n.expr]++
+	}
+}
+
+// report logs the run-end tally. It always prints, so "no skips" is visible
+// too.
+func (t *chaosSkipTally) report(tb testing.TB) {
+	tb.Helper()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	total := 0
+	for _, c := range t.counts {
+		total += c
+	}
+	tb.Logf("skipped expressions: %d occurrence(s) of %d distinct expression(s)", total, len(t.order))
+	for _, e := range t.order {
+		tb.Logf("  SKIPPED x%d  %s — %s", t.counts[e], e, t.reasons[e])
+	}
+}
+
+// reportChaosExpectation logs one expectation's final outcome and records its
+// skipped leaves in the tally. A FAIL calls t.Errorf so red shows up in
+// `go test` output; a SKIP is logged with its reason and never counts as PASS.
+func reportChaosExpectation(t *testing.T, tally *chaosSkipTally, idx int, exp chaosExpectation, verdict exprVerdict, hitAt time.Duration, lastReason string, notes []skipNote) {
+	t.Helper()
+	tally.record(notes)
+	switch verdict {
+	case verdictPass:
+		suffix := ""
+		if len(notes) > 0 {
+			suffix = "  [skipped leaf: " + joinSkipNotes(notes) + "]"
+		}
+		t.Logf("PASS  exp[%d] within=%dms hold=%dms: %s  (hit at %s)%s", idx, exp.WithinMs, exp.MustHoldForMs, exp.Assert, hitAt, suffix)
+	case verdictSkipped:
+		t.Logf("SKIP  exp[%d] within=%dms hold=%dms: %s  — %s", idx, exp.WithinMs, exp.MustHoldForMs, exp.Assert, lastReason)
+	default:
+		t.Errorf("FAIL  exp[%d] within=%dms hold=%dms: %s  — last reason: %s", idx, exp.WithinMs, exp.MustHoldForMs, exp.Assert, lastReason)
+	}
 }
 
 // splitOutsideQuotesAndRegex splits expr on sep, but ignores occurrences that
@@ -708,7 +839,15 @@ var (
 	reSSEFailover  = regexp.MustCompile(`^client\.sseFailedOverToSecondary\(\)\s*==\s*(true|false)$`)
 )
 
-func evalLeaf(expr string, ec *evalCtx) (bool, string) {
+// leafResult turns a leaf's (ok, why) into an exprResult.
+func leafResult(ok bool, why string) exprResult {
+	if ok {
+		return exprResult{verdict: verdictPass, why: why}
+	}
+	return exprResult{verdict: verdictFail, why: why}
+}
+
+func evalLeaf(expr string, ec *evalCtx) exprResult {
 	expr = strings.TrimSpace(expr)
 	if m := reConnStateEq.FindStringSubmatch(expr); m != nil {
 		got := ec.probe.connectionState()
@@ -716,89 +855,90 @@ func evalLeaf(expr string, ec *evalCtx) (bool, string) {
 		switch m[1] {
 		case "==":
 			ok := got == want
-			return ok, fmt.Sprintf("connectionState=%s want %s", got, want)
+			return leafResult(ok, fmt.Sprintf("connectionState=%s want %s", got, want))
 		case "!=":
 			ok := got != want
-			return ok, fmt.Sprintf("connectionState=%s want != %s", got, want)
+			return leafResult(ok, fmt.Sprintf("connectionState=%s want != %s", got, want))
 		}
 	}
 	if m := reReady.FindStringSubmatch(expr); m != nil {
 		want := m[1] == "true"
 		got := ec.probe.ready()
-		return got == want, fmt.Sprintf("ready=%v want %v", got, want)
+		return leafResult(got == want, fmt.Sprintf("ready=%v want %v", got, want))
 	}
 	if m := reResolvedFrom.FindStringSubmatch(expr); m != nil {
 		got := ec.probe.resolvedFrom()
 		want := m[2]
 		switch m[1] {
 		case "==":
-			return got == want, fmt.Sprintf("resolvedFrom=%q want %q", got, want)
+			return leafResult(got == want, fmt.Sprintf("resolvedFrom=%q want %q", got, want))
 		case "!=":
-			return got != want, fmt.Sprintf("resolvedFrom=%q want != %q", got, want)
+			return leafResult(got != want, fmt.Sprintf("resolvedFrom=%q want != %q", got, want))
 		}
 	}
 	if m := reHeldGen.FindStringSubmatch(expr); m != nil {
 		got := int64(ec.probe.heldGeneration())
 		want, _ := strconv.ParseInt(m[2], 10, 64)
 		ok := compareInt(m[1], got, want)
-		return ok, fmt.Sprintf("heldGeneration=%d %s %d", got, m[1], want)
+		return leafResult(ok, fmt.Sprintf("heldGeneration=%d %s %d", got, m[1], want))
 	}
 	if m := reInstallCnt.FindStringSubmatch(expr); m != nil {
 		got := int64(ec.probe.configInstallCount())
 		want, _ := strconv.ParseInt(m[2], 10, 64)
 		ok := compareInt(m[1], got, want)
-		return ok, fmt.Sprintf("configInstallCount=%d %s %d", got, m[1], want)
+		return leafResult(ok, fmt.Sprintf("configInstallCount=%d %s %d", got, m[1], want))
 	}
 	if m := reSSEFailover.FindStringSubmatch(expr); m != nil {
 		want := m[1] == "true"
 		got := ec.probe.sseFailedOverToSecondary()
-		return got == want, fmt.Sprintf("sseFailedOverToSecondary=%v want %v", got, want)
+		return leafResult(got == want, fmt.Sprintf("sseFailedOverToSecondary=%v want %v", got, want))
 	}
 	if m := reFallbackEq.FindStringSubmatch(expr); m != nil {
 		want := m[1] == "true"
 		got := ec.probe.fallbackPollerActive()
-		return got == want, fmt.Sprintf("fallbackPollerActive=%v want %v", got, want)
+		return leafResult(got == want, fmt.Sprintf("fallbackPollerActive=%v want %v", got, want))
 	}
 	if m := reProcAliveEq.FindStringSubmatch(expr); m != nil {
 		want := m[1] == "true"
 		got := ec.probe.processStillAlive()
-		return got == want, fmt.Sprintf("processStillAlive=%v want %v", got, want)
+		return leafResult(got == want, fmt.Sprintf("processStillAlive=%v want %v", got, want))
 	}
 	if m := reLastRefresh.FindStringSubmatch(expr); m != nil {
 		ago, _ := strconv.Atoi(m[2])
 		last := ec.probe.lastSuccessfulRefreshMs()
 		threshold := time.Now().UnixMilli() - int64(ago)
 		ok := compareInt(m[1], last, threshold)
-		return ok, fmt.Sprintf("lastSuccessfulRefresh=%d %s (now()-%d)=%d", last, m[1], ago, threshold)
+		return leafResult(ok, fmt.Sprintf("lastSuccessfulRefresh=%d %s (now()-%d)=%d", last, m[1], ago, threshold))
 	}
 	if m := reSDKMetric.FindStringSubmatch(expr); m != nil {
 		labels := map[string]string{}
 		if m[2] != "" {
 			labels["layer"] = m[2]
 		}
-		got := ec.probe.sdkMetric(m[1], labels)
+		got, known := ec.probe.sdkMetric(m[1], labels)
+		if !known {
+			return exprResult{verdict: verdictFail, why: fmt.Sprintf("unknown sdkMetric %q: the chaos probe does not implement it", m[1])}
+		}
 		want, _ := strconv.ParseFloat(m[4], 64)
 		ok := compareFloat(m[3], got, want)
-		return ok, fmt.Sprintf("sdkMetric(%s,layer=%s)=%v %s %v", m[1], m[2], got, m[3], want)
+		return leafResult(ok, fmt.Sprintf("sdkMetric(%s,layer=%s)=%v %s %v", m[1], m[2], got, m[3], want))
 	}
 	if m := reServerMet.FindStringSubmatch(expr); m != nil {
-		got := ec.serverMetric(m[1])
-		want, _ := strconv.ParseFloat(m[3], 64)
-		ok := compareFloat(m[2], got, want)
-		return ok, fmt.Sprintf("server_metric(%s)=%v %s %v", m[1], got, m[2], want)
+		note := skipNote{expr: expr, reason: serverMetricSkipReason}
+		return exprResult{verdict: verdictSkipped, why: note.String(), skipped: []skipNote{note}}
 	}
 	if m := reSDKLog.FindStringSubmatch(expr); m != nil {
 		level := m[1]
 		re, err := regexp.Compile("(?i)" + m[2])
 		if err != nil {
-			return false, fmt.Sprintf("bad regex %q: %v", m[2], err)
+			return leafResult(false, fmt.Sprintf("bad regex %q: %v", m[2], err))
 		}
 		n := ec.probe.sdkLogMatches(level, re)
 		want, _ := strconv.Atoi(m[4])
 		ok := compareInt(m[3], int64(n), int64(want))
-		return ok, fmt.Sprintf("sdkLog(%s,/%s/i)=%d %s %d", level, m[2], n, m[3], want)
+		return leafResult(ok, fmt.Sprintf("sdkLog(%s,/%s/i)=%d %s %d", level, m[2], n, m[3], want))
 	}
-	return false, fmt.Sprintf("unrecognized expression: %s", expr)
+	return leafResult(false, fmt.Sprintf("unrecognized expression: %s", expr))
 }
 
 func compareInt(op string, a, b int64) bool {

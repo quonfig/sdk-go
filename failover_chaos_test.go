@@ -80,17 +80,19 @@ func TestFailoverChaos(t *testing.T) {
 	reconfigureRigProxies(t, tp, upstreamHost, port, port)
 
 	files := globScenarios(t, chaosFailoverScenariosDir())
+	tally := newChaosSkipTally()
 	for _, file := range files {
 		base := strings.TrimSuffix(filepath.Base(file), ".yaml")
 		scenario := loadChaosScenario(t, file)
 		t.Run(base, func(t *testing.T) {
 			for _, run := range scenario.Tests {
 				t.Run(safeRunName(run.Name), func(t *testing.T) {
-					runRigScenario(t, tp, run, false)
+					runRigScenario(t, tp, run, false, tally)
 				})
 			}
 		})
 	}
+	tally.report(t)
 }
 
 // TestOrderingChaos drives scenarios-ordering/ against TWO fixture upstreams
@@ -106,6 +108,7 @@ func TestOrderingChaos(t *testing.T) {
 	upstreamHost := envOrDefault("CHAOS_UPSTREAM_HOST", "host.docker.internal")
 
 	files := globScenarios(t, chaosOrderingScenariosDir())
+	tally := newChaosSkipTally()
 	for _, file := range files {
 		base := strings.TrimSuffix(filepath.Base(file), ".yaml")
 		scenario := loadChaosScenario(t, file)
@@ -120,17 +123,18 @@ func TestOrderingChaos(t *testing.T) {
 					spawnChaosUpstream(t, binary, primaryUpstream, primaryGen)
 					spawnChaosUpstream(t, binary, secondaryUpstream, secondaryGen)
 					reconfigureRigProxies(t, tp, upstreamHost, primaryUpstream, secondaryUpstream)
-					runRigScenario(t, tp, run, true)
+					runRigScenario(t, tp, run, true, tally)
 				})
 			}
 		})
 	}
+	tally.report(t)
 }
 
 // runRigScenario stands up a fresh SDK client pointed at [primary, secondary],
 // schedules the scenario's chaos events against the primary leg, optionally
 // drives a Refresh loop, then evaluates every expectation on a poll timer.
-func runRigScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, driveRefresh bool) {
+func runRigScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, driveRefresh bool, tally *chaosSkipTally) {
 	t.Helper()
 	// Start from a clean proxy state — no leftover toxics, all legs enabled.
 	for _, p := range []string{"http", "secondary", "sse"} {
@@ -234,15 +238,15 @@ func runRigScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, dri
 		}()
 	}
 
-	evalRigExpectations(t, run, baseline, probe)
+	evalRigExpectations(t, run, baseline, probe, tally)
 }
 
 // evalRigExpectations polls each expectation until it passes (and holds for
 // must_hold_for_ms) or its within_ms deadline elapses. Failures call t.Errorf
 // so red shows up in `go test` output. Mirrors the eval loop in runChaosScenario.
-func evalRigExpectations(t *testing.T, run chaosScenarioRun, baseline time.Time, probe *chaosProbe) {
+func evalRigExpectations(t *testing.T, run chaosScenarioRun, baseline time.Time, probe *chaosProbe, tally *chaosSkipTally) {
 	t.Helper()
-	ec := &evalCtx{probe: probe, serverMetric: func(string) float64 { return 0 }}
+	ec := &evalCtx{probe: probe}
 
 	wallClock := time.Duration(run.Setup.WallClockSeconds) * time.Second
 	if wallClock <= 0 {
@@ -255,7 +259,9 @@ func evalRigExpectations(t *testing.T, run chaosScenarioRun, baseline time.Time,
 		hitAt      time.Duration
 		passed     bool
 		failed     bool
+		skipped    bool
 		lastReason string
+		skipNotes  []skipNote
 	}
 	states := make([]*expState, len(run.Expectations))
 	for i, exp := range run.Expectations {
@@ -270,12 +276,17 @@ func evalRigExpectations(t *testing.T, run chaosScenarioRun, baseline time.Time,
 		elapsed := now.Sub(baseline)
 		allTerminal := true
 		for _, s := range states {
-			if s.passed || s.failed {
+			if s.passed || s.failed || s.skipped {
 				continue
 			}
-			ok, why := evaluate(s.exp.Assert, ec)
-			s.lastReason = why
-			if ok {
+			r := evaluate(s.exp.Assert, ec)
+			s.lastReason = r.why
+			s.skipNotes = r.skipped
+			if r.verdict == verdictSkipped {
+				s.skipped = true
+				continue
+			}
+			if r.verdict == verdictPass {
 				if s.heldSince.IsZero() {
 					s.heldSince = now
 					s.hitAt = elapsed
@@ -300,14 +311,16 @@ func evalRigExpectations(t *testing.T, run chaosScenarioRun, baseline time.Time,
 	}
 
 	for i, s := range states {
-		if !s.passed {
+		verdict := verdictFail
+		switch {
+		case s.passed:
+			verdict = verdictPass
+		case s.skipped:
+			verdict = verdictSkipped
+		default:
 			s.failed = true
 		}
-		if s.passed {
-			t.Logf("PASS  exp[%d] within=%dms hold=%dms: %s  (hit at %s)", i, s.exp.WithinMs, s.exp.MustHoldForMs, s.exp.Assert, s.hitAt)
-		} else {
-			t.Errorf("FAIL  exp[%d] within=%dms hold=%dms: %s  — last reason: %s", i, s.exp.WithinMs, s.exp.MustHoldForMs, s.exp.Assert, s.lastReason)
-		}
+		reportChaosExpectation(t, tally, i, s.exp, verdict, s.hitAt, s.lastReason, s.skipNotes)
 	}
 	t.Logf("scenario summary: state=%s ready=%v resolvedFrom=%q heldGeneration=%d installs=%d sseFailedOverToSecondary=%v",
 		probe.connectionState(), probe.ready(), probe.resolvedFrom(),
