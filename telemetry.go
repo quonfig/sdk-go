@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"reflect"
+	"time"
 
 	"github.com/quonfig/sdk-go/internal/telemetry"
 )
@@ -139,15 +141,71 @@ func generateInstanceHash() string {
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// contextSetToTelemetryData converts a ContextSet to the telemetry package's ContextData.
+// contextSetToTelemetryData converts a ContextSet to the telemetry package's
+// ContextData. The result must not share memory with the caller's context:
+// the submitter aggregates it on another goroutine and json.Marshals it at
+// flush time, so a caller write to a shared nested map after the call returned
+// would crash the process ("concurrent map iteration and map write"). Scalars
+// pass through, JSON-shaped values are deep-copied, and any other reference
+// kind (custom maps, structs, pointers) is left out of telemetry.
 func contextSetToTelemetryData(ctx *ContextSet) telemetry.ContextData {
 	contexts := make(map[string]map[string]interface{}, len(ctx.data))
 	for name, nc := range ctx.data {
 		props := make(map[string]interface{}, len(nc.Data))
 		for k, v := range nc.Data {
-			props[k] = v
+			if c, ok := telemetryContextValue(v); ok {
+				props[k] = c
+			}
 		}
 		contexts[name] = props
 	}
 	return telemetry.ContextData{Contexts: contexts}
+}
+
+// telemetryContextValue returns a copy of v that is safe to hand to the
+// telemetry goroutine, or ok=false when v is a kind telemetry drops. It is
+// deepCopyJSONValue with one difference: an unknown reference kind is dropped
+// (at any depth) instead of being returned as is, because here it would still
+// be the caller's object.
+func telemetryContextValue(v interface{}) (interface{}, bool) {
+	switch t := v.(type) {
+	case nil, string, bool,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64, time.Time:
+		return v, true
+	case map[string]interface{}:
+		if t == nil {
+			return v, true
+		}
+		out := make(map[string]interface{}, len(t))
+		for k, e := range t {
+			if c, ok := telemetryContextValue(e); ok {
+				out[k] = c
+			}
+		}
+		return out, true
+	case []interface{}:
+		if t == nil {
+			return v, true
+		}
+		out := make([]interface{}, 0, len(t))
+		for _, e := range t {
+			if c, ok := telemetryContextValue(e); ok {
+				out = append(out, c)
+			}
+		}
+		return out, true
+	case []string:
+		return deepCopyJSONValue(t), true
+	}
+	// Named scalar types (type Plan string) are values, so they are safe.
+	switch reflect.TypeOf(v).Kind() {
+	case reflect.String, reflect.Bool,
+		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
+		reflect.Float32, reflect.Float64:
+		return v, true
+	}
+	return nil, false
 }

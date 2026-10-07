@@ -4,7 +4,22 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ## Unreleased
 
-Semver: none. Test harness and CI only; no change to the published module.
+Semver: patch. Wave 1 local fixes (qfg-goi1.2.4): error-path, telemetry-only
+and dead-code changes. No evaluation result on a success path changes and no
+exported API is removed.
+
+### Fixed
+
+- **Telemetry no longer keeps references to nested context values
+  (qfg-goi1.2.4).** Recording a context for telemetry copied only the top
+  level of each named context, so a nested `map[string]interface{}` or slice
+  was still the caller's object when the background flush ran `json.Marshal`
+  on it. A caller that wrote to that map after the call returned crashed the
+  process with `fatal error: concurrent map iteration and map write`. Nested
+  `map[string]interface{}`, `[]interface{}` and `[]string` values are now
+  deep-copied at record time. Other reference kinds (custom map types, structs,
+  pointers) are left out of telemetry (context shapes and example contexts).
+  Evaluation is unchanged.
 
 ### Tests
 
