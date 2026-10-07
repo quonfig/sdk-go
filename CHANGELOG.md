@@ -43,6 +43,11 @@ exported API is removed.
   logs one WARN (status and URL, never the key); repeats of the same status
   stay quiet until a successful connect re-arms it. Other non-200 statuses
   stay at Debug. Retry behavior is unchanged.
+- **A panic in the `WithSSEStateCallback` callback no longer crashes the
+  process (qfg-goi1.2.4).** The callback runs on an SDK goroutine with no
+  `recover`, unlike `OnConfigUpdate`. Each call is now recovered and logged at
+  ERROR with the panic value and stack, and later state edges are still
+  delivered.
 
 ### Tests
 

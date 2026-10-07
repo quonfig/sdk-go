@@ -533,6 +533,24 @@ func (c *sseClient) dispatchStates() {
 		v := c.pendingStates[0]
 		c.pendingStates = c.pendingStates[1:]
 		c.connectedMu.Unlock()
-		c.cfg.OnStateChange(v)
+		c.invokeOnStateChange(v)
 	}
+}
+
+// invokeOnStateChange calls the user's OnStateChange callback under a
+// recover, per call, so a panic in customer code neither crashes the process
+// (it runs on an SDK goroutine) nor stops later edges from being delivered.
+func (c *sseClient) invokeOnStateChange(v bool) {
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		c.cfg.Logger.Error("quonfig: OnSSEStateChange callback panicked; SDK continuing",
+			slog.Any("panic", r),
+			slog.String("stack", string(debug.Stack())),
+			slog.String("reason", "callback_panic"),
+		)
+	}()
+	c.cfg.OnStateChange(v)
 }
