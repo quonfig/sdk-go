@@ -35,10 +35,13 @@ deprecated (semver 2.0.0 item 7). Ship as a patch if that rule is waived.
   (qfg-goi1.2.4).** The stream's inactivity watchdog was armed only after
   response headers arrived, so a peer that accepted the connection and never
   answered (a half-open load balancer, a stuck proxy) wedged real-time updates
-  until `Close`. The SSE transport now sets `ResponseHeaderTimeout` to the SSE
-  read timeout (90s by default). It is not shorter because api-delivery sends
-  headers with the first event, which on a cold workspace is the 30s
-  heartbeat.
+  until `Close`. The SSE transport now sets `ResponseHeaderTimeout` to 90s.
+  It is not shorter because api-delivery sends headers with the first event,
+  which on a cold workspace is the 30s heartbeat. It is a separate value from
+  the stream's read timeout, not derived from it: latency adds to the wait
+  for headers but not to the gaps between stream bytes, so a header timeout
+  equal to the read timeout could stop a slow but live stream from ever
+  connecting (qfg-d1o9).
 - **A rejected SDK key on the SSE stream is logged at WARN (qfg-goi1.2.4).**
   A 401 or 403 from the stream endpoint was logged at Debug only, so a bad or
   revoked key was invisible at the default log level. The first 401/403 now

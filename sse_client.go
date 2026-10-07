@@ -79,6 +79,16 @@ type sseClientConfig struct {
 	// mode that motivated this knob, and disabling it brings back the bug.
 	ReadTimeout time.Duration
 
+	// HeaderTimeout bounds how long a connect may wait for the response
+	// headers (http.Transport.ResponseHeaderTimeout) when Client is nil.
+	// Defaults to 90s: api-delivery flushes headers with the first event,
+	// which on a cold workspace is the 30s heartbeat. It is deliberately
+	// independent of ReadTimeout: path latency adds to the time-to-headers
+	// but not to the gaps between stream bytes, so tying the two together
+	// means a slow-but-live stream that the read watchdog tolerates can
+	// never connect (qfg-d1o9). 0 means use the default.
+	HeaderTimeout time.Duration
+
 	// Logger is used to record recovered panics from the OnEnvelope callback
 	// and other unexpected internal errors. Nil falls back to slog.Default().
 	Logger *slog.Logger
@@ -133,6 +143,9 @@ func newSSEClient(cfg sseClientConfig) *sseClient {
 	if cfg.ReadTimeout <= 0 {
 		cfg.ReadTimeout = 90 * time.Second
 	}
+	if cfg.HeaderTimeout <= 0 {
+		cfg.HeaderTimeout = 90 * time.Second
+	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
@@ -161,10 +174,9 @@ func newSSEClient(cfg sseClientConfig) *sseClient {
 		// Bound the wait for response headers. The inactivity watchdog is
 		// armed only after Do returns, so without this a peer that accepts
 		// the connection but never answers (half-open LB, stuck proxy) wedges
-		// streaming until Close. Reuse ReadTimeout rather than something
-		// shorter: api-delivery flushes headers with the first event, which
-		// on a cold workspace is the 30s heartbeat.
-		tr.ResponseHeaderTimeout = cfg.ReadTimeout
+		// streaming until Close. See HeaderTimeout for why this is 90s and
+		// not derived from ReadTimeout.
+		tr.ResponseHeaderTimeout = cfg.HeaderTimeout
 		cfg.Client = &http.Client{Transport: tr}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
