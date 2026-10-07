@@ -4,9 +4,11 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ## Unreleased
 
-Semver: patch. Wave 1 local fixes (qfg-goi1.2.4): error-path, telemetry-only
-and dead-code changes. No evaluation result on a success path changes and no
-exported API is removed.
+Semver: minor (recommended). Wave 1 local fixes (qfg-goi1.2.4): error-path,
+telemetry-only and dead-code changes. No evaluation result on a success path
+changes and no exported API is removed. Every fix on its own is patch-level;
+the bump is minor only because `WithConfigFetchTimeout` is newly marked
+deprecated (semver 2.0.0 item 7). Ship as a patch if that rule is waived.
 
 ### Fixed
 
@@ -86,8 +88,8 @@ exported API is removed.
   package (nothing imported it; it still had the old store-ETag-before-decode
   bug and accounted for most `govulncheck` call traces) and the unexported
   sequential `runtimeTransport.FetchConfigs` path with its `fetchTimeout`
-  field, whose only caller was a test. Init and refresh have used the hedged
-  fetch since 1.x. No exported API changes; `ConfigEvaluator` and
+  field, whose only caller was a test. Init and refresh use the hedged fetch
+  (qfg-7h5d.1.14). No exported API changes; `ConfigEvaluator` and
   `ValueResolver` stay exported until the next major.
 
 ### Tests
