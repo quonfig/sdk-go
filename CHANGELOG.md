@@ -19,15 +19,25 @@ deprecated (semver 2.0.0 item 7). Ship as a patch if that rule is waived.
   on it. A caller that wrote to that map after the call returned crashed the
   process with `fatal error: concurrent map iteration and map write`. Nested
   `map[string]interface{}`, `[]interface{}` and `[]string` values are now
-  deep-copied at record time. Values that share nothing with the caller still
-  reach telemetry: scalars and named scalar types, `time.Time`, arrays of
-  scalars (`[2]int`), and `encoding.TextMarshaler` values such as
-  `uuid.UUID`, which are recorded as their text (qfg-goi1.2.44: a
-  `uuid.UUID` key is what makes an example context reportable). Everything
-  else is left out of telemetry (context shapes and example contexts): custom
-  map and slice types, structs, arrays of non-scalars, pointers (including
+  deep-copied at record time. These values also still reach telemetry,
+  copied or rendered at record time (qfg-goi1.2.44): scalars and named scalar
+  types, `time.Time`, arrays and slices of scalars (`[2]int`, `[]int`,
+  `[]int64`, `[]byte`, `type IDs []int64`), and non-pointer
+  `encoding.TextMarshaler` values such as `uuid.UUID` and `netip.Addr`,
+  rendered the way `json.Marshal` renders them (`MarshalJSON` wins over
+  `MarshalText` when a type has both). A `uuid.UUID` key is what makes an
+  example context reportable. **Left out of telemetry (context shapes and
+  example contexts), though 1.5.0 sent them:** every map type other than
+  `map[string]interface{}` (`map[string]string` included), slices and arrays
+  whose elements are not scalars (`[]map[string]interface{}`, `[][]int`,
+  `[]uuid.UUID`), structs that are not TextMarshalers, pointers (including
   pointers to TextMarshalers), channels and funcs, plus any TextMarshaler
-  whose `MarshalText` returns an error. Evaluation is unchanged.
+  whose `MarshalJSON`/`MarshalText` returns an error. Evaluation results are
+  unchanged. With telemetry on, a context value's `MarshalJSON`/`MarshalText`
+  now runs when the context is recorded, on the goroutine that evaluates,
+  instead of at flush time on the telemetry goroutine; one that panics now
+  panics in the evaluating call (1.5.0 crashed the process from the
+  telemetry goroutine instead).
 - **ENV_VAR coercion errors no longer contain the env var's value
   (qfg-goi1.2.4).** When an ENV_VAR-provided value could not be converted to
   the config's type, the error quoted the raw value twice: in the message and

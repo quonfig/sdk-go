@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
@@ -147,10 +148,13 @@ func generateInstanceHash() string {
 // the submitter aggregates it on another goroutine and json.Marshals it at
 // flush time, so a caller write to a shared nested map after the call returned
 // would crash the process ("concurrent map iteration and map write"). Scalars
-// pass through, JSON-shaped values are deep-copied, encoding.TextMarshaler
-// values (uuid.UUID) become their text, arrays of scalars pass through, and
-// anything else (custom map and slice types, structs, pointers, channels,
-// funcs) is left out of telemetry.
+// pass through, map[string]interface{}, []interface{} and []string are
+// deep-copied, arrays and slices of scalars are copied, and
+// encoding.TextMarshaler values (uuid.UUID) are rendered the way json.Marshal
+// would render them. Everything else is left out of telemetry: every other map
+// type (map[string]string included), slices and arrays of non-scalars
+// ([]map[string]interface{}, [][]int, []uuid.UUID), structs, pointers,
+// channels and funcs.
 func contextSetToTelemetryData(ctx *ContextSet) telemetry.ContextData {
 	contexts := make(map[string]map[string]interface{}, len(ctx.data))
 	for name, nc := range ctx.data {
@@ -166,10 +170,12 @@ func contextSetToTelemetryData(ctx *ContextSet) telemetry.ContextData {
 }
 
 // telemetryContextValue returns a copy of v that is safe to hand to the
-// telemetry goroutine, or ok=false when v is a kind telemetry drops. It is
-// deepCopyJSONValue with one difference: an unknown reference kind is dropped
-// (at any depth) instead of being returned as is, because here it would still
-// be the caller's object.
+// telemetry goroutine, or ok=false when v is a kind telemetry drops. It
+// deep-copies JSON-shaped values like deepCopyJSONValue, but drops an unknown
+// reference kind (at any depth) instead of returning it as is, because here it
+// would still be the caller's object. It also copies slices of scalars and
+// renders TextMarshalers (see telemetryMarshalledValue); the user's
+// MarshalJSON/MarshalText therefore runs here, on the evaluating goroutine.
 func telemetryContextValue(v interface{}) (interface{}, bool) {
 	switch t := v.(type) {
 	case nil, string, bool,
@@ -203,23 +209,54 @@ func telemetryContextValue(v interface{}) (interface{}, bool) {
 		return deepCopyJSONValue(t), true
 	}
 	rt := reflect.TypeOf(v)
-	// A TextMarshaler (uuid.UUID, netip.Addr) is what json.Marshal would
-	// render as a string, so render it now: the string shares nothing with
-	// the caller. Pointers stay dropped, like every other pointer.
-	if tm, ok := v.(encoding.TextMarshaler); ok && rt.Kind() != reflect.Ptr {
-		text, err := tm.MarshalText()
+	if _, ok := v.(encoding.TextMarshaler); ok && rt.Kind() != reflect.Ptr {
+		return telemetryMarshalledValue(v)
+	}
+	switch {
+	case isTelemetryScalarKind(rt.Kind()):
+		// Named scalar types (type Plan string) are values, so they are safe.
+		return v, true
+	case rt.Kind() == reflect.Array && isTelemetryScalarKind(rt.Elem().Kind()):
+		// The interface holds its own copy of an array.
+		return v, true
+	case rt.Kind() == reflect.Slice && isTelemetryScalarKind(rt.Elem().Kind()):
+		// []int, []int64, []byte, type IDs []int64: a flat copy of the same
+		// type shares nothing with the caller and marshals like the original.
+		src := reflect.ValueOf(v)
+		if src.IsNil() {
+			return v, true
+		}
+		dst := reflect.MakeSlice(rt, src.Len(), src.Len())
+		reflect.Copy(dst, src)
+		return dst.Interface(), true
+	}
+	return nil, false
+}
+
+// telemetryMarshalledValue renders a non-pointer encoding.TextMarshaler
+// (uuid.UUID, netip.Addr) now, on the recording goroutine, into data that
+// shares nothing with the caller. It follows json.Marshal, which is what the
+// flush would have run: MarshalJSON wins over MarshalText. A JSON string
+// becomes a Go string (so a uuid key still identifies an example context);
+// any other JSON becomes a json.RawMessage, which marshals verbatim. A marshal
+// error drops the value.
+func telemetryMarshalledValue(v interface{}) (interface{}, bool) {
+	if _, ok := v.(json.Marshaler); !ok {
+		text, err := v.(encoding.TextMarshaler).MarshalText()
 		if err != nil {
 			return nil, false
 		}
 		return string(text), true
 	}
-	// Named scalar types (type Plan string) are values, so they are safe, and
-	// so is an array of them: the interface holds its own copy of an array.
-	if isTelemetryScalarKind(rt.Kind()) ||
-		(rt.Kind() == reflect.Array && isTelemetryScalarKind(rt.Elem().Kind())) {
-		return v, true
+	out, err := json.Marshal(v)
+	if err != nil {
+		return nil, false
 	}
-	return nil, false
+	var s string
+	if json.Unmarshal(out, &s) == nil {
+		return s, true
+	}
+	return json.RawMessage(out), true
 }
 
 // isTelemetryScalarKind reports whether k is a bool, string or numeric kind.

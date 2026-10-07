@@ -116,6 +116,99 @@ func TestContextSetToTelemetryData_KeepsArraysAndTextMarshalers(t *testing.T) {
 	}
 }
 
+// The bead's own repro (qfg-goi1.2.44): {key: uuid.UUID, ids: []int{1,2}}.
+// v1.5.0 sent {"ids":[1,2],"key":"<uuid>"}. A slice of scalars is a reference
+// kind, so it must be copied, not dropped: the copy shares nothing with the
+// caller and keeps the slice's own type, so the flushed JSON matches v1.5.0.
+type telemetryTestIDs []int64
+
+func TestContextSetToTelemetryData_CopiesScalarSlices(t *testing.T) {
+	id := telemetryTestUUID{0xca, 0xfe}
+	ids := []int{1, 2}
+	i64s := telemetryTestIDs{3, 4}
+	raw := []byte("hi")
+	cs := NewContextSet().WithNamedContextValues("user", map[string]interface{}{
+		"key":   id,
+		"ids":   ids,
+		"i64s":  i64s,
+		"bytes": raw,
+		"nil":   []int(nil),
+		"tags":  map[string]string{"t": "1"},
+		"maps":  []map[string]interface{}{{"a": 1}},
+		"nest":  [][]int{{1}},
+	})
+
+	data := contextSetToTelemetryData(cs)
+
+	// Caller writes to everything it passed in after the call returned.
+	ids[0] = 99
+	i64s[0] = 99
+	raw[0] = 'X'
+
+	props := data.Contexts["user"]
+	if got, _ := json.Marshal(props["ids"]); string(got) != "[1,2]" {
+		t.Errorf("ids = %#v (json %s), want a copy of [1,2]", props["ids"], got)
+	}
+	if got, ok := props["i64s"].(telemetryTestIDs); !ok || got[0] != 3 || got[1] != 4 {
+		t.Errorf("i64s = %#v, want a telemetryTestIDs copy of [3 4]", props["i64s"])
+	}
+	if got, _ := props["bytes"].([]byte); string(got) != "hi" {
+		t.Errorf("bytes = %#v, want a copy of \"hi\"", props["bytes"])
+	}
+	if got, ok := props["nil"]; !ok || got.([]int) != nil {
+		t.Errorf("nil = %#v, want a nil []int", got)
+	}
+	for _, k := range []string{"tags", "maps", "nest"} {
+		if v, ok := props[k]; ok {
+			t.Errorf("%s = %#v: maps and slices of non-scalars must stay dropped", k, v)
+		}
+	}
+
+	agg := telemetry.NewExampleContextAggregator()
+	agg.Record(telemetry.ContextData{Contexts: map[string]map[string]interface{}{
+		"user": {"key": props["key"], "ids": props["ids"]},
+	}})
+	ev := agg.GetAndClear()
+	if ev == nil || ev.ExampleContexts == nil || len(ev.ExampleContexts.Examples) != 1 {
+		t.Fatalf("example context was discarded: %#v", ev)
+	}
+	values := ev.ExampleContexts.Examples[0].ContextSet.Contexts[0].Values
+	if got, _ := json.Marshal(values); string(got) != `{"ids":[1,2],"key":"`+hex.EncodeToString(id[:])+`"}` {
+		t.Errorf("example context values = %s", got)
+	}
+}
+
+// telemetryTestBothMarshaler implements json.Marshaler and
+// encoding.TextMarshaler with different output. json.Marshal (what v1.5.0 ran
+// at flush time) prefers MarshalJSON, so telemetry must record that output.
+type telemetryTestBothMarshaler struct{ s string }
+
+func (b telemetryTestBothMarshaler) MarshalJSON() ([]byte, error) {
+	if b.s != "" {
+		return json.Marshal("json-" + b.s)
+	}
+	return []byte(`{"j":1}`), nil
+}
+
+func (b telemetryTestBothMarshaler) MarshalText() ([]byte, error) {
+	return []byte("text"), nil
+}
+
+func TestContextSetToTelemetryData_PrefersMarshalJSON(t *testing.T) {
+	cs := NewContextSet().WithNamedContextValues("user", map[string]interface{}{
+		"key": telemetryTestBothMarshaler{s: "k"},
+		"obj": telemetryTestBothMarshaler{},
+	})
+
+	props := contextSetToTelemetryData(cs).Contexts["user"]
+	if got := props["key"]; got != "json-k" {
+		t.Errorf("key = %#v, want the MarshalJSON string \"json-k\"", got)
+	}
+	if got, _ := json.Marshal(props["obj"]); string(got) != `{"j":1}` {
+		t.Errorf("obj = %#v (json %s), want the MarshalJSON output {\"j\":1}", props["obj"], got)
+	}
+}
+
 // End-to-end form of the audit repro: a telemetry-on client evaluates with a
 // nested context value, then the caller keeps writing to it. Before the fix
 // this failed under -race (json.mapEncoder vs the caller's write) and, without
