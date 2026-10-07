@@ -20,6 +20,17 @@ Semver: none. Test harness and CI only; no change to the published module.
   An `sdkMetric` name the probe does not implement now fails loudly instead of
   comparing against 0.
 
+### CI
+
+- **Chaos workflows run at the unit ITD pin (qfg-goi1.1.1).** `chaos.yaml`
+  moves from `v2026.05.13` and `failover-chaos.yaml` from `v2026.06.19.1` to
+  `v2026.10.03`, the same tag `test.yaml` uses. Scenario 05-sse-down now holds
+  `lastSuccessfulRefresh` freshness for 60s (qfg-e3ja).
+- **Chaos run summaries record the api-delivery SHA.** api-delivery still
+  tracks `main` on purpose (the nightly runs exist to catch its drift); both
+  chaos workflows now write the resolved SHA and the ITD tag to the job
+  summary.
+
 ## 1.5.0 - 2026-10-02
 
 ### Tests
