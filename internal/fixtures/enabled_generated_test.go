@@ -25,6 +25,20 @@ func TestEnabled_AlwaysReturnsFalseForANonBooleanFlag(t *testing.T) {
 	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.integer")
 }
 
+// returns false for a flag key that does not exist
+func TestEnabled_ReturnsFalseForAFlagKeyThatDoesNotExist(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("my-missing-key", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "my-missing-key")
+}
+
+// returns false for a flag key that does not exist with a context
+func TestEnabled_ReturnsFalseForAFlagKeyThatDoesNotExistWithAContext(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("my-missing-key", contextSet(map[string]map[string]interface{}{"user": {"key": "michael", "email": "michael@example.com"}}))
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "my-missing-key")
+}
+
 // returns true for a PROP_IS_ONE_OF rule when any prop matches
 func TestEnabled_ReturnsTrueForAPROPISONEOFRuleWhenAnyPropMatches(t *testing.T) {
 	c := mustPublicClient(t)
