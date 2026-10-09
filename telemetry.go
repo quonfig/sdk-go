@@ -202,7 +202,27 @@ func contextSetToTelemetryShapes(ctx *ContextSet) telemetry.ContextData {
 // renders TextMarshalers (see telemetryMarshalledValue); the user's
 // MarshalJSON/MarshalText therefore runs here, on the evaluating goroutine,
 // once per evaluation. Only periodic_example context telemetry calls it.
+//
+// A map or []interface{} that contains itself (directly or through other
+// values) is dropped at the edge that closes the cycle (qfg-goi1.2.46):
+// recursing into it would run until Go's stack limit, a fatal error no
+// recover can catch. The same value reached twice without a cycle is copied
+// both times, as json.Marshal would render it.
 func telemetryContextValue(v interface{}) (interface{}, bool) {
+	return telemetryContextValueOnPath(v, nil)
+}
+
+// telemetryContainerRef identifies a map or []interface{} on the current
+// recursion path. A slice is identified by its data pointer and length, so a
+// sub-slice that shares the backing array is not mistaken for its parent.
+type telemetryContainerRef struct {
+	ptr uintptr
+	len int
+}
+
+// telemetryContextValueOnPath is telemetryContextValue with the containers
+// currently being copied (the ancestors of v) in path.
+func telemetryContextValueOnPath(v interface{}, path []telemetryContainerRef) (interface{}, bool) {
 	switch t := v.(type) {
 	case nil, string, bool,
 		int, int8, int16, int32, int64,
@@ -213,9 +233,14 @@ func telemetryContextValue(v interface{}) (interface{}, bool) {
 		if t == nil {
 			return v, true
 		}
+		ref := telemetryContainerRef{ptr: reflect.ValueOf(t).Pointer()}
+		if telemetryPathContains(path, ref) {
+			return nil, false
+		}
+		path = append(path, ref)
 		out := make(map[string]interface{}, len(t))
 		for k, e := range t {
-			if c, ok := telemetryContextValue(e); ok {
+			if c, ok := telemetryContextValueOnPath(e, path); ok {
 				out[k] = c
 			}
 		}
@@ -224,9 +249,14 @@ func telemetryContextValue(v interface{}) (interface{}, bool) {
 		if t == nil {
 			return v, true
 		}
+		ref := telemetryContainerRef{ptr: reflect.ValueOf(t).Pointer(), len: len(t)}
+		if telemetryPathContains(path, ref) {
+			return nil, false
+		}
+		path = append(path, ref)
 		out := make([]interface{}, 0, len(t))
 		for _, e := range t {
-			if c, ok := telemetryContextValue(e); ok {
+			if c, ok := telemetryContextValueOnPath(e, path); ok {
 				out = append(out, c)
 			}
 		}
@@ -257,6 +287,18 @@ func telemetryContextValue(v interface{}) (interface{}, bool) {
 		return dst.Interface(), true
 	}
 	return nil, false
+}
+
+// telemetryPathContains reports whether ref is already on the recursion path,
+// that is, whether copying it again would close a cycle. Paths are as deep as
+// the context value is nested, so a linear scan is enough.
+func telemetryPathContains(path []telemetryContainerRef, ref telemetryContainerRef) bool {
+	for _, p := range path {
+		if p == ref {
+			return true
+		}
+	}
+	return false
 }
 
 // telemetryMarshalledValue renders a non-pointer encoding.TextMarshaler

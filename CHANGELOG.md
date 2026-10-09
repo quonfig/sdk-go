@@ -49,6 +49,15 @@ deprecated (semver 2.0.0 item 7). Ship as a patch if that rule is waived.
     on the telemetry goroutine, once per example context kept. A marshaler
     that panics now panics in the evaluating call; in 1.5.0 the same panic
     at flush crashed the process from the telemetry goroutine.
+  - **A context value that contains itself no longer crashes the process
+    (qfg-goi1.2.46).** In `periodic_example` mode the deep copy above
+    recursed into a self-referential `map[string]interface{}` or
+    `[]interface{}` until `fatal error: stack overflow`, which no `recover`
+    can catch. The copy now drops the edge that closes the cycle and keeps
+    the rest of the value; the same value reached twice without a cycle is
+    still copied both times. In 1.5.0 such a value failed the telemetry
+    flush with a `json.Marshal` error instead. This regression was never
+    released.
 - **ENV_VAR coercion errors no longer contain the env var's value
   (qfg-goi1.2.4).** When an ENV_VAR-provided value could not be converted to
   the config's type, the error quoted the raw value twice: in the message and
