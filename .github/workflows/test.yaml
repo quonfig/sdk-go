@@ -15,7 +15,7 @@ jobs:
         # (the two most recent majors). Older versions are EOL — their
         # stdlib CVEs no longer receive fixes, so govulncheck cannot
         # go green on them. Bump as new majors release.
-        go-version: ['1.25', '1.26']
+        go-version: ['1.26', '1.27']
     steps:
       - name: Checkout sdk-go
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -35,6 +35,11 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7.0.0
         with:
           go-version: ${{ matrix.go-version }}
+          # Resolve the major to its newest patch from the versions manifest
+          # instead of whatever patch the runner image has cached. Without
+          # this, a stdlib CVE fix (e.g. 1.26.9) can sit unused for days
+          # while govulncheck stays red on the cached 1.26.8.
+          check-latest: true
           cache-dependency-path: sdk-go/go.sum
 
       - name: Check formatting
@@ -83,27 +88,14 @@ jobs:
           working-directory: sdk-go
 
       - name: Install staticcheck
-        # staticcheck v0.8+ requires Go >= 1.26, so the 1.25 leg pins the last
-        # release that builds on it (v0.7.0). Drop the pin with the 1.25 leg.
-        run: |
-          if [ "${{ matrix.go-version }}" = "1.25" ]; then
-            go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
-          else
-            go install honnef.co/go/tools/cmd/staticcheck@latest
-          fi
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
 
       - name: Run staticcheck
         working-directory: sdk-go
         run: staticcheck ./...
 
       - name: Install govulncheck
-        # govulncheck v1.8+ requires Go >= 1.26; the 1.25 leg pins v1.7.0.
-        run: |
-          if [ "${{ matrix.go-version }}" = "1.25" ]; then
-            go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
-          else
-            go install golang.org/x/vuln/cmd/govulncheck@latest
-          fi
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
       - name: Run govulncheck
         working-directory: sdk-go
@@ -112,6 +104,8 @@ jobs:
         # report "No vulnerabilities found", so the exemption was dropped.
         # A red here is usually an upstream stdlib CVE with no patched Go
         # released yet, not a code regression — it self-heals once setup-go
-        # resolves the matrix major to the fixed patch. Prefer waiting (or
-        # pinning the patch version) over re-adding continue-on-error.
+        # resolves the matrix major to the fixed patch (check-latest above
+        # makes that happen as soon as actions/go-versions publishes it).
+        # Prefer waiting (or pinning the patch version) over re-adding
+        # continue-on-error.
         run: govulncheck ./...
