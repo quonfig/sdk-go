@@ -15,6 +15,14 @@ All notable changes to the Quonfig Go SDK are documented here.
   `selectedValue` carries the resolved value like any ordinary value. Matches
   sdk-node.
 
+### Fixed (patch)
+
+- **The fallback poller re-engages after a recovered panic (qfg-goi1.10.14).**
+  If a poll panicked while the Layer 2 fallback poller was engaged, the
+  supervisor restarted the poller but it kept its engaged flag, so it never
+  polled again for the rest of the SSE outage. A restarted poller now starts
+  disengaged, logs a WARN, and re-engages as normal.
+
 ## 1.6.0 - 2026-10-09
 
 ### Fixed
