@@ -6,6 +6,15 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Changed (minor)
 
+- **Non-confidential ENV_VAR-provided values report their resolved value in
+  evaluation-summary telemetry (qfg-goi1.10.16).** Telemetry used to record
+  the stored provided descriptor for every ENV_VAR value, so a
+  non-confidential env value never reached the dashboard. A provided value is
+  now redacted only when it is marked `confidential: true` (redaction over the
+  stored descriptor, never the env contents, as before); otherwise
+  `selectedValue` carries the resolved value like any ordinary value. Matches
+  sdk-node.
+
 - **Weighted-rollout hashing renders whole-number floats as plain digits
   (qfg-goi1.9).** When `hashByPropertyName` pointed at a numeric property
   whose value was a whole-number `float64`/`float32` of 1e6 or more, the hash
@@ -21,6 +30,14 @@ All notable changes to the Quonfig Go SDK are documented here.
   api-delivery) with numeric hash properties >= 1e6 are re-bucketed once when
   api-delivery picks up this release. Integer-typed properties and values
   below 1e6 are unaffected.
+
+### Fixed (patch)
+
+- **The fallback poller re-engages after a recovered panic (qfg-goi1.10.14).**
+  If a poll panicked while the Layer 2 fallback poller was engaged, the
+  supervisor restarted the poller but it kept its engaged flag, so it never
+  polled again for the rest of the SSE outage. A restarted poller now starts
+  disengaged, logs a WARN, and re-engages as normal.
 
 ## 1.6.0 - 2026-10-09
 

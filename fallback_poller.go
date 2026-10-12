@@ -110,6 +110,14 @@ func (p *fallbackPoller) Active() bool {
 // Run is the worker body. Suitable for supervisor.worker.Run — it honors ctx
 // and returns nil on cancellation. It never returns a non-nil error today.
 func (p *fallbackPoller) Run(ctx context.Context) error {
+	// Run starts with no poll ticker, so it must start disengaged. A previous
+	// Run that panicked while engaged (recovered and restarted by the
+	// supervisor) left active=true, which made engage() a no-op and wedged the
+	// poller for the rest of the outage (qfg-goi1.10.14).
+	if p.active.Swap(false) {
+		p.cfg.Logger.Warn("quonfig: Layer 2 fallback poller restarted while engaged; re-arming")
+	}
+
 	var engageTimer *time.Timer
 	var pollTicker *time.Ticker
 	defer func() {
