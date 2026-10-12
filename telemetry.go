@@ -82,7 +82,15 @@ func (t *telemetrySubmitter) Stop() {
 }
 
 // RecordEvaluation converts an EvalResult to telemetry.EvalMatch and records it.
-func (t *telemetrySubmitter) RecordEvaluation(result *EvalResult) {
+//
+// resolved is the resolver's output for result.Value (nil when there is no
+// resolver or resolution failed). It is used only for a non-confidential
+// provided (ENV_VAR) value, which reports its resolved value like any ordinary
+// value. A confidential provided value keeps the redaction over the stored
+// (pre-resolution) descriptor, and decryptWith values keep the redaction over
+// the ciphertext, so the env contents and the plaintext never reach telemetry
+// (qfg-goi1.10.16; matches sdk-node fe09070).
+func (t *telemetrySubmitter) RecordEvaluation(result *EvalResult, resolved *Value) {
 	if result == nil || !result.IsMatch {
 		return
 	}
@@ -90,6 +98,9 @@ func (t *telemetrySubmitter) RecordEvaluation(result *EvalResult) {
 	var selectedValue interface{}
 	if result.Value != nil {
 		selectedValue = result.Value.Value
+		if result.Value.Type == ValueTypeProvided && !result.Value.Confidential && resolved != nil {
+			selectedValue = resolved.Value
+		}
 	}
 
 	t.submitter.RecordEvaluation(telemetry.EvalMatch{

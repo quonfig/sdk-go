@@ -615,12 +615,10 @@ func (c *Client) resolveDetailUnsafe(key string, ctx *ContextSet) (EvaluationDet
 			c.warnHashPropertyMissing(key, evalResult.MissingHashProperty)
 		}
 
-		// Record evaluation for telemetry
-		if telemetry != nil && evalResult != nil {
-			telemetry.RecordEvaluation(evalResult)
-		}
-
 		if evalResult == nil || !evalResult.IsMatch || evalResult.Value == nil {
+			if telemetry != nil && evalResult != nil {
+				telemetry.RecordEvaluation(evalResult, nil)
+			}
 			return EvaluationDetails{
 				Reason:       ReasonDefault,
 				Variant:      "default",
@@ -632,6 +630,9 @@ func (c *Client) resolveDetailUnsafe(key string, ctx *ContextSet) (EvaluationDet
 		value := evalResult.Value
 		if resolver != nil {
 			resolved, err := resolver.ResolveValue(evalResult.Value, cfg.Key, cfg.ValueType, envID, mergedCtx)
+			if telemetry != nil {
+				telemetry.RecordEvaluation(evalResult, resolved)
+			}
 			if err != nil {
 				return EvaluationDetails{
 					Reason:       ReasonError,
@@ -642,6 +643,8 @@ func (c *Client) resolveDetailUnsafe(key string, ctx *ContextSet) (EvaluationDet
 				}, err
 			}
 			value = resolved
+		} else if telemetry != nil {
+			telemetry.RecordEvaluation(evalResult, nil)
 		}
 		return EvaluationDetails{
 			Value:        value,

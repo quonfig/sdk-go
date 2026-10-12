@@ -4,6 +4,17 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ## Unreleased
 
+### Changed (minor)
+
+- **Non-confidential ENV_VAR-provided values report their resolved value in
+  evaluation-summary telemetry (qfg-goi1.10.16).** Telemetry used to record
+  the stored provided descriptor for every ENV_VAR value, so a
+  non-confidential env value never reached the dashboard. A provided value is
+  now redacted only when it is marked `confidential: true` (redaction over the
+  stored descriptor, never the env contents, as before); otherwise
+  `selectedValue` carries the resolved value like any ordinary value. Matches
+  sdk-node.
+
 ### Fixed (patch)
 
 - **The fallback poller re-engages after a recovered panic (qfg-goi1.10.14).**
