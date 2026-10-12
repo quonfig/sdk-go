@@ -2,7 +2,9 @@ package evalcore
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
+	"strconv"
 	"sync"
 )
 
@@ -86,11 +88,37 @@ func (w *WeightedValueResolver) getUserFraction(wv *WeightedValuesData, configKe
 	if missing {
 		value = ""
 	}
-	valueToHash := fmt.Sprintf("%s%v", configKey, value)
+	valueToHash := configKey + hashInputString(value)
 	if hash, ok := HashZeroToOne(valueToHash); ok {
 		return hash, missing
 	}
 	return w.randomFraction(), missing
+}
+
+// hashInputString renders a hashByPropertyName value for the hash input. A
+// whole-number float renders as plain decimal digits (1234567, not %v's
+// 1.234567e+06), matching sdk-node's String(n) and sdk-ruby's to_s, so a
+// numeric id that reached the SDK as a JSON float64 (every browser/mobile
+// context via api-delivery) buckets the same as in those SDKs (qfg-goi1.9).
+// The 1e21 bound is where JavaScript itself switches to exponent form, and
+// where %v already agrees with it. Everything else keeps %v.
+func hashInputString(value interface{}) string {
+	var f float64
+	switch n := value.(type) {
+	case float64:
+		f = n
+	case float32:
+		f = float64(n)
+	default:
+		return fmt.Sprintf("%v", value)
+	}
+	if f == math.Trunc(f) && math.Abs(f) < 1e21 {
+		if f == 0 {
+			return "0" // -0 renders "0", like JavaScript
+		}
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	}
+	return fmt.Sprintf("%v", value)
 }
 
 // randomFraction returns the next value in [0, 1) from the seeded source,

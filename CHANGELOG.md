@@ -2,6 +2,26 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Changed (minor)
+
+- **Weighted-rollout hashing renders whole-number floats as plain digits
+  (qfg-goi1.9).** When `hashByPropertyName` pointed at a numeric property
+  whose value was a whole-number `float64`/`float32` of 1e6 or more, the hash
+  input used Go's `%v` form (`1.234567e+06`), so the user landed in a
+  different bucket than in sdk-node and sdk-ruby (`1234567`). Whole-number
+  floats below 1e21 now hash as plain decimal digits (`-0` as `0`). Integers,
+  strings, fractional floats and other values hash exactly as before.
+
+  **UPGRADE:** this changes rollout assignments once for affected users. A
+  Go-evaluated user whose hash property is a whole-number float of 1e6 or
+  more (for example a JSON-decoded numeric id) may move to a different
+  weighted variant on upgrade. Frontend users (browser/mobile, evaluated by
+  api-delivery) with numeric hash properties >= 1e6 are re-bucketed once when
+  api-delivery picks up this release. Integer-typed properties and values
+  below 1e6 are unaffected.
+
 ## 1.6.0 - 2026-10-09
 
 ### Fixed
