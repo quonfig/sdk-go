@@ -64,6 +64,30 @@ func TestGetOrRaise_RaisesAnErrorIfAnEnvVarProvidedConfigCannotBeCoercedToConfig
 	require.ErrorIs(t, err, quonfig.ErrUnableToCoerce)
 }
 
+// coercion error for an int env var names the variable and never its value
+func TestGetOrRaise_CoercionErrorForAnIntEnvVarNamesTheVariableAndNeverItsValue(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_SECRET_ENV", "postgres://admin:hunter2@db")
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("provided.secret.not.an.int", nil)
+	assert.False(t, ok, "%q must have no value", "provided.secret.not.an.int")
+	require.ErrorIs(t, err, quonfig.ErrUnableToCoerce)
+	assert.Contains(t, err.Error(), "environment variable \"QUONFIG_ITD_SECRET_ENV\" cannot be converted to int for config \"provided.secret.not.an.int\"")
+	assert.NotContains(t, err.Error(), "hunter2")
+	assert.NotContains(t, err.Error(), "postgres://")
+}
+
+// coercion error for a double env var names the variable and never its value
+func TestGetOrRaise_CoercionErrorForADoubleEnvVarNamesTheVariableAndNeverItsValue(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_SECRET_ENV", "postgres://admin:hunter2@db")
+	c := mustPublicClient(t)
+	_, ok, err := c.GetFloatValue("provided.secret.not.a.double", nil)
+	assert.False(t, ok, "%q must have no value", "provided.secret.not.a.double")
+	require.ErrorIs(t, err, quonfig.ErrUnableToCoerce)
+	assert.Contains(t, err.Error(), "environment variable \"QUONFIG_ITD_SECRET_ENV\" cannot be converted to double for config \"provided.secret.not.a.double\"")
+	assert.NotContains(t, err.Error(), "hunter2")
+	assert.NotContains(t, err.Error(), "postgres://")
+}
+
 // raises an error for decryption failure
 func TestGetOrRaise_RaisesAnErrorForDecryptionFailure(t *testing.T) {
 	c := mustPublicClient(t)

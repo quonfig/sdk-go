@@ -7,6 +7,8 @@ package fixtures
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 // reason is STATIC for config with no targeting rules
@@ -199,4 +201,66 @@ func TestTelemetry_ConfidentialEncryptedStringIsRedactedUsingCiphertextHash(t *t
 	c := tel.Client
 	_, _, _ = c.GetStringValue("a.secret.config", nil)
 	assertTelemetryPost(t, tel, "evaluation_summary", []interface{}{map[string]interface{}{"key": "a.secret.config", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"string": "*****936c9"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+}
+
+// confidential weighted variant is redacted in selectedValue
+func TestTelemetry_ConfidentialWeightedVariantIsRedactedInSelectedValue(t *testing.T) {
+	tel := startTelemetryClient(t, map[string]interface{}{})
+	c := tel.Client
+	_, _, _ = c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}})).GetStringValue("confidential.weighted.variant")
+	assertTelemetryPost(t, tel, "evaluation_summary", []interface{}{map[string]interface{}{"key": "confidential.weighted.variant", "type": "CONFIG", "value": "weighted-secret-variant", "value_type": "string", "count": 1, "reason": 3, "selected_value": map[string]interface{}{"string": "*****364b0"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0, "weighted_value_index": 0}}}, "/api/v1/telemetry")
+}
+
+// confidential ENV_VAR-provided value is redacted in selectedValue
+func TestTelemetry_ConfidentialENVVARProvidedValueIsRedactedInSelectedValue(t *testing.T) {
+	tel := startTelemetryClient(t, map[string]interface{}{})
+	c := tel.Client
+	_, _, _ = c.GetStringValue("confidential.provided.a.number", nil)
+	summaries := eventsOfKind(tel.events(t), "summaries")
+	checkRedactedSelectedValues(t, summaries, "confidential.provided.a.number")
+	assertEvalSummaryWire(t, summaries, []interface{}{map[string]interface{}{"key": "confidential.provided.a.number", "type": "CONFIG", "value": "1234", "value_type": "string", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"redacted": true}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}})
+}
+
+// non-confidential ENV_VAR-provided value is reported as its resolved value
+func TestTelemetry_NonConfidentialENVVARProvidedValueIsReportedAsItsResolvedValue(t *testing.T) {
+	tel := startTelemetryClient(t, map[string]interface{}{})
+	c := tel.Client
+	_, _, _ = c.GetIntValue("provided.a.number", nil)
+	assertTelemetryPost(t, tel, "evaluation_summary", []interface{}{map[string]interface{}{"key": "provided.a.number", "type": "CONFIG", "value": 1234, "value_type": "int", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"int": 1234}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+}
+
+// checkRedactedSelectedValues asserts every counter for keys reports a
+// selectedValue of exactly {"string": "*****<5 hex>"} (the redaction shape;
+// the hash input is not pinned), then replaces it with the YAML's
+// {redacted: true} marker for the exact row comparison.
+func checkRedactedSelectedValues(t *testing.T, summaries []map[string]interface{}, keys ...string) {
+	t.Helper()
+	want := map[string]bool{}
+	for _, k := range keys {
+		want[k] = true
+	}
+	for _, s := range summaries {
+		list, _ := s["summaries"].([]interface{})
+		for _, item := range list {
+			sm, _ := item.(map[string]interface{})
+			key, _ := sm["key"].(string)
+			if !want[key] {
+				continue
+			}
+			counters, _ := sm["counters"].([]interface{})
+			for _, ci := range counters {
+				c, _ := ci.(map[string]interface{})
+				sv, _ := c["selectedValue"].(map[string]interface{})
+				str, isString := sv["string"].(string)
+				if len(sv) != 1 || !isString {
+					t.Errorf("%s: selectedValue %v is not a redacted string", key, c["selectedValue"])
+					continue
+				}
+				if !assert.Regexp(t, `^\*{5}[0-9a-f]{5}$`, str, "%s: selectedValue is not redacted", key) {
+					continue
+				}
+				c["selectedValue"] = map[string]interface{}{"redacted": true}
+			}
+		}
+	}
 }
