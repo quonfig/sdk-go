@@ -2,6 +2,43 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Upgrade notes
+
+- **UPGRADE: SSE reports `connected` at the first frame, not at the 200
+  response (qfg-goi1.10.9).** A stream connection now counts as connected,
+  for `Client.ConnectionState()`, the `WithSSEStateCallback` callback
+  (`Options.OnSSEStateChange`) and `FallbackPollerActive()`, the reconnect
+  backoff and the fallback poller, only after it delivers its first valid
+  frame: a config envelope or a keepalive. Before, it counted as soon as the
+  200 response headers arrived.
+  - Against Quonfig's servers the headers and the first frame arrive
+    together, so you should see no difference.
+  - Behind a proxy or server that sends 200 headers early, `connected` is
+    reported when the first frame arrives: at most one keepalive interval
+    (30 s) later.
+  - A connection that closes before any frame is now a failed attempt. The
+    reconnect delay grows, the client reports disconnected, and the fallback
+    poller takes over after its usual threshold.
+
+  Before this change, a server that answered 200 and closed at once made the
+  SDK reconnect in a tight loop and keep stale config indefinitely.
+
+### Changed (minor)
+
+- **SSE first-frame rule (qfg-goi1.10.39).** The connected edge moved from
+  the 200 headers into the stream parser, at the first complete keepalive
+  block or validated config envelope. Only a connection that delivered a
+  frame resets the reconnect backoff and cancels/disengages the fallback
+  poller. Covered by supervisor contract Test 9 (`sse_first_frame_test.go`).
+
+### Tests
+
+- integration-test-data pin bumped to v2026.10.16.4 (`test.yaml`); the two
+  `get_or_raise` init-timeout cases now target `http://192.0.2.1:1` and stay
+  green.
+
 ## 1.7.0 - 2026-10-16
 
 ### Upgrade notes

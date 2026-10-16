@@ -110,12 +110,14 @@ func TestSSESlowUserCallbackDoesNotDelayInternalState(t *testing.T) {
 	}
 }
 
-// flappingSSEServer accepts every SSE connection and ends it at once, so the
-// client connects and drops repeatedly.
+// flappingSSEServer accepts every SSE connection, sends one keepalive frame
+// and ends it at once, so the client connects and drops repeatedly. (A 200
+// with no frame never reports connected, qfg-goi1.10.39.)
 func flappingSSEServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(": keepalive\n\n"))
 		w.(http.Flusher).Flush()
 	}))
 }

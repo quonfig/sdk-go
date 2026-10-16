@@ -137,6 +137,9 @@ type Options struct {
 
 	// OnSSEStateChange, if non-nil, is invoked whenever the background SSE
 	// connection transitions between connected=true and connected=false.
+	// connected=true is reported at the stream's first valid frame (a config
+	// envelope or a keepalive), not at the 200 response headers; a connection
+	// that ends before any frame reports no edge.
 	// Useful for emitting accurate "stream is up" metrics on the caller's
 	// side (see load-gen's load_gen.sse_connected gauge). The callback may
 	// run on any goroutine and should be cheap / non-blocking.

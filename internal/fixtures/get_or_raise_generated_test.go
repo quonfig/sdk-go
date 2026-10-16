@@ -34,7 +34,7 @@ func TestGetOrRaise_GetOrRaiseReturnsADefaultValueInsteadOfRaising(t *testing.T)
 
 // get_or_raise raises the correct error if it doesn't raise on init timeout
 func TestGetOrRaise_GetOrRaiseRaisesTheCorrectErrorIfItDoesnTRaiseOnInitTimeout(t *testing.T) {
-	c := newInitTimeoutClient(t, 0.01, "https://app.staging-prefab.cloud", "return")
+	c := newInitTimeoutClient(t, 0.01, "http://192.0.2.1:1", "return")
 	_, ok, err := c.GetStringValue("any-key", nil)
 	assert.False(t, ok, "%q must have no value", "any-key")
 	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "ReturnZeroValue must not surface the init timeout")
@@ -42,7 +42,7 @@ func TestGetOrRaise_GetOrRaiseRaisesTheCorrectErrorIfItDoesnTRaiseOnInitTimeout(
 
 // get_or_raise can raise an error if the client does not initialize in time
 func TestGetOrRaise_GetOrRaiseCanRaiseAnErrorIfTheClientDoesNotInitializeInTime(t *testing.T) {
-	c := newInitTimeoutClient(t, 0.01, "https://app.staging-prefab.cloud", "raise")
+	c := newInitTimeoutClient(t, 0.01, "http://192.0.2.1:1", "raise")
 	_, ok, err := c.GetStringValue("any-key", nil)
 	assert.False(t, ok, "%q must have no value", "any-key")
 	require.ErrorIs(t, err, quonfig.ErrInitializationTimeout)

@@ -20,7 +20,18 @@ package quonfig
 // password=APIKey, plus X-Quonfig-SDK-Version and Accept: text/event-stream.
 //
 // Reconnect policy: exponential backoff (InitialDelay → MaxDelay) with jitter,
-// reset on successful event. The background loop lives until Stop().
+// reset only after a connection that delivered its first valid frame. The
+// background loop lives until Stop().
+//
+// First-frame rule (qfg-goi1.10.39, ITD chaos/supervisor-test-contract.md
+// "Rule — a connection is `connected` at its first valid frame"): a
+// connection counts as connected only at its first valid frame, a complete
+// comment-only block (the `: keepalive`) or a data block that decodes and
+// validates as a config envelope. 200 headers alone, a block cut off by EOF,
+// a malformed or non-envelope block and an oversized event are not frames. A
+// connection that ends before its first frame is a failed attempt: no
+// connected edge, the backoff grows, and the fallback poller's engage timer
+// keeps running.
 
 import (
 	"bufio"
@@ -52,10 +63,11 @@ type sseClientConfig struct {
 	// Required.
 	OnEnvelope func(*ConfigEnvelope)
 
-	// OnStateChange, if non-nil, is invoked with true when a connection is
-	// established (after HTTP 200 response headers) and false when it drops
-	// (for any reason, including Stop). Never called twice in a row with the
-	// same value.
+	// OnStateChange, if non-nil, is invoked with true when a connection
+	// delivers its first valid frame (a keepalive comment or a valid config
+	// envelope; 200 response headers alone do not count) and false when a
+	// connected stream drops (for any reason, including Stop). Never called
+	// twice in a row with the same value.
 	// It runs on a separate dispatcher goroutine, in order, so a slow or
 	// blocked callback never stalls the reader.
 	OnStateChange func(connected bool)
@@ -227,9 +239,11 @@ func (c *sseClient) runLoop() {
 		}
 
 		if connectedOK {
-			// We had a live stream that then ended — reset the backoff so the
-			// next retry is snappy. A server-initiated close is normal (the
-			// LB recycles connections periodically); don't punish it.
+			// The stream delivered at least one valid frame and then ended —
+			// reset the backoff so the next retry is snappy. A server-initiated
+			// close is normal (the LB recycles connections periodically); don't
+			// punish it. A 200 that ended before any frame is a failed attempt
+			// and falls through to the exponential backoff below.
 			delay = c.cfg.InitialDelay
 		}
 
@@ -258,10 +272,11 @@ func (c *sseClient) runLoop() {
 }
 
 // connectOnce opens a single SSE request and reads until the body errors or
-// context is cancelled. Returns true iff response headers made it back 200 OK
-// (i.e. the connection was "live" at some point), false if we never got that
-// far. Callers use the return value to distinguish backoff-worthy failures
-// (DNS, refused, 401) from normal session recycling.
+// context is cancelled. Returns true iff the connection delivered at least
+// one valid frame (i.e. it was "live" at some point), false otherwise: a
+// connect error, a non-200, a 200 that ended before its first frame, or an
+// oversized event. Callers use the return value to distinguish backoff-worthy
+// failures from normal session recycling.
 func (c *sseClient) connectOnce() bool {
 	// Per-attempt context so the read-deadline timer can cancel just this
 	// request without affecting the long-lived client context.
@@ -316,9 +331,9 @@ func (c *sseClient) connectOnce() bool {
 	}
 
 	c.authWarnedStatus = 0
-	if !c.oversized {
-		c.setConnected(true)
-	}
+	// Do not report "connected" on the 200 headers: parseStream reports it at
+	// the first valid frame. Until then the state stays what it was before
+	// this attempt. The deferred false is a no-op if no frame arrived.
 	defer c.setConnected(false)
 
 	// Wrap the body so each successful read resets a watchdog timer; if no
@@ -326,7 +341,7 @@ func (c *sseClient) connectOnce() bool {
 	// body read errors, parseStream returns, and runLoop reconnects.
 	timer := time.AfterFunc(c.cfg.ReadTimeout, cancelReq)
 	defer timer.Stop()
-	err = c.parseStream(&deadlineResetReader{r: resp.Body, timer: timer, d: c.cfg.ReadTimeout})
+	frameSeen, err := c.parseStream(&deadlineResetReader{r: resp.Body, timer: timer, d: c.cfg.ReadTimeout})
 	if errors.Is(err, bufio.ErrTooLong) {
 		// An event larger than the line limit can never be read, and the
 		// server will resend it on every reconnect. Treat this as a failed
@@ -342,7 +357,7 @@ func (c *sseClient) connectOnce() bool {
 		c.oversized = true
 		return false
 	}
-	return true
+	return frameSeen
 }
 
 // deadlineResetReader wraps an io.Reader to enforce a per-read inactivity
@@ -368,7 +383,9 @@ func (d *deadlineResetReader) Read(p []byte) (int, error) {
 // server's format:
 //
 //   - Lines starting with "data:" accumulate a per-event buffer.
-//   - Lines starting with ":" are comments (keepalives) — ignored.
+//   - Lines starting with ":" are comments (keepalives). A complete
+//     comment-only block is a valid frame (it proves the stream is live) but
+//     carries nothing to deliver.
 //   - Lines starting with "id:" are ignored here (server uses it for version
 //     tracking; we don't need last-event-id reconnect semantics yet).
 //   - An empty line terminates the event: the accumulated data is fed to
@@ -379,33 +396,60 @@ func (d *deadlineResetReader) Read(p []byte) (int, error) {
 // changes, the bufio.Scanner pre-sized line buffer and this function both
 // need an update.
 //
-// It returns the scanner's error (nil on clean EOF), so the caller can tell
-// an oversized event (bufio.ErrTooLong) apart from a normal stream end.
-func (c *sseClient) parseStream(r io.Reader) error {
+// The first valid frame (a complete comment-only block, or a data block that
+// decodes and validates as a config envelope) reports the connection as
+// connected, before that frame's envelope is delivered. A block cut off by
+// EOF, or a malformed or non-envelope block, is not a frame.
+//
+// It returns whether a valid frame was seen and the scanner's error (nil on
+// clean EOF), so the caller can tell a failed attempt (no frame) and an
+// oversized event (bufio.ErrTooLong) apart from a normal stream end.
+func (c *sseClient) parseStream(r io.Reader) (bool, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), sseMaxLine)
 
+	frameSeen := false
+	// frame records a valid frame. While the oversized gate is set (the last
+	// stream ended on an oversized event), only an envelope counts: the
+	// server resends the oversized snapshot on every connect (qfg-9dxb.6).
+	frame := func(envelope bool) {
+		if c.oversized {
+			if !envelope {
+				return
+			}
+			// An event got through after an oversized one: the stream is
+			// usable again.
+			c.oversized = false
+		}
+		if !frameSeen {
+			frameSeen = true
+			c.setConnected(true)
+		}
+	}
+
 	var dataBuf bytes.Buffer
+	sawComment, sawField := false, false
 	flush := func() {
+		commentOnly := sawComment && !sawField
+		sawComment, sawField = false, false
 		if dataBuf.Len() == 0 {
+			if commentOnly {
+				// Complete comment-only block (keepalive): a valid frame.
+				frame(false)
+			}
 			return
 		}
 		data := dataBuf.Bytes()
 		env, err := decodeEnvelope(func(v any) error { return json.Unmarshal(data, v) }, c.cfg.Logger)
 		if err == nil && env.validate() == nil {
-			if c.oversized {
-				// An event got through after an oversized one: the stream is
-				// usable again, so report the connection now.
-				c.oversized = false
-				c.setConnected(true)
-			}
+			frame(true)
 			if c.cfg.OnEnvelope != nil {
 				c.invokeOnEnvelope(env)
 			}
 		}
 		// else: malformed payload, or valid JSON that is not a config
-		// envelope (qfg-9dxb.3) — swallow so a single bad event doesn't tear
-		// down the stream. The HTTP poller is a safety net.
+		// envelope (qfg-9dxb.3) — not a frame; swallow so a single bad event
+		// doesn't tear down the stream. The HTTP poller is a safety net.
 		dataBuf.Reset()
 	}
 
@@ -416,9 +460,12 @@ func (c *sseClient) parseStream(r io.Reader) error {
 			continue
 		}
 		if line[0] == ':' {
-			// Comment (keepalive) — ignore.
+			// Comment (keepalive): nothing to deliver; the block counts as a
+			// frame once its terminating blank line arrives.
+			sawComment = true
 			continue
 		}
+		sawField = true
 		// Accept both "data: <x>" and "data:<x>" (optional single space).
 		if rest, ok := stripFieldPrefix(line, "data:"); ok {
 			if dataBuf.Len() > 0 {
@@ -430,8 +477,9 @@ func (c *sseClient) parseStream(r io.Reader) error {
 		// Other SSE fields ("id:", "event:", "retry:") currently unused.
 	}
 	// Stream ended (EOF or read error). Any pending event without a trailing
-	// blank line is discarded — matches real SSE server behavior.
-	return scanner.Err()
+	// blank line is discarded (and is not a frame) — matches real SSE server
+	// behavior.
+	return frameSeen, scanner.Err()
 }
 
 // sseMaxLine caps a single SSE line. Envelopes can be large (500 flags ×
