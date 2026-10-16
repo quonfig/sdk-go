@@ -72,7 +72,18 @@ type Client struct {
 	initializationErr      error
 	refreshMu              sync.Mutex
 	closeCh                chan struct{}
-	closeOnce              sync.Once
+
+	// OnConfigUpdate delivery queue (qfg-eefx). installEnvelope runs under
+	// refreshMu and only counts a pending delivery; each install path calls
+	// deliverConfigUpdates after releasing refreshMu, so the user callback can
+	// call Refresh() (or any client method) without deadlocking. One goroutine
+	// drains at a time, so callbacks stay serialized and in install order; a
+	// re-entrant install from inside the callback is delivered by the outer
+	// drain loop once the callback returns.
+	configUpdateMu       sync.Mutex
+	configUpdatePending  int
+	configUpdateDraining bool
+	closeOnce            sync.Once
 
 	// Failover / canonical-ordering observability (guarded by mu). These back
 	// the public HeldGeneration/ResolvedFrom/ConfigInstallCount/
@@ -209,6 +220,7 @@ func NewClient(opts ...Option) (*Client, error) {
 			)
 		}
 		client.installEnvelope(envelope, -1)
+		client.deliverConfigUpdates()
 		client.finishInitialization(true)
 		if o.DataDirAutoReload {
 			client.startDatadirWatcher()
@@ -332,6 +344,7 @@ func (c *Client) reloadDatadir() {
 	c.refreshMu.Lock()
 	c.installEnvelope(envelope, -1)
 	c.refreshMu.Unlock()
+	c.deliverConfigUpdates()
 }
 
 func (c *Client) effectiveDebounce() time.Duration {
@@ -982,6 +995,7 @@ func (c *Client) handleSSEEnvelope(env *ConfigEnvelope) {
 		c.recordSuccessfulRefresh()
 	}
 	c.refreshMu.Unlock()
+	c.deliverConfigUpdates()
 }
 
 // handleSSEStateChange routes an SSE connection edge to the supervisor and,
@@ -1184,6 +1198,7 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 			}
 		}
 		c.refreshMu.Unlock()
+		c.deliverConfigUpdates()
 		if installed {
 			// Failover observability: record which leg (primary/secondary)
 			// served the config now held (qfg-41nh.18).
@@ -1364,18 +1379,49 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope, sourceIndex int) {
 	c.initialized = true
 	c.initializationErr = nil
 	c.lastRefresh = time.Now()
-	onConfigUpdate := c.opts.OnConfigUpdate
 	c.mu.Unlock()
 
-	if onConfigUpdate != nil {
-		c.invokeOnConfigUpdate(onConfigUpdate)
+	// Callers hold refreshMu here, so the callback must not run yet: queue it,
+	// and the caller delivers it via deliverConfigUpdates after Unlock
+	// (qfg-eefx). Queuing under refreshMu keeps deliveries in install order.
+	if c.opts.OnConfigUpdate != nil {
+		c.configUpdateMu.Lock()
+		c.configUpdatePending++
+		c.configUpdateMu.Unlock()
 	}
+}
+
+// deliverConfigUpdates fires OnConfigUpdate once per queued install. Every
+// install path calls it after releasing refreshMu (never while holding it), so
+// the callback may call Refresh(), getters, or Close() (qfg-eefx). If another
+// goroutine (or an outer frame of this one, for a Refresh() made from inside
+// the callback) is already draining, this returns at once and that drainer
+// delivers the queued update after the current callback returns.
+func (c *Client) deliverConfigUpdates() {
+	fn := c.opts.OnConfigUpdate
+	if fn == nil {
+		return
+	}
+	c.configUpdateMu.Lock()
+	if c.configUpdateDraining {
+		c.configUpdateMu.Unlock()
+		return
+	}
+	c.configUpdateDraining = true
+	for c.configUpdatePending > 0 {
+		c.configUpdatePending--
+		c.configUpdateMu.Unlock()
+		c.invokeOnConfigUpdate(fn)
+		c.configUpdateMu.Lock()
+	}
+	c.configUpdateDraining = false
+	c.configUpdateMu.Unlock()
 }
 
 // invokeOnConfigUpdate calls the user-supplied OnConfigUpdate callback under
 // a defer/recover so a panic in customer code cannot tear down the goroutine
-// that called installEnvelope (the SSE callback goroutine, the polling
-// supervisor's goroutine, or the init goroutine in fetchAndInstall). On
+// that delivers it (the SSE callback goroutine, the polling supervisor's
+// goroutine, the init goroutine in fetchAndInstall, or a Refresh() caller). On
 // recovery we log at ERROR with the panic value and stack — chaos scenario
 // 10 asserts client.sdkLog('error', /callback|onConfigUpdate/i) matches this
 // line. The SSE-side invokeOnEnvelope guard is still in place as a

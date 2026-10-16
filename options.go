@@ -112,9 +112,12 @@ type Options struct {
 	telemetryURLExplicit bool
 
 	// OnConfigUpdate is called whenever the client installs a new config envelope
-	// (i.e. after a successful fetch or data-dir load). It is called with the
-	// client's internal mutex NOT held, so it is safe to call client methods
-	// from within the callback.
+	// (i.e. after a successful fetch or data-dir load). It is called with no
+	// client lock held (neither the state mutex nor the install/refresh mutex),
+	// so it is safe to call client methods, including Refresh() and Close(),
+	// from within the callback. Calls are serialized and fire in install order;
+	// an install triggered from inside the callback is delivered after the
+	// callback returns.
 	OnConfigUpdate func()
 
 	// DataDirAutoReload enables filesystem watching when DataDir is set. The
