@@ -103,6 +103,16 @@ func TestGet_CanDecryptAndReturnASecretValueWithDecryptionKeyInInEnvVar(t *testi
 	assert.Equal(t, want, got)
 }
 
+// decrypts a secret whose key config has an environment rule
+func TestGet_DecryptsASecretWhoseKeyConfigHasAnEnvironmentRule(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("env.scoped.secret", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "env.scoped.secret")
+	want := "hello.world"
+	assert.Equal(t, want, got)
+}
+
 // duration 200 ms
 func TestGet_Duration200Ms(t *testing.T) {
 	c := mustPublicClient(t)
