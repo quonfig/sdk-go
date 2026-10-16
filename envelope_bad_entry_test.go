@@ -90,7 +90,7 @@ func TestBadConfigEntrySkippedOnSSE(t *testing.T) {
 		OnEnvelope: func(env *ConfigEnvelope) { got = append(got, env) },
 	})
 	stream := "data: " + envelopeJSON(goodFlagJSON, badJSONConfigJSON) + "\n\n"
-	_ = c.parseStream(strings.NewReader(stream))
+	_, _ = c.parseStream(strings.NewReader(stream))
 	if len(got) != 1 {
 		t.Fatalf("OnEnvelope called %d times, want 1", len(got))
 	}
@@ -107,7 +107,7 @@ func TestAllConfigEntriesBadRejectsEnvelope(t *testing.T) {
 		OnEnvelope: func(env *ConfigEnvelope) { got = append(got, env) },
 	})
 	stream := "data: " + envelopeJSON(badJSONConfigJSON) + "\n\n"
-	_ = c.parseStream(strings.NewReader(stream))
+	_, _ = c.parseStream(strings.NewReader(stream))
 	if len(got) != 0 {
 		t.Fatalf("OnEnvelope called %d times with an all-bad envelope, want 0", len(got))
 	}

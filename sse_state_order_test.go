@@ -11,7 +11,9 @@ import (
 )
 
 // shortLivedSSEServer accepts one SSE connection that ends immediately after
-// its 200 headers; every later connect gets a 503. Config fetches succeed.
+// its first frame (one keepalive); every later connect gets a 503. Config
+// fetches succeed. The keepalive is needed: under the first-frame rule
+// (qfg-goi1.10.39) a 200 that ends with no frame never reports connected.
 func shortLivedSSEServer() *httptest.Server {
 	var sse atomic.Int32
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -22,6 +24,7 @@ func shortLivedSSEServer() *httptest.Server {
 		if sse.Add(1) == 1 {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(": keepalive\n\n"))
 			w.(http.Flusher).Flush()
 			return
 		}
