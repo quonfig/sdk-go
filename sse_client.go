@@ -92,6 +92,10 @@ type sseClientConfig struct {
 	// Logger is used to record recovered panics from the OnEnvelope callback
 	// and other unexpected internal errors. Nil falls back to slog.Default().
 	Logger *slog.Logger
+
+	// Wait, if non-nil, maps each requested reconnect sleep to the duration
+	// actually slept (test seam, see Options.testWaitHook).
+	Wait func(kind string, d time.Duration) time.Duration
 }
 
 // sseClient runs a long-lived goroutine that keeps an SSE connection open,
@@ -232,6 +236,9 @@ func (c *sseClient) runLoop() {
 		// Jittered sleep before reconnecting.
 		jitter := time.Duration(rand.Int63n(int64(delay) + 1))
 		sleep := delay/2 + jitter/2
+		if c.cfg.Wait != nil {
+			sleep = c.cfg.Wait("sse", sleep)
+		}
 		t := time.NewTimer(sleep)
 		select {
 		case <-c.ctx.Done():

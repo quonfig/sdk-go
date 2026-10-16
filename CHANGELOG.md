@@ -6,6 +6,25 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Changed (minor)
 
+- **A rejected SDK key slows down instead of retrying at the normal cadence
+  (auth-failure rule, qfg-goi1.10.23).** When a fallback-poll cycle (or a
+  poll with `WithSSE(false)`) gets no 200/304 on any leg and the primary leg
+  answered 401, 403, 404 or 410, the client enters an internal auth-failed
+  regime: SSE is stopped, the fallback poller stops, and the client sends one
+  fetch probe across every leg every 150-300s (uniform, no doubling, never
+  giving up; with `WithSSE(false)` the wait is the larger of that and the poll
+  interval). It logs one ERROR naming the status and host (never the key) on
+  entry, DEBUG per probe, and one INFO on exit. The first probe that gets a
+  valid 200 or a 304 on any leg installs it, leaves auth-failed and restarts
+  SSE from its base backoff. `ConnectionState()` reports `disconnected` while
+  auth-failed (never `falling_back`); there is no new state or getter. A
+  primary 503 with a secondary 401, a 200 on any leg, or an SSE 401 on its own
+  never enters; SSE behavior and its log lines before entry are unchanged.
+  Pinned by supervisor Test 8 (integration-test-data v2026.10.16).
+
+  **UPGRADE:** retry cadence and log levels change after a rejected
+  401/403/404/410 fetch cycle; a revoked key logs one config ERROR.
+
 - **Non-confidential ENV_VAR-provided values report their resolved value in
   evaluation-summary telemetry (qfg-goi1.10.16).** Telemetry used to record
   the stored provided descriptor for every ENV_VAR value, so a

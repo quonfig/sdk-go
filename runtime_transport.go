@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -65,6 +66,13 @@ type runtimeTransport struct {
 type legResult struct {
 	Res *fetchResult
 	Err error
+	// Index is the baseURLs index of the leg (0 = primary), set on every
+	// result, including errors.
+	Index int
+	// Status is the HTTP status the leg answered with, or 0 when no response
+	// came back (dial error, timeout). The auth-failure rule reads the
+	// primary leg's status (qfg-goi1.10.23).
+	Status int
 }
 
 // DefaultConfigFetchTimeout is the default of the ConfigFetchTimeout option,
@@ -227,6 +235,12 @@ func (c *runtimeTransport) FetchConfigsHedged(ctx context.Context, hedgeDelay, h
 const maxErrorBodyBytes = 1024
 
 func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time.Duration) legResult {
+	lr := c.fetchLegAt(ctx, i, abort)
+	lr.Index = i
+	return lr
+}
+
+func (c *runtimeTransport) fetchLegAt(ctx context.Context, i int, abort time.Duration) legResult {
 	if i < 0 || i >= len(c.baseURLs) {
 		return legResult{Err: fmt.Errorf("leg index %d out of range", i)}
 	}
@@ -261,24 +275,24 @@ func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotModified {
-		return legResult{Res: &fetchResult{NotChanged: true, SourceIndex: i}}
+		return legResult{Res: &fetchResult{NotChanged: true, SourceIndex: i}, Status: resp.StatusCode}
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		// The body ends up in the error getters return and in logs, so cap
 		// it: a proxy error page must not ride along in full.
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-		return legResult{Err: fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, baseURL, strings.TrimSpace(string(body)))}
+		return legResult{Err: fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, baseURL, strings.TrimSpace(string(body))), Status: resp.StatusCode}
 	}
 
 	envelope, err := decodeEnvelope(json.NewDecoder(resp.Body).Decode, c.logger)
 	if err != nil {
-		return legResult{Err: fmt.Errorf("decoding response: %w", err)}
+		return legResult{Err: fmt.Errorf("decoding response: %w", err), Status: resp.StatusCode}
 	}
 	// A 200 that is not a config envelope is a leg error, so the hedge and
 	// failover proceed exactly as for a 5xx (qfg-9dxb.3).
 	if err := envelope.validate(); err != nil {
-		return legResult{Err: fmt.Errorf("invalid response from %s: %w", baseURL, err)}
+		return legResult{Err: fmt.Errorf("invalid response from %s: %w", baseURL, err), Status: resp.StatusCode}
 	}
 
 	// Store the ETag only after the body decoded and validated. Storing it
@@ -290,7 +304,7 @@ func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time
 		c.etagMu.Unlock()
 	}
 
-	return legResult{Res: &fetchResult{Envelope: envelope, SourceIndex: i, prevETag: etag, storedETag: newEtag}}
+	return legResult{Res: &fetchResult{Envelope: envelope, SourceIndex: i, prevETag: etag, storedETag: newEtag}, Status: resp.StatusCode}
 }
 
 // rollbackETag undoes the ETag write of a 200 whose gen<=0 payload the guard
@@ -306,4 +320,37 @@ func (c *runtimeTransport) rollbackETag(res *fetchResult) {
 	if c.etags[res.SourceIndex] == res.storedETag {
 		c.etags[res.SourceIndex] = res.prevETag
 	}
+}
+
+// isAuthClassStatus reports whether a config-fetch status is in the auth
+// class of the cross-SDK auth-failure rule (R1): 401, 403, 404, 410.
+func isAuthClassStatus(status int) bool {
+	switch status {
+	case http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusGone:
+		return true
+	}
+	return false
+}
+
+// authRejectedError is what fetchAndInstall returns for a cycle that enters
+// auth-failed (rule R2): no leg returned 200/304 and the primary leg answered
+// with an auth-class status. It wraps the cycle's usual error, so its text is
+// unchanged for Refresh callers; the fallback poller uses errors.As to
+// recognize it.
+type authRejectedError struct {
+	Status int    // the primary leg's status
+	Host   string // the primary leg's host (never the key)
+	err    error
+}
+
+func (e *authRejectedError) Error() string { return e.err.Error() }
+func (e *authRejectedError) Unwrap() error { return e.err }
+
+// hostOf returns the host[:port] of a base URL, or the input when it does not
+// parse.
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return raw
 }
