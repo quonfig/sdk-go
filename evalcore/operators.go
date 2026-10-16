@@ -249,12 +249,42 @@ func toInt64FromAny(v interface{}) int64 {
 	return 0
 }
 
-// ToString converts a context value to a string.
+// maxExactFloatInt is 2^53, the bound below which every integer is exactly
+// representable as a float64 (JavaScript's Number.MAX_SAFE_INTEGER + 1).
+const maxExactFloatInt = 1 << 53
+
+// ToString converts a context value to its canonical string form for the
+// string operators (R1, qfg-goi1.5): strings as-is, bools "true"/"false", and
+// an integral float64/float32 with |n| < 2^53 as plain base-10 digits. Every
+// number decoded from JSON is a float64 (all browser/mobile contexts via
+// api-delivery), and %v would render 1234567 as "1.234567e+06", so
+// is-one-of ["1234567"] never matched. Other values keep %v.
 func ToString(v interface{}) string {
 	if v == nil {
 		return ""
 	}
+	switch n := v.(type) {
+	case string:
+		return n
+	case float64:
+		if s, ok := integralFloatString(n); ok {
+			return s
+		}
+	case float32:
+		if s, ok := integralFloatString(float64(n)); ok {
+			return s
+		}
+	}
 	return fmt.Sprintf("%v", v)
+}
+
+// integralFloatString renders f as plain digits when it is a whole number
+// strictly inside (-2^53, 2^53).
+func integralFloatString(f float64) (string, bool) {
+	if f != math.Trunc(f) || math.Abs(f) >= maxExactFloatInt {
+		return "", false
+	}
+	return strconv.FormatInt(int64(f), 10), true
 }
 
 // toStringSlice converts a context value to a string slice.

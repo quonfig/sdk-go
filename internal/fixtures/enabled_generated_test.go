@@ -606,11 +606,11 @@ func TestEnabled_ReturnsFalseForPROPSEMVEREQUALRuleWhenTheGivenPropDoesNotEqualT
 	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.semver-equal")
 }
 
-// returns false for PROP_SEMVER_EQUAL rule when the given prop is not a valid semver
-func TestEnabled_ReturnsFalseForPROPSEMVEREQUALRuleWhenTheGivenPropIsNotAValidSemver(t *testing.T) {
+// returns true for PROP_SEMVER_EQUAL rule when the given prop is an abbreviated major.minor version
+func TestEnabled_ReturnsTrueForPROPSEMVEREQUALRuleWhenTheGivenPropIsAnAbbreviatedMajorMinorVersion(t *testing.T) {
 	c := mustPublicClient(t)
 	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"app": {"version": "2.0"}})).FeatureIsOn("feature-flag.semver-equal")
-	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.semver-equal")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.semver-equal")
 }
 
 // returns true for PROP_SEMVER_LESS_THAN rule when the given prop is less than 2.0.0
@@ -653,4 +653,235 @@ func TestEnabled_ReturnsFalseForPROPSEMVEREQUALRuleWhenTheGivenPropIsLessThanThe
 	c := mustPublicClient(t)
 	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"app": {"version": "0.0.5"}})).FeatureIsOn("feature-flag.semver-greater-than")
 	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.semver-greater-than")
+}
+
+// returns true for PROP_IS_ONE_OF ["true"] when the context value is boolean true
+func TestEnabled_ReturnsTrueForPROPISONEOFTrueWhenTheContextValueIsBooleanTrue(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"beta": true}})).FeatureIsOn("feature-flag.is-one-of.bool")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.is-one-of.bool")
+}
+
+// returns false for PROP_IS_ONE_OF ["true"] when the context value is boolean false
+func TestEnabled_ReturnsFalseForPROPISONEOFTrueWhenTheContextValueIsBooleanFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"beta": false}})).FeatureIsOn("feature-flag.is-one-of.bool")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.is-one-of.bool")
+}
+
+// returns true for PROP_IS_ONE_OF ["true"] when the context value is the string "true"
+func TestEnabled_ReturnsTrueForPROPISONEOFTrueWhenTheContextValueIsTheStringTrue(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"beta": "true"}})).FeatureIsOn("feature-flag.is-one-of.bool")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.is-one-of.bool")
+}
+
+// returns false for PROP_IS_NOT_ONE_OF ["true"] when the context value is boolean true
+func TestEnabled_ReturnsFalseForPROPISNOTONEOFTrueWhenTheContextValueIsBooleanTrue(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"beta": true}})).FeatureIsOn("feature-flag.is-not-one-of.bool")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.is-not-one-of.bool")
+}
+
+// returns true for PROP_IS_ONE_OF number strings when the context value is the integer 1
+func TestEnabled_ReturnsTrueForPROPISONEOFNumberStringsWhenTheContextValueIsTheInteger1(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 1}})).FeatureIsOn("feature-flag.is-one-of.number")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.is-one-of.number")
+}
+
+// returns true for PROP_IS_ONE_OF number strings when the context value is the number 1.5
+func TestEnabled_ReturnsTrueForPROPISONEOFNumberStringsWhenTheContextValueIsTheNumber15(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 1.5}})).FeatureIsOn("feature-flag.is-one-of.number")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.is-one-of.number")
+}
+
+// returns true for PROP_IS_ONE_OF number strings when the context value is the integer 1234567
+func TestEnabled_ReturnsTrueForPROPISONEOFNumberStringsWhenTheContextValueIsTheInteger1234567(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 1234567}})).FeatureIsOn("feature-flag.is-one-of.number")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.is-one-of.number")
+}
+
+// returns false for PROP_IS_ONE_OF number strings when the context value is the integer 2
+func TestEnabled_ReturnsFalseForPROPISONEOFNumberStringsWhenTheContextValueIsTheInteger2(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 2}})).FeatureIsOn("feature-flag.is-one-of.number")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.is-one-of.number")
+}
+
+// returns true for PROP_ENDS_WITH_ONE_OF ["3"] when the context value is the integer 123
+func TestEnabled_ReturnsTrueForPROPENDSWITHONEOF3WhenTheContextValueIsTheInteger123(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 123}})).FeatureIsOn("feature-flag.ends-with-one-of.number")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.ends-with-one-of.number")
+}
+
+// returns false for PROP_ENDS_WITH_ONE_OF ["3"] when the context value is the integer 124
+func TestEnabled_ReturnsFalseForPROPENDSWITHONEOF3WhenTheContextValueIsTheInteger124(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 124}})).FeatureIsOn("feature-flag.ends-with-one-of.number")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.ends-with-one-of.number")
+}
+
+// returns true for IN_INT_RANGE [0, 10) when the context value is the start bound 0
+func TestEnabled_ReturnsTrueForININTRANGE010WhenTheContextValueIsTheStartBound0(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 0}})).FeatureIsOn("feature-flag.in-int-range")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.in-int-range")
+}
+
+// returns true for IN_INT_RANGE [0, 10) when the context value is 9
+func TestEnabled_ReturnsTrueForININTRANGE010WhenTheContextValueIs9(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 9}})).FeatureIsOn("feature-flag.in-int-range")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.in-int-range")
+}
+
+// returns false for IN_INT_RANGE [0, 10) when the context value is the end bound 10
+func TestEnabled_ReturnsFalseForININTRANGE010WhenTheContextValueIsTheEndBound10(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 10}})).FeatureIsOn("feature-flag.in-int-range")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.in-int-range")
+}
+
+// returns false for IN_INT_RANGE [0, 10) when the context value is -1
+func TestEnabled_ReturnsFalseForININTRANGE010WhenTheContextValueIs1(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": -1}})).FeatureIsOn("feature-flag.in-int-range")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.in-int-range")
+}
+
+// returns true for IN_INT_RANGE with no end when the context value is 5000000000
+func TestEnabled_ReturnsTrueForININTRANGEWithNoEndWhenTheContextValueIs5000000000(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": 5000000000}})).FeatureIsOn("feature-flag.in-int-range.open-end")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.in-int-range.open-end")
+}
+
+// returns true for IN_INT_RANGE with no start when the context value is -5
+func TestEnabled_ReturnsTrueForININTRANGEWithNoStartWhenTheContextValueIs5(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"n": -5}})).FeatureIsOn("feature-flag.in-int-range.open-start")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.in-int-range.open-start")
+}
+
+// returns false for PROP_SEMVER_EQUAL 2.0.0 when the given prop is the prerelease 2.0.0-beta.1
+func TestEnabled_ReturnsFalseForPROPSEMVEREQUAL200WhenTheGivenPropIsThePrerelease200Beta1(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"app": {"version": "2.0.0-beta.1"}})).FeatureIsOn("feature-flag.semver-equal")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.semver-equal")
+}
+
+// returns true for PROP_SEMVER_LESS_THAN 2.0.0 when the given prop is the prerelease 2.0.0-beta.1
+func TestEnabled_ReturnsTrueForPROPSEMVERLESSTHAN200WhenTheGivenPropIsThePrerelease200Beta1(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"app": {"version": "2.0.0-beta.1"}})).FeatureIsOn("feature-flag.semver-less-than")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.semver-less-than")
+}
+
+// returns false for PROP_SEMVER_GREATER_THAN 2.0.0 when the given prop is the prerelease 2.0.0-beta.1
+func TestEnabled_ReturnsFalseForPROPSEMVERGREATERTHAN200WhenTheGivenPropIsThePrerelease200Beta1(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"app": {"version": "2.0.0-beta.1"}})).FeatureIsOn("feature-flag.semver-greater-than")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.semver-greater-than")
+}
+
+// returns true for PROP_SEMVER_EQUAL 2.0.0 when the given prop differs only by build metadata
+func TestEnabled_ReturnsTrueForPROPSEMVEREQUAL200WhenTheGivenPropDiffersOnlyByBuildMetadata(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"app": {"version": "2.0.0+build.5"}})).FeatureIsOn("feature-flag.semver-equal")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.semver-equal")
+}
+
+// returns true for PROP_SEMVER_LESS_THAN 2.0.0-beta when the given prop is the prerelease 2.0.0-alpha
+func TestEnabled_ReturnsTrueForPROPSEMVERLESSTHAN200BetaWhenTheGivenPropIsThePrerelease200Alpha(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"app": {"version": "2.0.0-alpha"}})).FeatureIsOn("feature-flag.semver-less-than.prerelease")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.semver-less-than.prerelease")
+}
+
+// returns true for PROP_SEMVER_EQUAL 2.0.0 when the given prop is the abbreviated major version 2
+func TestEnabled_ReturnsTrueForPROPSEMVEREQUAL200WhenTheGivenPropIsTheAbbreviatedMajorVersion2(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"app": {"version": "2"}})).FeatureIsOn("feature-flag.semver-equal")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.semver-equal")
+}
+
+// returns false for PROP_SEMVER_EQUAL 2.0.0 when the given prop has a v prefix
+func TestEnabled_ReturnsFalseForPROPSEMVEREQUAL200WhenTheGivenPropHasAVPrefix(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"app": {"version": "v2.0.0"}})).FeatureIsOn("feature-flag.semver-equal")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.semver-equal")
+}
+
+// returns false for PROP_BEFORE when the given prop is a date-only string
+func TestEnabled_ReturnsFalseForPROPBEFOREWhenTheGivenPropIsADateOnlyString(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"creation_date": "2024-11-01"}})).FeatureIsOn("feature-flag.before")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.before")
+}
+
+// returns false for PROP_BEFORE when the given prop is an RFC3339 string without an offset
+func TestEnabled_ReturnsFalseForPROPBEFOREWhenTheGivenPropIsAnRFC3339StringWithoutAnOffset(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"creation_date": "2024-11-01T00:00:00"}})).FeatureIsOn("feature-flag.before")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.before")
+}
+
+// returns false for PROP_BEFORE when the given prop is a free-form date string
+func TestEnabled_ReturnsFalseForPROPBEFOREWhenTheGivenPropIsAFreeFormDateString(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"creation_date": "Nov 1 2024"}})).FeatureIsOn("feature-flag.before")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.before")
+}
+
+// returns true for PROP_BEFORE when the given prop is an RFC3339 string with a numeric offset
+func TestEnabled_ReturnsTrueForPROPBEFOREWhenTheGivenPropIsAnRFC3339StringWithANumericOffset(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"creation_date": "2024-11-01T02:00:00+02:00"}})).FeatureIsOn("feature-flag.before")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.before")
+}
+
+// returns true for PROP_BEFORE when the given prop is an all-digit epoch-ms string
+func TestEnabled_ReturnsTrueForPROPBEFOREWhenTheGivenPropIsAnAllDigitEpochMsString(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"creation_date": "1730419200000"}})).FeatureIsOn("feature-flag.before")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.before")
+}
+
+// returns true for PROP_BEFORE an RFC3339 criterion when the given prop is an earlier epoch-ms number
+func TestEnabled_ReturnsTrueForPROPBEFOREAnRFC3339CriterionWhenTheGivenPropIsAnEarlierEpochMsNumber(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"creation_date": 1730419200000}})).FeatureIsOn("feature-flag.before.rfc3339-criterion")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.before.rfc3339-criterion")
+}
+
+// returns false for PROP_BEFORE an RFC3339 criterion when the given prop is a later RFC3339 string
+func TestEnabled_ReturnsFalseForPROPBEFOREAnRFC3339CriterionWhenTheGivenPropIsALaterRFC3339String(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"creation_date": "2025-01-01T00:00:00Z"}})).FeatureIsOn("feature-flag.before.rfc3339-criterion")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.before.rfc3339-criterion")
+}
+
+// returns false for PROP_AFTER an all-digit criterion "999" when the given prop is 500
+func TestEnabled_ReturnsFalseForPROPAFTERAnAllDigitCriterion999WhenTheGivenPropIs500(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"creation_date": 500}})).FeatureIsOn("feature-flag.after.numeric-string-criterion")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.after.numeric-string-criterion")
+}
+
+// returns true for PROP_AFTER an all-digit criterion "999" when the given prop is 1000
+func TestEnabled_ReturnsTrueForPROPAFTERAnAllDigitCriterion999WhenTheGivenPropIs1000(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"creation_date": 1000}})).FeatureIsOn("feature-flag.after.numeric-string-criterion")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.after.numeric-string-criterion")
+}
+
+// returns false for PROP_GREATER_THAN 30 when the given prop is a numeric string above the threshold
+func TestEnabled_ReturnsFalseForPROPGREATERTHAN30WhenTheGivenPropIsANumericStringAboveTheThreshold(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"age": "35"}})).FeatureIsOn("feature-flag.greater-than")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.greater-than")
 }

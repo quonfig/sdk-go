@@ -6,6 +6,29 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Changed (minor)
 
+- **String operators use one canonical form for numbers and bools (R1,
+  qfg-goi1.5.2).** `*_ONE_OF`, starts/ends-with, contains and
+  hierarchical-match now render an integral `float64`/`float32` with
+  |n| < 2^53 as plain digits (`1234567`, `5000000000`, `1`), never Go's `%v`
+  exponent form (`1.234567e+06`); bools stay `"true"`/`"false"`. Every number
+  that arrives through JSON is a `float64` (every browser/mobile context via
+  api-delivery), so `is one of ["1234567"]` on a numeric id >= 1e6 never
+  matched before. Non-integral numbers are unchanged (`1.5`).
+- **Abbreviated semver versions are accepted (Q5, qfg-goi1.5.2).**
+  `PROP_SEMVER_*` reads `"2"` as `2.0.0` and `"2.0"` as `2.0.0`, matching
+  LaunchDarkly, Statsig and `qfg verify`. A `v` prefix (`"v2.0.0"`) stays
+  invalid, and prerelease/build metadata still need the full `x.y.z` form.
+  Pinned by integration-test-data v2026.10.16.1.
+
+  **UPGRADE:** these change who matches. A context version of `"2"` or
+  `"2.0"` (common for mobile app versions) used to fail every semver rule and
+  now compares as `2.0.0`. A numeric context value >= 1e6 now matches a
+  `["1234567"]`-style list, and a list holding an exponent string
+  (`"1.234567e+06"`) stops matching. Pass dates to `PROP_BEFORE`/`PROP_AFTER`
+  as epoch milliseconds or ISO 8601 / RFC 3339 with `Z` or a numeric offset
+  (sdk-go already required this; date-only and offset-less strings never
+  match in any Quonfig SDK).
+
 - **A rejected SDK key slows down instead of retrying at the normal cadence
   (auth-failure rule, qfg-goi1.10.23).** When a fallback-poll cycle (or a
   poll with `WithSSE(false)`) gets no 200/304 on any leg and the primary leg
