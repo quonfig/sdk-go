@@ -33,6 +33,19 @@ All notable changes to the Quonfig Go SDK are documented here.
   frame resets the reconnect backoff and cancels/disengages the fallback
   poller. Covered by supervisor contract Test 9 (`sse_first_frame_test.go`).
 
+### Fixed (patch)
+
+- **`OnConfigUpdate` no longer deadlocks when it calls the client
+  (qfg-eefx).** The callback ran while the client held its internal
+  install lock, so calling `Refresh()` from inside it blocked forever. On the
+  first install that also stopped SSE and the fallback poller from starting,
+  so config stayed frozen for the life of the process. The callback now runs
+  after the lock is released, as `Options.OnConfigUpdate` documents. Calls
+  stay serialized and in install order, and a panic in the callback is still
+  recovered and logged. One visible difference: an install triggered from
+  inside the callback (for example by its own `Refresh()`) is delivered after
+  the callback returns, not nested inside it.
+
 ### Tests
 
 - integration-test-data pin bumped to v2026.10.16.4 (`test.yaml`); the two
