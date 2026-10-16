@@ -206,20 +206,9 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 
 	ec := &evalCtx{probe: probe}
 
-	type expState struct {
-		idx        int
-		exp        chaosExpectation
-		hitAt      time.Duration
-		heldSince  time.Time
-		passed     bool
-		failed     bool // within_ms elapsed without pass
-		skipped    bool // the rig cannot evaluate it; see serverMetricSkipReason
-		lastReason string
-		skipNotes  []skipNote
-	}
-	states := make([]*expState, len(run.Expectations))
+	states := make([]*chaosExpState, len(run.Expectations))
 	for i, exp := range run.Expectations {
-		states[i] = &expState{idx: i, exp: exp}
+		states[i] = &chaosExpState{exp: exp}
 	}
 
 	deadline := baseline.Add(wallClock)
@@ -229,34 +218,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	for now := time.Now(); now.Before(deadline); now = <-ticker.C {
 		elapsed := now.Sub(baseline)
 		for _, s := range states {
-			if s.passed || s.failed || s.skipped {
-				continue
-			}
-			r := evaluate(s.exp.Assert, ec)
-			s.lastReason = r.why
-			s.skipNotes = r.skipped
-			if r.verdict == verdictSkipped {
-				s.skipped = true
-				continue
-			}
-			if r.verdict == verdictPass {
-				if s.heldSince.IsZero() {
-					s.heldSince = now
-					s.hitAt = elapsed
-				}
-				holdFor := time.Duration(s.exp.MustHoldForMs) * time.Millisecond
-				if holdFor <= 0 || now.Sub(s.heldSince) >= holdFor {
-					s.passed = true
-				}
-			} else {
-				s.heldSince = time.Time{}
-			}
-			// Definitive fail: within_ms has elapsed and we either never hit,
-			// or we hit but never held long enough. Hold-for failures still
-			// have a chance until within_ms; after that it's terminal.
-			if !s.passed && elapsed > time.Duration(s.exp.WithinMs)*time.Millisecond {
-				s.failed = true
-			}
+			stepChaosExpectation(s, now, elapsed, func() exprResult { return evaluate(s.exp.Assert, ec) })
 		}
 		allTerminal := true
 		for _, s := range states {
@@ -280,7 +242,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	// Report — failed expectations fail the test so the red proof shows up
 	// in `go test` output; skipped ones are logged with their reason.
 	passCount, failCount, skipCount := 0, 0, 0
-	for _, s := range states {
+	for i, s := range states {
 		verdict := verdictFail
 		switch {
 		case s.passed:
@@ -292,7 +254,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		default:
 			failCount++
 		}
-		reportChaosExpectation(t, tally, s.idx, s.exp, verdict, s.hitAt, s.lastReason, s.skipNotes)
+		reportChaosExpectation(t, tally, i, s.exp, verdict, s.hitAt, s.lastReason, s.skipNotes)
 	}
 	layer1, _ := probe.sdkMetric("quonfig_sdk_worker_restart_total", map[string]string{"layer": "1"})
 	t.Logf("scenario summary: %d passed, %d failed, %d skipped (state=%s, sdkMetric.layer1=%v, fallback=%v, lastRefreshMs=%v)",

@@ -116,6 +116,7 @@ type chaosProc struct {
 type chaosExpectation struct {
 	WithinMs      int    `yaml:"within_ms"`
 	MustHoldForMs int    `yaml:"must_hold_for_ms"`
+	AfterMs       int    `yaml:"after_ms"`
 	Assert        string `yaml:"assert"`
 }
 
@@ -125,11 +126,104 @@ func loadChaosScenario(t *testing.T, path string) chaosScenario {
 	if err != nil {
 		t.Fatalf("read scenario %s: %v", path, err)
 	}
-	var s chaosScenario
-	if err := yaml.Unmarshal(b, &s); err != nil {
+	s, err := parseChaosScenario(b)
+	if err != nil {
 		t.Fatalf("parse scenario %s: %v", path, err)
 	}
 	return s
+}
+
+func parseChaosScenario(b []byte) (chaosScenario, error) {
+	var s chaosScenario
+	err := yaml.Unmarshal(b, &s)
+	return s, err
+}
+
+// chaosExpectationKeys is the closed key set of a chaos expectation (ITD
+// chaos/README.md, Timeline rule 4; the schema's additionalProperties: false).
+var chaosExpectationKeys = map[string]bool{
+	"within_ms": true, "assert": true, "must_hold_for_ms": true, "after_ms": true,
+}
+
+// UnmarshalYAML rejects any expectation key outside chaosExpectationKeys,
+// naming it, so a harness pinned to a newer ITD than it implements fails the
+// run instead of silently dropping a timing field such as after_ms.
+func (e *chaosExpectation) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			k := node.Content[i]
+			if !chaosExpectationKeys[k.Value] {
+				return fmt.Errorf("line %d: unknown chaos expectation key %q (allowed: within_ms, assert, must_hold_for_ms, after_ms)", k.Line, k.Value)
+			}
+		}
+	}
+	type plain chaosExpectation // no UnmarshalYAML method: avoids recursion
+	return node.Decode((*plain)(e))
+}
+
+// ----- per-tick expectation step -----
+
+// chaosExpState is one expectation's progress through the eval loop. Both
+// loops (runChaosScenario and evalRigExpectations) drive it with
+// stepChaosExpectation.
+type chaosExpState struct {
+	exp        chaosExpectation
+	hitAt      time.Duration
+	heldSince  time.Time
+	passed     bool
+	failed     bool // within_ms elapsed without pass
+	skipped    bool // the rig cannot evaluate it; see serverMetricSkipReason
+	lastReason string
+	skipNotes  []skipNote
+}
+
+func (s *chaosExpState) terminal() bool { return s.passed || s.failed || s.skipped }
+
+// stepChaosExpectation advances one non-terminal expectation by one tick.
+// now/elapsed are the tick time and its offset from t=0; eval evaluates the
+// expectation's assert against the current probe state.
+func stepChaosExpectation(s *chaosExpState, now time.Time, elapsed time.Duration, eval func() exprResult) {
+	if s.terminal() {
+		return
+	}
+	// Timeline rule 1: before after_ms the expectation is not evaluated: no
+	// PASS, no hold start, not terminal. SKIPPED is a property of the
+	// expression's shape (a whole-expression server_metric), not of time, so
+	// a skipped-shape row is still reported SKIPPED; that is the only result
+	// honored before after_ms.
+	if elapsed < time.Duration(s.exp.AfterMs)*time.Millisecond {
+		if r := eval(); r.verdict == verdictSkipped {
+			s.lastReason = r.why
+			s.skipNotes = r.skipped
+			s.skipped = true
+		}
+		return
+	}
+	r := eval()
+	s.lastReason = r.why
+	s.skipNotes = r.skipped
+	if r.verdict == verdictSkipped {
+		s.skipped = true
+		return
+	}
+	if r.verdict == verdictPass {
+		if s.heldSince.IsZero() {
+			s.heldSince = now
+			s.hitAt = elapsed
+		}
+		holdFor := time.Duration(s.exp.MustHoldForMs) * time.Millisecond
+		if holdFor <= 0 || now.Sub(s.heldSince) >= holdFor {
+			s.passed = true
+		}
+	} else {
+		s.heldSince = time.Time{}
+	}
+	// Definitive fail: within_ms has elapsed and we either never hit, or we
+	// hit but never held long enough. Hold-for failures still have a chance
+	// until within_ms; after that it's terminal.
+	if !s.passed && elapsed > time.Duration(s.exp.WithinMs)*time.Millisecond {
+		s.failed = true
+	}
 }
 
 // ----- toxiproxy admin client -----

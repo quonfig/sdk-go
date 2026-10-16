@@ -253,19 +253,9 @@ func evalRigExpectations(t *testing.T, run chaosScenarioRun, baseline time.Time,
 		wallClock = 30 * time.Second
 	}
 
-	type expState struct {
-		exp        chaosExpectation
-		heldSince  time.Time
-		hitAt      time.Duration
-		passed     bool
-		failed     bool
-		skipped    bool
-		lastReason string
-		skipNotes  []skipNote
-	}
-	states := make([]*expState, len(run.Expectations))
+	states := make([]*chaosExpState, len(run.Expectations))
 	for i, exp := range run.Expectations {
-		states[i] = &expState{exp: exp}
+		states[i] = &chaosExpState{exp: exp}
 	}
 
 	deadline := baseline.Add(wallClock)
@@ -276,32 +266,8 @@ func evalRigExpectations(t *testing.T, run chaosScenarioRun, baseline time.Time,
 		elapsed := now.Sub(baseline)
 		allTerminal := true
 		for _, s := range states {
-			if s.passed || s.failed || s.skipped {
-				continue
-			}
-			r := evaluate(s.exp.Assert, ec)
-			s.lastReason = r.why
-			s.skipNotes = r.skipped
-			if r.verdict == verdictSkipped {
-				s.skipped = true
-				continue
-			}
-			if r.verdict == verdictPass {
-				if s.heldSince.IsZero() {
-					s.heldSince = now
-					s.hitAt = elapsed
-				}
-				holdFor := time.Duration(s.exp.MustHoldForMs) * time.Millisecond
-				if holdFor <= 0 || now.Sub(s.heldSince) >= holdFor {
-					s.passed = true
-				}
-			} else {
-				s.heldSince = time.Time{}
-			}
-			if !s.passed && elapsed > time.Duration(s.exp.WithinMs)*time.Millisecond {
-				s.failed = true
-			}
-			if !s.passed && !s.failed {
+			stepChaosExpectation(s, now, elapsed, func() exprResult { return evaluate(s.exp.Assert, ec) })
+			if !s.terminal() {
 				allTerminal = false
 			}
 		}
