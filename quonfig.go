@@ -801,6 +801,7 @@ func (c *Client) startBackgroundWorkers() {
 			Threshold: threshold,
 			NoStream:  noStream,
 			Logger:    c.opts.Logger,
+			Wait:      c.opts.testWaitHook,
 			Fetch: func(ctx context.Context) error {
 				return c.fetchAndInstall(ctx, false)
 			},
@@ -825,6 +826,9 @@ func (c *Client) startBackgroundWorkers() {
 				// the SSE callback drains.
 				sup.setConnectionState(ConnStateConnected)
 				c.opts.Logger.Info("quonfig: Layer 2 fallback poller disengaged (SSE recovered)")
+			},
+			OnAuthFailed: func(entered bool) {
+				c.handleAuthFailed(sup, entered, noStream)
 			},
 		})
 	}
@@ -854,6 +858,33 @@ func (c *Client) startBackgroundWorkers() {
 	c.fallback = fp
 	c.mu.Unlock()
 
+	if c.opts.SSEEnabled {
+		c.startSSE()
+	}
+}
+
+// handleAuthFailed applies the auth-failure rule's transport side (R3, R4,
+// R6). On entry SSE is stopped (not attempted while auth-failed) and the
+// state is "disconnected", never "falling_back". On exit SSE restarts as a new
+// stream, so it begins from its base backoff; in polling mode the state goes
+// back to "falling_back", as it is while the poller is engaged.
+func (c *Client) handleAuthFailed(sup *supervisor, entered, noStream bool) {
+	if entered {
+		c.mu.Lock()
+		sse := c.sse
+		c.sse = nil
+		c.mu.Unlock()
+		if sse != nil {
+			sse.Stop()
+		}
+		sup.setConnectionState(ConnStateDisconnected)
+		return
+	}
+	if noStream {
+		sup.setConnectionState(ConnStateFallingBack)
+		return
+	}
+	sup.setConnectionState(ConnStateDisconnected)
 	if c.opts.SSEEnabled {
 		c.startSSE()
 	}
@@ -905,6 +936,7 @@ func (c *Client) startSSE() {
 		OnEnvelope:            c.handleSSEEnvelope,
 		OnStateChange:         c.opts.OnSSEStateChange,
 		OnStateChangeInternal: internalStateChange,
+		Wait:                  c.opts.testWaitHook,
 	})
 
 	// If Close ran before we got here, don't install or start the SSE
@@ -1111,10 +1143,14 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 	installedOnce := false
 	fired := 0
 	failures := 0
+	primaryStatus := 0
 	var lastErr error
 
 	for lr := range results {
 		fired++
+		if lr.Index == 0 {
+			primaryStatus = lr.Status
+		}
 		if lr.Err != nil {
 			failures++
 			lastErr = lr.Err
@@ -1201,6 +1237,13 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 			c.initializationErr = storedErr
 			c.mu.Unlock()
 			c.finishInitialization(false)
+		}
+		// Auth-failure rule R2: no leg returned 200/304 and the primary leg
+		// returned an auth-class status. Primary 503 + secondary 401 is not
+		// this (a new key can lag the secondary's manifest). Only the
+		// fallback poller acts on it; init and Refresh see the usual error.
+		if isAuthClassStatus(primaryStatus) {
+			return &authRejectedError{Status: primaryStatus, Host: hostOf(c.transport.baseURLs[0]), err: lastErr}
 		}
 		return lastErr
 	}

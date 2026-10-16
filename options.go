@@ -227,6 +227,14 @@ type Options struct {
 	// DefaultFallbackPollThreshold (120s) as the SSE-down window before the
 	// Layer 2 poller engages. Test-only — no public With* accessor.
 	testFallbackPollThreshold time.Duration
+
+	// testWaitHook, if non-nil, sees every background wait the SDK requests
+	// (kind is "sse" for an SSE reconnect sleep, "engage" for the fallback
+	// poller's engage threshold, "poll" for its interval, "probe" for an
+	// auth-failed probe wait) and returns the duration to actually wait.
+	// Supervisor Test 8 uses it to record the requested waits and compress
+	// them. Test-only — no public With* accessor.
+	testWaitHook func(kind string, d time.Duration) time.Duration
 }
 
 // TelemetryEnabled returns true if an SDK key and a TelemetryURL are
@@ -860,6 +868,15 @@ func WithSSEStateCallback(fn func(connected bool)) Option {
 func withTestStreamURLOverride(url string) Option {
 	return func(o *Options) error {
 		o.testStreamURLOverride = url
+		return nil
+	}
+}
+
+// withTestWaitHook is a test-only option that records and compresses the
+// background waits. See Options.testWaitHook.
+func withTestWaitHook(f func(kind string, d time.Duration) time.Duration) Option {
+	return func(o *Options) error {
+		o.testWaitHook = f
 		return nil
 	}
 }
