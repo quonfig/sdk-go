@@ -133,13 +133,17 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(15 * time.Second),
 		WithOnInitFailure(ReturnZeroValue),
-		// Compress the production 90s SSE read deadline to 5s for chaos
+		// Compress the production 90s SSE read deadline to 10s for chaos
 		// scenarios — the spec is "3x the server heartbeat", and the
 		// harness uses a 30s heartbeat in production but we don't have
-		// minutes per scenario in CI. 5s gives the same mechanism
-		// (deadline trips → drop → reconnect) at test cadence so e.g.
-		// scenario 07's within_ms=15000 is reachable.
-		withTestSSEReadTimeout(5 * time.Second),
+		// minutes per scenario in CI. 10s gives the same mechanism
+		// (deadline trips → drop → reconnect) at test cadence. It was 5s,
+		// which 03-latency's 5000ms latency toxic plus the rig's 1s
+		// heartbeat (a ~6s read gap) tripped once, failing 03's
+		// "restart == 0 for 55s" once that row held to its window end
+		// (ITD v2026.10.16.2; same fix as sdk-java, qfg-k9at). 07-half-open
+		// disables the proxy, so it does not depend on this deadline.
+		withTestSSEReadTimeout(10 * time.Second),
 		// Enable Layer 2 fallback polling per qfg-47c2.20. Scenarios 5/6
 		// expect the poller to engage after the 120s default threshold;
 		// other scenarios still benefit from the poller being available
