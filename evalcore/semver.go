@@ -7,7 +7,11 @@ import (
 	"strings"
 )
 
-var semverPattern = regexp.MustCompile(`^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`)
+// semverPattern is SemVer 2.0 plus the abbreviated forms "x" and "x.y", read
+// as x.0.0 and x.y.0 (Q5, qfg-goi1.5; LaunchDarkly and Statsig accept them
+// too). Prerelease and build metadata still need the full x.y.z form, and a
+// "v" prefix is not a version. Mirrors the cli verify grammar.
+var semverPattern = regexp.MustCompile(`^(?P<major>0|[1-9]\d*)(?:\.(?P<minor>0|[1-9]\d*)(?:\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?)?)?$`)
 
 // SemanticVersion represents a parsed semantic version.
 type SemanticVersion struct {
@@ -34,12 +38,12 @@ func ParseSemver(version string) (*SemanticVersion, error) {
 		return nil, fmt.Errorf("invalid major version: %s", matches["major"])
 	}
 
-	minor, err := strconv.Atoi(matches["minor"])
+	minor, err := atoiOrZero(matches["minor"])
 	if err != nil {
 		return nil, fmt.Errorf("invalid minor version: %s", matches["minor"])
 	}
 
-	patch, err := strconv.Atoi(matches["patch"])
+	patch, err := atoiOrZero(matches["patch"])
 	if err != nil {
 		return nil, fmt.Errorf("invalid patch version: %s", matches["patch"])
 	}
@@ -51,6 +55,14 @@ func ParseSemver(version string) (*SemanticVersion, error) {
 		prerelease:    matches["prerelease"],
 		buildMetadata: matches["buildmetadata"],
 	}, nil
+}
+
+// atoiOrZero parses an optional version component; an omitted one is 0.
+func atoiOrZero(s string) (int, error) {
+	if s == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(s)
 }
 
 // ParseSemverQuietly attempts to parse a version string, returning nil if parsing fails.
