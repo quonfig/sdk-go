@@ -133,13 +133,17 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(15 * time.Second),
 		WithOnInitFailure(ReturnZeroValue),
-		// Compress the production 90s SSE read deadline to 5s for chaos
+		// Compress the production 90s SSE read deadline to 10s for chaos
 		// scenarios — the spec is "3x the server heartbeat", and the
 		// harness uses a 30s heartbeat in production but we don't have
-		// minutes per scenario in CI. 5s gives the same mechanism
-		// (deadline trips → drop → reconnect) at test cadence so e.g.
-		// scenario 07's within_ms=15000 is reachable.
-		withTestSSEReadTimeout(5 * time.Second),
+		// minutes per scenario in CI. 10s gives the same mechanism
+		// (deadline trips → drop → reconnect) at test cadence. It was 5s,
+		// which 03-latency's 5000ms latency toxic plus the rig's 1s
+		// heartbeat (a ~6s read gap) tripped once, failing 03's
+		// "restart == 0 for 55s" once that row held to its window end
+		// (ITD v2026.10.16.2; same fix as sdk-java, qfg-k9at). 07-half-open
+		// disables the proxy, so it does not depend on this deadline.
+		withTestSSEReadTimeout(10 * time.Second),
 		// Enable Layer 2 fallback polling per qfg-47c2.20. Scenarios 5/6
 		// expect the poller to engage after the 120s default threshold;
 		// other scenarios still benefit from the poller being available
@@ -206,20 +210,9 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 
 	ec := &evalCtx{probe: probe}
 
-	type expState struct {
-		idx        int
-		exp        chaosExpectation
-		hitAt      time.Duration
-		heldSince  time.Time
-		passed     bool
-		failed     bool // within_ms elapsed without pass
-		skipped    bool // the rig cannot evaluate it; see serverMetricSkipReason
-		lastReason string
-		skipNotes  []skipNote
-	}
-	states := make([]*expState, len(run.Expectations))
+	states := make([]*chaosExpState, len(run.Expectations))
 	for i, exp := range run.Expectations {
-		states[i] = &expState{idx: i, exp: exp}
+		states[i] = &chaosExpState{exp: exp}
 	}
 
 	deadline := baseline.Add(wallClock)
@@ -229,34 +222,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	for now := time.Now(); now.Before(deadline); now = <-ticker.C {
 		elapsed := now.Sub(baseline)
 		for _, s := range states {
-			if s.passed || s.failed || s.skipped {
-				continue
-			}
-			r := evaluate(s.exp.Assert, ec)
-			s.lastReason = r.why
-			s.skipNotes = r.skipped
-			if r.verdict == verdictSkipped {
-				s.skipped = true
-				continue
-			}
-			if r.verdict == verdictPass {
-				if s.heldSince.IsZero() {
-					s.heldSince = now
-					s.hitAt = elapsed
-				}
-				holdFor := time.Duration(s.exp.MustHoldForMs) * time.Millisecond
-				if holdFor <= 0 || now.Sub(s.heldSince) >= holdFor {
-					s.passed = true
-				}
-			} else {
-				s.heldSince = time.Time{}
-			}
-			// Definitive fail: within_ms has elapsed and we either never hit,
-			// or we hit but never held long enough. Hold-for failures still
-			// have a chance until within_ms; after that it's terminal.
-			if !s.passed && elapsed > time.Duration(s.exp.WithinMs)*time.Millisecond {
-				s.failed = true
-			}
+			stepChaosExpectation(s, now, elapsed, func() exprResult { return evaluate(s.exp.Assert, ec) })
 		}
 		allTerminal := true
 		for _, s := range states {
@@ -280,7 +246,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	// Report — failed expectations fail the test so the red proof shows up
 	// in `go test` output; skipped ones are logged with their reason.
 	passCount, failCount, skipCount := 0, 0, 0
-	for _, s := range states {
+	for i, s := range states {
 		verdict := verdictFail
 		switch {
 		case s.passed:
@@ -292,7 +258,7 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		default:
 			failCount++
 		}
-		reportChaosExpectation(t, tally, s.idx, s.exp, verdict, s.hitAt, s.lastReason, s.skipNotes)
+		reportChaosExpectation(t, tally, i, s.exp, verdict, s.hitAt, s.lastReason, s.skipNotes)
 	}
 	layer1, _ := probe.sdkMetric("quonfig_sdk_worker_restart_total", map[string]string{"layer": "1"})
 	t.Logf("scenario summary: %d passed, %d failed, %d skipped (state=%s, sdkMetric.layer1=%v, fallback=%v, lastRefreshMs=%v)",
