@@ -2,7 +2,28 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
-## Unreleased
+## 1.7.0 - 2026-10-16
+
+### Upgrade notes
+
+- **Operator semantics (qfg-goi1.5.2):** these change who matches. A context
+  version of `"2"` or `"2.0"` (common for mobile app versions) used to fail
+  every semver rule and now compares as `2.0.0`. A numeric context value >=
+  1e6 now matches a `["1234567"]`-style list, and a list holding an exponent
+  string (`"1.234567e+06"`) stops matching. Pass dates to
+  `PROP_BEFORE`/`PROP_AFTER` as epoch milliseconds or ISO 8601 / RFC 3339 with
+  `Z` or a numeric offset (sdk-go already required this; date-only and
+  offset-less strings never match in any Quonfig SDK).
+- **Auth-failure rule (qfg-goi1.10.23):** retry cadence and log levels change
+  after a rejected 401/403/404/410 fetch cycle; a revoked key logs one config
+  ERROR.
+- **Weighted-rollout hashing (qfg-goi1.9):** this changes rollout assignments
+  once for affected users. A Go-evaluated user whose hash property is a
+  whole-number float of 1e6 or more (for example a JSON-decoded numeric id)
+  may move to a different weighted variant on upgrade. Frontend users
+  (browser/mobile, evaluated by api-delivery) with numeric hash properties >=
+  1e6 are re-bucketed once when api-delivery picks up this release.
+  Integer-typed properties and values below 1e6 are unaffected.
 
 ### Changed (minor)
 
@@ -20,15 +41,6 @@ All notable changes to the Quonfig Go SDK are documented here.
   invalid, and prerelease/build metadata still need the full `x.y.z` form.
   Pinned by integration-test-data v2026.10.16.1.
 
-  **UPGRADE:** these change who matches. A context version of `"2"` or
-  `"2.0"` (common for mobile app versions) used to fail every semver rule and
-  now compares as `2.0.0`. A numeric context value >= 1e6 now matches a
-  `["1234567"]`-style list, and a list holding an exponent string
-  (`"1.234567e+06"`) stops matching. Pass dates to `PROP_BEFORE`/`PROP_AFTER`
-  as epoch milliseconds or ISO 8601 / RFC 3339 with `Z` or a numeric offset
-  (sdk-go already required this; date-only and offset-less strings never
-  match in any Quonfig SDK).
-
 - **A rejected SDK key slows down instead of retrying at the normal cadence
   (auth-failure rule, qfg-goi1.10.23).** When a fallback-poll cycle (or a
   poll with `WithSSE(false)`) gets no 200/304 on any leg and the primary leg
@@ -44,9 +56,6 @@ All notable changes to the Quonfig Go SDK are documented here.
   primary 503 with a secondary 401, a 200 on any leg, or an SSE 401 on its own
   never enters; SSE behavior and its log lines before entry are unchanged.
   Pinned by supervisor Test 8 (integration-test-data v2026.10.16).
-
-  **UPGRADE:** retry cadence and log levels change after a rejected
-  401/403/404/410 fetch cycle; a revoked key logs one config ERROR.
 
 - **Non-confidential ENV_VAR-provided values report their resolved value in
   evaluation-summary telemetry (qfg-goi1.10.16).** Telemetry used to record
@@ -64,14 +73,6 @@ All notable changes to the Quonfig Go SDK are documented here.
   different bucket than in sdk-node and sdk-ruby (`1234567`). Whole-number
   floats below 1e21 now hash as plain decimal digits (`-0` as `0`). Integers,
   strings, fractional floats and other values hash exactly as before.
-
-  **UPGRADE:** this changes rollout assignments once for affected users. A
-  Go-evaluated user whose hash property is a whole-number float of 1e6 or
-  more (for example a JSON-decoded numeric id) may move to a different
-  weighted variant on upgrade. Frontend users (browser/mobile, evaluated by
-  api-delivery) with numeric hash properties >= 1e6 are re-bucketed once when
-  api-delivery picks up this release. Integer-typed properties and values
-  below 1e6 are unaffected.
 
 ### Fixed (patch)
 
