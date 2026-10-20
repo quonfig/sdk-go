@@ -2,10 +2,12 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
-## Unreleased
+## 1.8.0 - 2026-10-20
 
 ### Upgrade notes
 
+- The who-matches changes in 1.7.0 and 1.8.0 were approved as minor releases
+  under Decision 1 (qfg-goi1.5, qfg-goi1.9, qfg-goi1.10.9), per qfg-6vno.15.
 - **UPGRADE: SSE reports `connected` at the first frame, not at the 200
   response (qfg-goi1.10.9).** A stream connection now counts as connected,
   for `Client.ConnectionState()`, the `WithSSEStateCallback` callback
