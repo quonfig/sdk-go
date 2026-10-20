@@ -367,7 +367,7 @@ func (c *Client) initLoop(base context.Context, mode OnInitFailure, timeout time
 
 	// The attempt context carries the init deadline until the policy has
 	// decided; wait and the background retry run with only Close as a bound.
-	var deadlineCtx context.Context = base
+	deadlineCtx := base
 	var deadlineCh <-chan struct{}
 	if timeout > 0 {
 		var cancel context.CancelFunc
@@ -457,7 +457,7 @@ func (c *Client) initLoop(base context.Context, mode OnInitFailure, timeout time
 			}
 		}
 
-		if attempts == 1 && !decided && !(timeout <= 0) {
+		if attempts == 1 && !decided && timeout > 0 {
 			st.mu.Lock()
 			already := st.failureLogged
 			st.failureLogged = true
