@@ -7,6 +7,7 @@ package fixtures
 
 import (
 	"testing"
+	"time"
 
 	quonfig "github.com/quonfig/sdk-go"
 	"github.com/stretchr/testify/assert"
@@ -32,20 +33,92 @@ func TestGetOrRaise_GetOrRaiseReturnsADefaultValueInsteadOfRaising(t *testing.T)
 	assert.Equal(t, want, got)
 }
 
-// get_or_raise raises the correct error if it doesn't raise on init timeout
-func TestGetOrRaise_GetOrRaiseRaisesTheCorrectErrorIfItDoesnTRaiseOnInitTimeout(t *testing.T) {
-	c := newInitTimeoutClient(t, 0.01, "http://192.0.2.1:1", "return")
-	_, ok, err := c.GetStringValue("any-key", nil)
-	assert.False(t, ok, "%q must have no value", "any-key")
-	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "ReturnZeroValue must not surface the init timeout")
+// init fails by default when every delivery leg refuses the connection
+func TestGetOrRaise_InitFailsByDefaultWhenEveryDeliveryLegRefusesTheConnection(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 500)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure default = fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
 }
 
-// get_or_raise can raise an error if the client does not initialize in time
-func TestGetOrRaise_GetOrRaiseCanRaiseAnErrorIfTheClientDoesNotInitializeInTime(t *testing.T) {
-	c := newInitTimeoutClient(t, 0.01, "http://192.0.2.1:1", "raise")
+// init with on_init_failure fail raises when every delivery leg refuses the connection
+func TestGetOrRaise_InitWithOnInitFailureFailRaisesWhenEveryDeliveryLegRefusesTheConnection(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 500)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+}
+
+// init with on_init_failure fail raises the init timeout when every delivery leg hangs
+func TestGetOrRaise_InitWithOnInitFailureFailRaisesTheInitTimeoutWhenEveryDeliveryLegHangs(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", []string{"http://192.0.2.1:1", "http://192.0.2.1:2"}, 0, 200)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.ErrorIs(t, err, quonfig.ErrInitializationTimeout)
+	assert.Less(t, elapsed, 2000*time.Millisecond, "init must raise within 2000ms")
+}
+
+// init with on_init_failure fail raises at once when every delivery leg answers 401
+func TestGetOrRaise_InitWithOnInitFailureFailRaisesAtOnceWhenEveryDeliveryLegAnswers401(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", []string{}, 401, 8000)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unauthorized, not the init timeout")
+	assert.Less(t, elapsed, 4000*time.Millisecond, "init must raise within 4000ms")
+}
+
+// get_or_raise returns the default after init continues past refused delivery legs
+func TestGetOrRaise_GetOrRaiseReturnsTheDefaultAfterInitContinuesPastRefusedDeliveryLegs(t *testing.T) {
+	c, err := newInitFailureClient(t, "continue", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 500)
+	require.NoError(t, err, "on_init_failure continue: init must return")
+	require.NotNil(t, c)
+	got, ok, _ := c.GetStringValue("any-key", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// get_or_raise raises missing_default after init continues past refused delivery legs
+func TestGetOrRaise_GetOrRaiseRaisesMissingDefaultAfterInitContinuesPastRefusedDeliveryLegs(t *testing.T) {
+	c, err := newInitFailureClient(t, "continue", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 500)
+	require.NoError(t, err, "on_init_failure continue: init must return")
+	require.NotNil(t, c)
 	_, ok, err := c.GetStringValue("any-key", nil)
 	assert.False(t, ok, "%q must have no value", "any-key")
-	require.ErrorIs(t, err, quonfig.ErrInitializationTimeout)
+	require.ErrorIs(t, err, quonfig.ErrNotFound)
+}
+
+// deprecated on_init_failure raise behaves as fail when every delivery leg refuses the connection
+func TestGetOrRaise_DeprecatedOnInitFailureRaiseBehavesAsFailWhenEveryDeliveryLegRefusesTheConnection(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "raise", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 500)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure raise)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+}
+
+// deprecated on_init_failure return behaves as continue when every delivery leg refuses the connection
+func TestGetOrRaise_DeprecatedOnInitFailureReturnBehavesAsContinueWhenEveryDeliveryLegRefusesTheConnection(t *testing.T) {
+	c, err := newInitFailureClient(t, "return", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 500)
+	require.NoError(t, err, "on_init_failure continue: init must return")
+	require.NotNil(t, c)
+	_, ok, err := c.GetStringValue("any-key", nil)
+	assert.False(t, ok, "%q must have no value", "any-key")
+	require.ErrorIs(t, err, quonfig.ErrNotFound)
 }
 
 // raises an error if a config is provided by a missing environment variable

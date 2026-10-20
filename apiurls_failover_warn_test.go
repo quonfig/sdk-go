@@ -27,6 +27,9 @@ func TestSingleExplicitAPIURLWarnsFailoverLost(t *testing.T) {
 		WithLogger(logger),
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(50*time.Millisecond),
+		// Unreachable legs: continue so NewClient returns and the
+		// construction-time WARN can be inspected.
+		WithOnInitFailure(InitFailureContinue),
 	)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
@@ -54,6 +57,9 @@ func TestTwoExplicitAPIURLsDoNotWarn(t *testing.T) {
 		WithLogger(logger),
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(50*time.Millisecond),
+		// Unreachable legs: continue so NewClient returns and the
+		// construction-time WARN can be inspected.
+		WithOnInitFailure(InitFailureContinue),
 	)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
@@ -76,6 +82,9 @@ func TestDefaultAPIURLsDoNotWarnFailoverLost(t *testing.T) {
 		WithLogger(logger),
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(50*time.Millisecond),
+		// Unreachable legs: continue so NewClient returns and the
+		// construction-time WARN can be inspected.
+		WithOnInitFailure(InitFailureContinue),
 	)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)

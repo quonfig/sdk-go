@@ -132,49 +132,50 @@ func TestNewClientInitTimeoutHonorsFailurePolicy(t *testing.T) {
 		}),
 	}
 
+	// fail (the default; ReturnError is its deprecated alias): NewClient
+	// itself reports the timeout and returns no client (qfg-9p4i.7).
 	errorClient, err := NewClient(
 		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithInitTimeout(25*time.Millisecond),
-		WithOnInitFailure(ReturnError),
+		WithOnInitFailure(ReturnError), //nolint:staticcheck // alias under test
 	)
-	if err != nil {
-		t.Fatalf("NewClient returned error: %v", err)
+	if errorClient != nil {
+		t.Fatalf("expected no client under fail, got one")
 	}
-
-	_, _, err = errorClient.GetStringValue("app.name", nil)
 	if !errors.Is(err, ErrInitializationTimeout) {
-		t.Fatalf("expected ErrInitializationTimeout, got %v", err)
+		t.Fatalf("expected ErrInitializationTimeout from NewClient, got %v", err)
 	}
 
+	// continue (ReturnZeroValue is its deprecated alias): a client with an
+	// empty store; getters answer ok=false with ErrNotFound.
 	zeroClient, err := NewClient(
 		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithInitTimeout(25*time.Millisecond),
-		WithOnInitFailure(ReturnZeroValue),
+		WithOnInitFailure(ReturnZeroValue), //nolint:staticcheck // alias under test
 	)
 	if err != nil {
 		t.Fatalf("NewClient returned error: %v", err)
 	}
+	defer zeroClient.Close()
 
 	value, ok, err := zeroClient.GetStringValue("app.name", nil)
-	if err != nil {
-		t.Fatalf("expected no error for ReturnZeroValue, got %v", err)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for a continue client without config, got %v", err)
 	}
 	if ok || value != "" {
 		t.Fatalf("expected zero-value result, got value=%q ok=%v", value, ok)
 	}
 }
 
-// TestNewClientInitTimeoutWrapsContextDeadline exercises the path where the
-// init goroutine's HTTP context fires before awaitInitialization's timer:
-// the transport returns context.DeadlineExceeded, fetchAndInstall stores
-// that error, and a subsequent GetStringValue must still see
-// ErrInitializationTimeout. Without the normalization in fetchAndInstall the
-// caller sees a bare context.DeadlineExceeded -- the flake first observed in
-// GitHub Actions run 25276703014 (qfg-2jzw).
+// TestNewClientInitTimeoutWrapsContextDeadline: the init attempt's HTTP
+// context fires on the init deadline and the transport returns
+// context.DeadlineExceeded; NewClient's error must still satisfy
+// errors.Is(err, ErrInitializationTimeout) (qfg-2jzw, now on the NewClient
+// error since qfg-9p4i.7).
 func TestNewClientInitTimeoutWrapsContextDeadline(t *testing.T) {
 	httpClient := &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -188,20 +189,10 @@ func TestNewClientInitTimeoutWrapsContextDeadline(t *testing.T) {
 		WithAPIURLs([]string{"https://example.test"}),
 		WithHTTPClient(httpClient),
 		WithInitTimeout(10*time.Millisecond),
-		WithOnInitFailure(ReturnError),
 	)
-	if err != nil {
-		t.Fatalf("NewClient returned error: %v", err)
+	if client != nil {
+		t.Fatalf("expected no client")
 	}
-
-	// Wait long enough that the init goroutine has definitely lost its
-	// context to the deadline and stored the resulting error. This forces
-	// awaitInitialization down the "initErr already set" branch, which is
-	// the path that previously leaked context.DeadlineExceeded out to the
-	// caller.
-	time.Sleep(80 * time.Millisecond)
-
-	_, _, err = client.GetStringValue("app.name", nil)
 	if !errors.Is(err, ErrInitializationTimeout) {
 		t.Fatalf("expected ErrInitializationTimeout, got %v", err)
 	}

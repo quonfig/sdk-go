@@ -2,6 +2,7 @@ package quonfig
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -10,15 +11,67 @@ import (
 	"github.com/quonfig/sdk-go/internal/telemetry"
 )
 
-// OnInitFailure controls behavior when initialization times out.
+// OnInitFailure picks what NewClient does when it has no config by the end of
+// InitTimeout. NewClient always blocks while it fetches the first config,
+// retrying with backoff through connection failures; the policy only decides
+// what happens when that wait runs out (or when every delivery leg rejects the
+// SDK key). See WithOnInitFailure.
 type OnInitFailure int
 
 const (
-	// ReturnError causes getter methods to return an error if initialization times out.
-	ReturnError OnInitFailure = iota
-	// ReturnZeroValue causes getter methods to return zero values if initialization times out.
-	ReturnZeroValue
+	// InitFailureFail makes NewClient return (nil, *InitError) when no config
+	// arrived within InitTimeout, or at once when every delivery leg rejects
+	// the SDK key (401/403). This is the default (the zero value).
+	InitFailureFail OnInitFailure = 0
+	// InitFailureContinue makes NewClient return a client after InitTimeout
+	// (or at once on a rejected key) even with no config. The client keeps
+	// retrying in the background; until it heals, Ready reports false and
+	// getters answer as an empty store does (ok=false, an error matching
+	// ErrNotFound, EvaluationDetails.ErrorCode PROVIDER_NOT_READY).
+	InitFailureContinue OnInitFailure = 2
+	// InitFailureWait makes NewClient keep blocking and retrying past
+	// InitTimeout until a config arrives, with no upper bound.
+	InitFailureWait OnInitFailure = 3
+
+	// ReturnError is the earlier name of InitFailureFail.
+	//
+	// Deprecated: use InitFailureFail. Using it logs a one-time WARN.
+	ReturnError OnInitFailure = 4
+	// ReturnZeroValue is the earlier name of InitFailureContinue.
+	//
+	// Deprecated: use InitFailureContinue. Using it logs a one-time WARN.
+	ReturnZeroValue OnInitFailure = 1
 )
+
+// canonical maps a deprecated alias to the value it stands for. ok is false
+// for a value that is not one of the constants above.
+func (f OnInitFailure) canonical() (OnInitFailure, bool) {
+	switch f {
+	case InitFailureFail, ReturnError:
+		return InitFailureFail, true
+	case InitFailureContinue, ReturnZeroValue:
+		return InitFailureContinue, true
+	case InitFailureWait:
+		return InitFailureWait, true
+	}
+	return f, false
+}
+
+// String returns the cross-SDK spelling: "fail", "wait" or "continue".
+func (f OnInitFailure) String() string {
+	c, ok := f.canonical()
+	if !ok {
+		return fmt.Sprintf("OnInitFailure(%d)", int(f))
+	}
+	switch c {
+	case InitFailureContinue:
+		return "continue"
+	case InitFailureWait:
+		return "wait"
+	default:
+		return "fail"
+	}
+}
 
 // ContextTelemetryMode controls what context data the SDK sends to the telemetry backend.
 type ContextTelemetryMode string
@@ -269,7 +322,7 @@ func defaultOptions() Options {
 	return Options{
 		APIURLs:                    apiURLsForDomain(DefaultDomain),
 		InitTimeout:                10 * time.Second,
-		OnInitFailure:              ReturnError,
+		OnInitFailure:              InitFailureFail,
 		ConfigFetchTimeout:         DefaultConfigFetchTimeout,
 		ConfigFetchHedgeDelay:      DefaultConfigFetchHedgeDelay,
 		ConfigFetchHedgeAbort:      DefaultConfigFetchHedgeAbort,
@@ -456,7 +509,9 @@ func WithQuonfigUserContext(enabled bool) Option {
 	}
 }
 
-// WithInitTimeout sets how long to wait for initial config loading before applying the OnInitFailure policy.
+// WithInitTimeout sets how long NewClient waits (retrying) for the first
+// config before applying the OnInitFailure policy. Default 10s. A value <= 0
+// applies the policy right after the first failed attempt.
 func WithInitTimeout(d time.Duration) Option {
 	return func(o *Options) error {
 		o.InitTimeout = d
@@ -523,9 +578,15 @@ func WithConfigFetchHedgeAbort(d time.Duration) Option {
 	}
 }
 
-// WithOnInitFailure sets the behavior when initialization times out.
+// WithOnInitFailure sets what NewClient does when it has no config by the end
+// of InitTimeout: InitFailureFail (the default), InitFailureWait or
+// InitFailureContinue. The deprecated ReturnError and ReturnZeroValue are
+// accepted as aliases of InitFailureFail and InitFailureContinue.
 func WithOnInitFailure(f OnInitFailure) Option {
 	return func(o *Options) error {
+		if _, ok := f.canonical(); !ok {
+			return fmt.Errorf("quonfig: unknown OnInitFailure value %d", int(f))
+		}
 		o.OnInitFailure = f
 		return nil
 	}

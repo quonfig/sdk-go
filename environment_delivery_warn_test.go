@@ -23,6 +23,7 @@ func TestEnvironmentPinWarnsInDeliveryMode(t *testing.T) {
 	client, err := NewClient(
 		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
+		WithOnInitFailure(InitFailureContinue), // unreachable leg; the test inspects the client
 		WithEnvironment("Production"),
 		WithSSE(false),
 		WithFallbackPoll(false, 0),
@@ -56,6 +57,7 @@ func TestEnvironmentPinFromEnvVarWarnsInDeliveryMode(t *testing.T) {
 	client, err := NewClient(
 		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
+		WithOnInitFailure(InitFailureContinue), // unreachable leg; the test inspects the client
 		WithSSE(false),
 		WithFallbackPoll(false, 0),
 		WithLogger(logger),
@@ -106,6 +108,7 @@ func TestNoEnvironmentPinSilentInDeliveryMode(t *testing.T) {
 	client, err := NewClient(
 		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
+		WithOnInitFailure(InitFailureContinue), // unreachable leg; the test inspects the client
 		WithSSE(false),
 		WithFallbackPoll(false, 0),
 		WithLogger(logger),

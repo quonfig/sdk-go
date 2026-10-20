@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"sync"
 	"testing"
@@ -105,57 +106,58 @@ func contextSet(contexts map[string]map[string]interface{}) *quonfig.ContextSet 
 	return cs
 }
 
-// newInitTimeoutClient builds an SDK-key client whose initial config fetch
-// never completes inside initTimeoutSec, with the YAML's on_init_failure
-// policy (":raise" -> ReturnError, ":return" -> ReturnZeroValue). The
-// blocking transport stands in for an unreachable API; the timeout and policy
-// handling under test are the SDK's own.
-func newInitTimeoutClient(t *testing.T, initTimeoutSec float64, apiURL, onInitFailure string) *quonfig.Client {
+// newInitFailureClient is the hand-written half of the generated init-failure
+// cases (contract: integration-test-data generators/src/targets/go.ts,
+// initFailureClientCall). It builds the client with quonfig.NewClient and
+// returns NewClient's (client, err) unchanged. onInitFailure "" leaves the
+// option unset (the SDK default); any other spelling maps verbatim to the
+// option of that name, deprecated aliases included. apiStatus != 0 stands up
+// two local servers answering every request with that status and uses them as
+// the legs; otherwise apiURLs are the legs. SSE, the fallback poller and
+// telemetry are off.
+func newInitFailureClient(t *testing.T, onInitFailure string, apiURLs []string, apiStatus int, initTimeoutMs int) (*quonfig.Client, error) {
 	t.Helper()
-	timeout := time.Duration(initTimeoutSec * float64(time.Second))
-	if timeout <= 0 {
-		timeout = time.Millisecond
-	}
-	policy := quonfig.ReturnError
-	switch onInitFailure {
-	case "raise":
-		policy = quonfig.ReturnError
-	case "return":
-		policy = quonfig.ReturnZeroValue
-	default:
-		t.Fatalf("unknown on_init_failure %q", onInitFailure)
-	}
-	c, err := quonfig.NewClient(
-		quonfig.WithSdkKey("itd-init-timeout"),
-		quonfig.WithAPIURLs([]string{apiURL}),
-		quonfig.WithHTTPClient(&http.Client{Transport: blockingRoundTripper(timeout * 50)}),
-		quonfig.WithInitTimeout(timeout),
-		quonfig.WithOnInitFailure(policy),
+	opts := []quonfig.Option{
+		quonfig.WithSdkKey("itd-init-failure"),
+		quonfig.WithInitTimeout(time.Duration(initTimeoutMs) * time.Millisecond),
 		quonfig.WithSSE(false),
 		quonfig.WithFallbackPoll(false, 0),
 		quonfig.WithAllTelemetryDisabled(),
 		quonfig.WithQuonfigUserContext(false),
-	)
-	if err != nil {
-		t.Fatalf("quonfig.NewClient error: %v", err)
 	}
-	t.Cleanup(c.Close)
-	return c
-}
-
-type roundTripFn func(*http.Request) (*http.Response, error)
-
-func (f roundTripFn) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-
-func blockingRoundTripper(block time.Duration) http.RoundTripper {
-	return roundTripFn(func(r *http.Request) (*http.Response, error) {
-		select {
-		case <-time.After(block):
-			return nil, fmt.Errorf("simulated slow init")
-		case <-r.Context().Done():
-			return nil, r.Context().Err()
+	switch onInitFailure {
+	case "":
+	case "fail":
+		opts = append(opts, quonfig.WithOnInitFailure(quonfig.InitFailureFail))
+	case "wait":
+		opts = append(opts, quonfig.WithOnInitFailure(quonfig.InitFailureWait))
+	case "continue":
+		opts = append(opts, quonfig.WithOnInitFailure(quonfig.InitFailureContinue))
+	case "raise":
+		//lint:ignore SA1019 the deprecated alias is what the case exercises
+		opts = append(opts, quonfig.WithOnInitFailure(quonfig.ReturnError)) //nolint:staticcheck // the alias is what the case exercises
+	case "return":
+		//lint:ignore SA1019 the deprecated alias is what the case exercises
+		opts = append(opts, quonfig.WithOnInitFailure(quonfig.ReturnZeroValue)) //nolint:staticcheck // the alias is what the case exercises
+	default:
+		t.Fatalf("unknown on_init_failure %q", onInitFailure)
+	}
+	if apiStatus != 0 {
+		apiURLs = nil
+		for i := 0; i < 2; i++ {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(apiStatus)
+			}))
+			t.Cleanup(srv.Close)
+			apiURLs = append(apiURLs, srv.URL)
 		}
-	})
+	}
+	opts = append(opts, quonfig.WithAPIURLs(apiURLs))
+	c, err := quonfig.NewClient(opts...)
+	if c != nil {
+		t.Cleanup(c.Close)
+	}
+	return c, err
 }
 
 // assertJSONValue compares a GetJSONValue result with the YAML's expected

@@ -16,7 +16,8 @@ import (
 // ErrNotFound is returned when a config key does not exist.
 var ErrNotFound = errors.New("config not found")
 
-// ErrInitializationTimeout is returned when the client could not finish its initial fetch before the configured timeout.
+// ErrInitializationTimeout matches the *InitError NewClient returns when the
+// delivery legs hung until InitTimeout (Reason InitErrorTimeout).
 var ErrInitializationTimeout = errors.New("initialization_timeout")
 
 // ErrMissingEnvVar is returned when an ENV_VAR-provided config references a missing environment variable.
@@ -64,14 +65,15 @@ type Client struct {
 	fallback  *fallbackPoller
 	watcher   *datadirWatcher
 
-	mu                     sync.RWMutex
-	initializationDone     chan struct{}
-	initializationStarted  bool
-	initializationTimedOut bool
-	initialized            bool
-	initializationErr      error
-	refreshMu              sync.Mutex
-	closeCh                chan struct{}
+	mu sync.RWMutex
+	// initializationDone is closed by the first config install on any path
+	// (init loop, SSE, fallback poller, Refresh, datadir); Ready/WaitForReady
+	// and the init loop watch it.
+	initializationDone chan struct{}
+	initialized        bool
+	heldVersion        string // Meta.Version of the installed envelope (heal log)
+	refreshMu          sync.Mutex
+	closeCh            chan struct{}
 
 	// OnConfigUpdate delivery queue (qfg-eefx). installEnvelope runs under
 	// refreshMu and only counts a pending delivery; each install path calls
@@ -132,6 +134,7 @@ func NewClient(opts ...Option) (*Client, error) {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
+	warnDeprecatedInitAlias(o.Logger, o.OnInitFailure)
 
 	if resolveDevContextEnabled(&o) {
 		if devCtx := loadQuonfigUserContext(o.APIURLs, o.Logger); devCtx != nil {
@@ -221,7 +224,6 @@ func NewClient(opts ...Option) (*Client, error) {
 		}
 		client.installEnvelope(envelope, -1)
 		client.deliverConfigUpdates()
-		client.finishInitialization(true)
 		if o.DataDirAutoReload {
 			client.startDatadirWatcher()
 		}
@@ -234,7 +236,11 @@ func NewClient(opts ...Option) (*Client, error) {
 		return client, nil
 	}
 
-	client.startInitialization()
+	client.logPollingMode()
+	if err := client.initialize(); err != nil {
+		client.Close()
+		return nil, err
+	}
 
 	return client, nil
 }
@@ -251,7 +257,7 @@ func (c *Client) Refresh() error {
 	if c.transport == nil {
 		return nil
 	}
-	return c.fetchAndInstall(context.Background(), false)
+	return c.fetchAndInstall(context.Background())
 }
 
 // Close stops the supervised background workers, shuts down the SSE stream,
@@ -571,13 +577,6 @@ func deepCopyJSONValue(v interface{}) interface{} {
 // resolveDetailUnsafe does the work of resolveDetail without the panic guard.
 func (c *Client) resolveDetailUnsafe(key string, ctx *ContextSet) (EvaluationDetails, error) {
 	if err := c.awaitInitialization(key); err != nil {
-		if c.opts.OnInitFailure == ReturnZeroValue && errors.Is(err, ErrInitializationTimeout) {
-			return EvaluationDetails{
-				Reason:       ReasonDefault,
-				Variant:      "default",
-				FlagMetadata: map[string]any{},
-			}, nil
-		}
 		return EvaluationDetails{
 			Reason:       ReasonError,
 			ErrorCode:    errorCodeFor(err),
@@ -722,6 +721,8 @@ func errorCodeFor(err error) ErrorCode {
 	switch {
 	case err == nil:
 		return ErrorCodeNone
+	case isNotReady(err):
+		return ErrorCodeProviderNotReady
 	case errors.Is(err, ErrNotFound):
 		return ErrorCodeFlagNotFound
 	case errors.Is(err, ErrInitializationTimeout):
@@ -733,31 +734,6 @@ func errorCodeFor(err error) ErrorCode {
 	default:
 		return ErrorCodeGeneral
 	}
-}
-
-func (c *Client) startInitialization() {
-	c.mu.Lock()
-	if c.initializationStarted {
-		c.mu.Unlock()
-		return
-	}
-	c.initializationStarted = true
-	c.mu.Unlock()
-
-	c.logPollingMode()
-
-	go func() {
-		ctx := context.Background()
-		if c.opts.InitTimeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, c.opts.InitTimeout)
-			defer cancel()
-		}
-
-		_ = c.fetchAndInstall(ctx, true)
-
-		c.startBackgroundWorkers()
-	}()
 }
 
 // logPollingMode announces the chosen Layer 1 (SSE) and Layer 2 (fallback
@@ -816,7 +792,7 @@ func (c *Client) startBackgroundWorkers() {
 			Logger:    c.opts.Logger,
 			Wait:      c.opts.testWaitHook,
 			Fetch: func(ctx context.Context) error {
-				return c.fetchAndInstall(ctx, false)
+				return c.fetchAndInstall(ctx)
 			},
 			OnEngage: func() {
 				sup.setConnectionState(ConnStateFallingBack)
@@ -1138,9 +1114,30 @@ func (c *Client) SSEFailedOverToSecondary() bool {
 // late older payload never regresses, a late newer payload heals forward). On
 // the init path ready() latches on the first successful install while the loop
 // keeps draining so a late-but-newer leg heals forward before the call returns.
-func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
+func (c *Client) fetchAndInstall(ctx context.Context) error {
+	_, err := c.fetchCycle(ctx)
+	return err
+}
+
+// legOutcome is one fired leg's result, kept for the init loop's log lines
+// and its every-leg-rejected-the-key check.
+type legOutcome struct {
+	index  int
+	status int
+	err    error
+}
+
+// cycleOutcome summarizes one fetchCycle for the init loop.
+type cycleOutcome struct {
+	installed bool
+	legs      []legOutcome
+}
+
+// fetchCycle is fetchAndInstall plus the per-leg outcomes.
+func (c *Client) fetchCycle(ctx context.Context) (cycleOutcome, error) {
+	var out cycleOutcome
 	if c.transport == nil {
-		return nil
+		return out, nil
 	}
 
 	// Concurrent hedge cycles (a manual Refresh racing the fallback poller, say)
@@ -1165,6 +1162,7 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 		if lr.Index == 0 {
 			primaryStatus = lr.Status
 		}
+		out.legs = append(out.legs, legOutcome{index: lr.Index, status: lr.Status, err: lr.Err})
 		if lr.Err != nil {
 			failures++
 			lastErr = lr.Err
@@ -1217,11 +1215,8 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 			}
 			c.recordSuccessfulRefresh()
 		}
-		if installed && !installedOnce {
+		if installed {
 			installedOnce = true
-			if initial {
-				c.finishInitialization(true)
-			}
 		}
 	}
 
@@ -1233,44 +1228,26 @@ func (c *Client) fetchAndInstall(ctx context.Context, initial bool) error {
 		c.telemetry.RecordHedgeFired()
 	}
 
+	out.installed = installedOnce
 	if installedOnce {
-		return nil
+		return out, nil
 	}
 
-	// Nothing installed. If every fired leg failed, surface the failure (init
-	// path applies OnInitFailure). Otherwise every leg was a 304 (established
-	// client, no change) — a no-op success.
+	// Nothing installed. If every fired leg failed, surface the failure (the
+	// init loop applies OnInitFailure). Otherwise every leg was a 304
+	// (established client, no change) — a no-op success.
 	if fired > 0 && failures == fired {
-		if initial {
-			storedErr := lastErr
-			// Normalize our own init-timeout DeadlineExceeded so callers'
-			// errors.Is(err, ErrInitializationTimeout) is deterministic.
-			if c.opts.InitTimeout > 0 && errors.Is(lastErr, context.DeadlineExceeded) {
-				storedErr = c.initializationTimeoutError("")
-			}
-			c.mu.Lock()
-			c.initializationErr = storedErr
-			c.mu.Unlock()
-			c.finishInitialization(false)
-		}
 		// Auth-failure rule R2: no leg returned 200/304 and the primary leg
 		// returned an auth-class status. Primary 503 + secondary 401 is not
 		// this (a new key can lag the secondary's manifest). Only the
 		// fallback poller acts on it; init and Refresh see the usual error.
 		if isAuthClassStatus(primaryStatus) {
-			return &authRejectedError{Status: primaryStatus, Host: hostOf(c.transport.baseURLs[0]), err: lastErr}
+			return out, &authRejectedError{Status: primaryStatus, Host: hostOf(c.transport.baseURLs[0]), err: lastErr}
 		}
-		return lastErr
+		return out, lastErr
 	}
 
-	if initial {
-		c.mu.Lock()
-		c.initialized = true
-		c.initializationErr = nil
-		c.mu.Unlock()
-		c.finishInitialization(true)
-	}
-	return nil
+	return out, nil
 }
 
 // shouldInstall applies the canonical reject-older rule to an incoming snapshot
@@ -1376,8 +1353,11 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope, sourceIndex int) {
 	if sourceIndex >= 0 {
 		c.resolvedFromIndex = sourceIndex
 	}
-	c.initialized = true
-	c.initializationErr = nil
+	c.heldVersion = envelope.Meta.Version
+	if !c.initialized {
+		c.initialized = true
+		close(c.initializationDone)
+	}
 	c.lastRefresh = time.Now()
 	c.mu.Unlock()
 
@@ -1443,75 +1423,18 @@ func (c *Client) invokeOnConfigUpdate(fn func()) {
 	fn()
 }
 
-func (c *Client) finishInitialization(success bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	select {
-	case <-c.initializationDone:
-		return
-	default:
-		if !success && c.initializationErr == nil {
-			c.initializationErr = ErrInitializationTimeout
-		}
-		close(c.initializationDone)
-	}
-}
-
+// awaitInitialization never blocks: NewClient is the only gate (B.3). A client
+// without config here is a continue client that has not healed yet.
 func (c *Client) awaitInitialization(key string) error {
-	c.mu.RLock()
-	transport := c.transport
-	initialized := c.initialized
-	timedOut := c.initializationTimedOut
-	initErr := c.initializationErr
-	done := c.initializationDone
-	timeout := c.opts.InitTimeout
-	c.mu.RUnlock()
-
-	if transport == nil || initialized {
+	if c.Ready() {
 		return nil
 	}
-	if initErr != nil && !timedOut {
-		return initErr
-	}
-	if timedOut {
-		return c.initializationTimeoutError(key)
-	}
-
-	var timeoutCh <-chan time.Time
-	if timeout <= 0 {
-		timer := time.NewTimer(0)
-		defer timer.Stop()
-		timeoutCh = timer.C
-	} else {
-		timer := time.NewTimer(timeout)
-		defer timer.Stop()
-		timeoutCh = timer.C
-	}
-
-	select {
-	case <-done:
-		c.mu.RLock()
-		defer c.mu.RUnlock()
-		if c.initialized {
-			return nil
-		}
-		if c.initializationErr != nil {
-			return c.initializationErr
-		}
-		return ErrInitializationTimeout
-	case <-timeoutCh:
-		c.mu.Lock()
-		c.initializationTimedOut = true
-		c.mu.Unlock()
-		return c.initializationTimeoutError(key)
-	}
+	return &notReadyError{key: key}
 }
 
-func (c *Client) initializationTimeoutError(key string) error {
-	if key == "" {
-		return fmt.Errorf("%w: client initialization exceeded %s", ErrInitializationTimeout, c.opts.InitTimeout)
-	}
-	return fmt.Errorf("%w: client initialization exceeded %s while resolving %q", ErrInitializationTimeout, c.opts.InitTimeout, key)
+func isNotReady(err error) bool {
+	var nr *notReadyError
+	return errors.As(err, &nr)
 }
 
 // ContextBoundClient is a Client bound to a specific context.
