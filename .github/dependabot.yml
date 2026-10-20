@@ -29,3 +29,18 @@ updates:
     groups:
       go-minor-patch:
         update-types: ["minor", "patch"]
+    ignore:
+      # Requires used by non-test code of the published module. A require is
+      # the minimum version every consumer's build selects, so a major bump
+      # raises the floor for every customer. Raise these deliberately in a
+      # release, not via Dependabot.
+      #
+      # Also review any change to the `go` directive in go.mod by hand: a
+      # minor/patch bump of a dependency can raise it, which forces every
+      # consumer onto a newer Go toolchain.
+      - dependency-name: "github.com/fsnotify/fsnotify"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "github.com/spaolacci/murmur3"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "gopkg.in/yaml.v3"
+        update-types: ["version-update:semver-major"]
