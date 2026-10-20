@@ -19,6 +19,7 @@ func TestPollingModeAnnouncedAtStartup(t *testing.T) {
 	client, err := NewClient(
 		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
+		WithOnInitFailure(InitFailureContinue), // unreachable leg; the test inspects the client
 		WithSSE(true),
 		WithFallbackPoll(true, 30*time.Second),
 		WithLogger(logger),
@@ -56,6 +57,7 @@ func TestWithFallbackPollRejectsZeroIntervalWhenEnabled(t *testing.T) {
 	_, err := NewClient(
 		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
+		WithOnInitFailure(InitFailureContinue), // unreachable leg; the test inspects the client
 		WithFallbackPoll(true, 0),
 	)
 	if err == nil {
@@ -68,6 +70,7 @@ func TestConnectionStateInitializingWithoutTransport(t *testing.T) {
 	// initializing per contract.
 	client, err := NewClient(
 		WithAPIURLs([]string{"https://example.test"}),
+		WithOnInitFailure(InitFailureContinue), // unreachable leg; the test inspects the client
 		WithAllTelemetryDisabled(),
 	)
 	if err != nil {
@@ -93,7 +96,8 @@ func TestHandleSSEStateChangeEngagesFallbackPoller(t *testing.T) {
 	client, err := NewClient(
 		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
-		WithSSE(false), // skip the actual SSE dial; we drive state manually
+		WithOnInitFailure(InitFailureContinue), // unreachable leg; the test inspects the client
+		WithSSE(false),                         // skip the actual SSE dial; we drive state manually
 		WithFallbackPoll(true, 5*time.Millisecond),
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(50*time.Millisecond),
@@ -193,7 +197,8 @@ func TestClientConnectionStateAndLastRefreshTransitions(t *testing.T) {
 	client, err := NewClient(
 		WithSdkKey("test-key"),
 		WithAPIURLs([]string{"https://example.test"}),
-		WithSSE(false), // no real dial; we drive handleSSEStateChange manually
+		WithOnInitFailure(InitFailureContinue), // unreachable leg; the test inspects the client
+		WithSSE(false),                         // no real dial; we drive handleSSEStateChange manually
 		WithFallbackPoll(false, 0),
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(50*time.Millisecond),

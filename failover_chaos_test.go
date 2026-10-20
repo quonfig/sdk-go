@@ -155,7 +155,7 @@ func runRigScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, dri
 		WithAPIURLs([]string{primaryURL, secondaryURL}),
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(rigInitTimeout),
-		WithOnInitFailure(ReturnZeroValue),
+		WithOnInitFailure(InitFailureContinue),
 		WithLogger(logger),
 		WithSSE(sseEnabled),
 		// Background polling is driven explicitly via the Refresh loop below for

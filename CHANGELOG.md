@@ -2,6 +2,65 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Upgrade notes
+
+- **UPGRADE: `NewClient` now blocks until the first config arrives, and by
+  default returns `(nil, err)` if none arrives within `InitTimeout`
+  (qfg-9p4i.7).** This is a minor release by explicit decision (Jeff's semver
+  override in project/plans/2026-10-05-init-failure-design.md, Decision 3; no
+  `/v2` path).
+  - Every successful boot now waits for the first config, about 100-300ms.
+    Before, `NewClient` returned at once and the first getter waited.
+  - With delivery unreachable, `NewClient` retries for up to `InitTimeout`
+    (default 10s) and then returns `*quonfig.InitError`. Before, it returned
+    a client whose getters failed with the transport error or
+    `ErrInitializationTimeout`. Check the error from `NewClient`.
+  - If every delivery leg rejects the SDK key (401/403), `NewClient` fails at
+    once.
+  - To keep booting without config, pass
+    `WithOnInitFailure(quonfig.InitFailureContinue)`: `NewClient` returns
+    after `InitTimeout`, the client keeps retrying in the background, and
+    getters return `ok=false` with an error matching `ErrNotFound` until it
+    heals. `ReturnZeroValue` users get this behavior through the alias; their
+    getters no longer surface a fast transport error.
+  - Getters no longer block on initialization.
+
+### Added (minor)
+
+- `InitFailureFail` (the default), `InitFailureWait` and
+  `InitFailureContinue`. `ReturnError` and `ReturnZeroValue` are deprecated
+  aliases of `InitFailureFail` and `InitFailureContinue`, and log a one-time
+  WARN. `OnInitFailure.String()` returns `fail`, `wait` or `continue`.
+  `WithOnInitFailure` rejects an unknown value.
+- `*quonfig.InitError` with `Reason` (`timeout`, `unavailable`,
+  `unauthorized`), `Elapsed`, `Attempts` and the last delivery error as
+  `Unwrap()`. `errors.Is(err, ErrInitializationTimeout)` still holds on a hang.
+- `Client.Ready()` and `Client.WaitForReady(ctx)`.
+- Init logging per the cross-SDK contract: WARN on the first failed attempt
+  and every 5s until the timeout, ERROR at a `fail` or `continue` timeout or a
+  rejected key, WARN every 30s while `wait` blocks or a `continue` client is
+  not connected (every 5 min after 5 min), and a WARN when it recovers. Lines
+  start with `[quonfig]`, name each leg's host and error, never the SDK key,
+  and carry `event=quonfig.init.<name>`.
+
+### Fixed (patch)
+
+- `ReturnZeroValue` (now `InitFailureContinue`) applies to every init
+  failure, not only the timeout: a fast connection refusal no longer reaches
+  getters as a raw transport error.
+- A delivery outage at boot now logs at WARN and above (it logged nothing
+  above INFO).
+- `EvaluateDetails` on a client without config reports error code
+  `PROVIDER_NOT_READY`.
+
+### Tests
+
+- integration-test-data pin bumped to v2026.10.20 (init-failure cases);
+  `internal/fixtures` regenerated, with the hand-written
+  `newInitFailureClient`.
+
 ## 1.8.0 - 2026-10-20
 
 ### Upgrade notes

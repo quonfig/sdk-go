@@ -9,23 +9,18 @@ import (
 	"time"
 )
 
-// qfg-9dxb.10 (audit 2026-09-28b M1): Close() while the initial fetch is in
-// flight must stop everything. Before the fix, startBackgroundWorkers ran
-// after the fetch returned, did not check closeCh, and started a supervisor
-// and fallback poller that kept polling with the SDK key forever.
+// qfg-9dxb.10 (audit 2026-09-28b M1): Close() must stop everything that
+// retries with the SDK key. NewClient now blocks through init (qfg-9p4i.7), so
+// the reachable form of "Close while the init fetch is unresolved" is a
+// continue client still retrying in the background: Close must stop the init
+// retry loop and the fallback poller.
 func TestCloseDuringInitFetchStartsNoBackgroundWorkers(t *testing.T) {
-	release := make(chan struct{})
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/api/v2/configs") {
-			http.Error(w, "stream unavailable", http.StatusServiceUnavailable)
-			return
+		if strings.HasPrefix(r.URL.Path, "/api/v2/configs") {
+			hits.Add(1)
 		}
-		if hits.Add(1) == 1 {
-			<-release
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"configs":[],"meta":{"version":"gen-1","environment":"Production","generation":1}}`))
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(srv.Close)
 
@@ -35,21 +30,20 @@ func TestCloseDuringInitFetchStartsNoBackgroundWorkers(t *testing.T) {
 		WithSSE(false),
 		WithFallbackPoll(true, 20*time.Millisecond),
 		WithAllTelemetryDisabled(),
-		WithInitTimeout(5*time.Second),
+		WithInitTimeout(50*time.Millisecond),
+		WithOnInitFailure(InitFailureContinue),
 	)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	waitFor(t, 3*time.Second, func() bool { return hits.Load() == 1 }, "init fetch never reached the server")
+	waitFor(t, 3*time.Second, func() bool { return hits.Load() >= 2 }, "background retry never reached the server")
 	client.Close()
-	close(release)
+	time.Sleep(50 * time.Millisecond) // let an in-flight request settle
+	after := hits.Load()
 
 	time.Sleep(300 * time.Millisecond)
-	if got := hits.Load(); got != 1 {
-		t.Fatalf("config fetches after Close = %d, want 1 (only the in-flight init fetch)", got)
-	}
-	if client.FallbackPollerActive() {
-		t.Fatalf("fallback poller active after Close")
+	if got := hits.Load(); got != after {
+		t.Fatalf("config fetches after Close went %d -> %d, want no new fetches", after, got)
 	}
 }

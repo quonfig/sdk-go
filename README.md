@@ -33,6 +33,41 @@ if on, _, _ := client.GetBoolValue("new-dashboard", nil); on {
 limit, _, _ := client.GetIntValue("rate-limit", nil)
 ```
 
+## Startup failure
+
+`NewClient` blocks until the first config arrives (a healthy boot takes
+about 100-300ms). While delivery is unreachable it retries with backoff for
+up to `WithInitTimeout` (default 10s), logging at WARN. What happens next is
+set by `WithOnInitFailure`:
+
+| Value | At the timeout |
+|---|---|
+| `quonfig.InitFailureFail` (default) | `NewClient` returns `(nil, *quonfig.InitError)`. If every delivery leg rejects the SDK key (401/403), it returns at once. |
+| `quonfig.InitFailureWait` | `NewClient` keeps blocking and retrying until a config arrives. |
+| `quonfig.InitFailureContinue` | `NewClient` returns a client with no config. It keeps retrying in the background; getters answer `ok=false` with an error matching `quonfig.ErrNotFound` until it heals. |
+
+```go
+client, err := quonfig.NewClient(
+    quonfig.WithSdkKey(key),
+    quonfig.WithOnInitFailure(quonfig.InitFailureFail), // the default
+    quonfig.WithInitTimeout(10*time.Second),
+)
+if err != nil {
+    var ie *quonfig.InitError
+    if errors.As(err, &ie) {
+        log.Fatalf("quonfig: %s after %s: %v", ie.Reason, ie.Elapsed, err) // timeout | unavailable | unauthorized
+    }
+    log.Fatal(err)
+}
+```
+
+`errors.Is(err, quonfig.ErrInitializationTimeout)` is true when the legs hung
+until the timeout. `client.Ready()` reports whether the client holds a config,
+and `client.WaitForReady(ctx)` blocks until it does. Under
+`InitFailureContinue`, wire a readiness probe to `Ready()`. The deprecated
+`ReturnError` and `ReturnZeroValue` still work as aliases of `InitFailureFail`
+and `InitFailureContinue`, and log a one-time WARN.
+
 ## Connection health
 
 The SDK exposes two diagnostic getters so callers can surface freshness in
