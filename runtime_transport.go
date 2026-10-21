@@ -3,6 +3,7 @@ package quonfig
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -230,8 +231,8 @@ func (c *runtimeTransport) FetchConfigsHedged(ctx context.Context, hedgeDelay, h
 // bounded by its own abort deadline. It fully reads/decodes the body before
 // returning, so cancelling on return is safe. The returned legResult.Res
 // (when non-nil) carries SourceIndex=i.
-// maxErrorBodyBytes caps how much of a non-200 config-fetch body is read
-// into the returned error.
+// maxErrorBodyBytes caps how much of a non-200 config-fetch body is drained
+// (and discarded) before the connection is released.
 const maxErrorBodyBytes = 1024
 
 func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time.Duration) legResult {
@@ -254,7 +255,7 @@ func (c *runtimeTransport) fetchLegAt(ctx context.Context, i int, abort time.Dur
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/v2/configs", nil)
 	if err != nil {
-		return legResult{Err: fmt.Errorf("creating request: %w", err)}
+		return legResult{Err: fmt.Errorf("creating request: %w", redactURLError(err))}
 	}
 
 	req.SetBasicAuth("1", c.apiKey)
@@ -270,7 +271,7 @@ func (c *runtimeTransport) fetchLegAt(ctx context.Context, i int, abort time.Dur
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return legResult{Err: fmt.Errorf("fetching configs from %s: %w", baseURL, err)}
+		return legResult{Err: fmt.Errorf("fetching configs from %s: %w", redactURL(baseURL), redactURLError(err))}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -279,10 +280,12 @@ func (c *runtimeTransport) fetchLegAt(ctx context.Context, i int, abort time.Dur
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		// The body ends up in the error getters return and in logs, so cap
-		// it: a proxy error page must not ride along in full.
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-		return legResult{Err: fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, baseURL, strings.TrimSpace(string(body))), Status: resp.StatusCode}
+		// The error reaches InitError.Unwrap, getter errors and the poller
+		// and supervisor logs, so it carries the status only, never the
+		// upstream body (qfg-9p4i.17.1 D4). Drain a bounded amount so the
+		// connection can be reused.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxErrorBodyBytes))
+		return legResult{Err: fmt.Errorf("unexpected status %d from %s", resp.StatusCode, redactURL(baseURL)), Status: resp.StatusCode}
 	}
 
 	envelope, err := decodeEnvelope(json.NewDecoder(resp.Body).Decode, c.logger)
@@ -292,7 +295,7 @@ func (c *runtimeTransport) fetchLegAt(ctx context.Context, i int, abort time.Dur
 	// A 200 that is not a config envelope is a leg error, so the hedge and
 	// failover proceed exactly as for a 5xx (qfg-9dxb.3).
 	if err := envelope.validate(); err != nil {
-		return legResult{Err: fmt.Errorf("invalid response from %s: %w", baseURL, err), Status: resp.StatusCode}
+		return legResult{Err: fmt.Errorf("invalid response from %s: %w", redactURL(baseURL), err), Status: resp.StatusCode}
 	}
 
 	// Store the ETag only after the body decoded and validated. Storing it
@@ -346,11 +349,57 @@ type authRejectedError struct {
 func (e *authRejectedError) Error() string { return e.err.Error() }
 func (e *authRejectedError) Unwrap() error { return e.err }
 
-// hostOf returns the host[:port] of a base URL, or the input when it does not
-// parse.
+// redactURL drops any user:pass@ userinfo from a URL so it is safe in error
+// text and logs (qfg-9p4i.17.1 D4). Input that does not parse (a bad port,
+// say) is redacted textually: anything up to the last '@' in the authority is
+// dropped.
+func redactURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return stripUserinfo(raw)
+	}
+	if u.User == nil {
+		return raw
+	}
+	u.User = nil
+	return u.String()
+}
+
+// stripUserinfo removes "user[:pass]@" from the authority of a URL-shaped
+// string without parsing it.
+func stripUserinfo(raw string) string {
+	start := strings.Index(raw, "://")
+	if start < 0 {
+		return raw
+	}
+	start += len("://")
+	end := len(raw)
+	if i := strings.IndexAny(raw[start:], "/?#"); i >= 0 {
+		end = start + i
+	}
+	at := strings.LastIndex(raw[start:end], "@")
+	if at < 0 {
+		return raw
+	}
+	return raw[:start] + raw[start+at+1:]
+}
+
+// redactURLError strips userinfo from the URL inside a net/http *url.Error
+// (net/http masks only the password). The copy keeps Op and the wrapped
+// error, so Timeout() and errors.Is/As behave as before.
+func redactURLError(err error) error {
+	var ue *url.Error
+	if !errors.As(err, &ue) {
+		return err
+	}
+	return &url.Error{Op: ue.Op, URL: redactURL(ue.URL), Err: ue.Err}
+}
+
+// hostOf returns the host[:port] of a base URL, or the input (userinfo
+// stripped) when it does not parse.
 func hostOf(raw string) string {
 	if u, err := url.Parse(raw); err == nil && u.Host != "" {
 		return u.Host
 	}
-	return raw
+	return redactURL(raw)
 }

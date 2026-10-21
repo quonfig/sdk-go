@@ -21,7 +21,7 @@ type OnInitFailure int
 const (
 	// InitFailureFail makes NewClient return (nil, *InitError) when no config
 	// arrived within InitTimeout, or at once when every delivery leg rejects
-	// the SDK key (401/403). This is the default (the zero value).
+	// the SDK key (401, 403, 404 or 410). This is the default (the zero value).
 	InitFailureFail OnInitFailure = 0
 	// InitFailureContinue makes NewClient return a client after InitTimeout
 	// (or at once on a rejected key) even with no config. The client keeps
@@ -510,8 +510,13 @@ func WithQuonfigUserContext(enabled bool) Option {
 }
 
 // WithInitTimeout sets how long NewClient waits (retrying) for the first
-// config before applying the OnInitFailure policy. Default 10s. A value <= 0
-// applies the policy right after the first failed attempt.
+// config before applying the OnInitFailure policy. Default 10s.
+//
+// A value <= 0 means "one attempt, then decide": NewClient runs exactly one
+// fetch attempt (each leg still bounded by the hedge abort) and, if it fails,
+// applies the policy at once. InitFailureFail returns *InitError,
+// InitFailureContinue returns a client on code defaults, and InitFailureWait
+// keeps retrying until a config arrives. It never means "no deadline".
 func WithInitTimeout(d time.Duration) Option {
 	return func(o *Options) error {
 		o.InitTimeout = d

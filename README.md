@@ -42,7 +42,7 @@ set by `WithOnInitFailure`:
 
 | Value | At the timeout |
 |---|---|
-| `quonfig.InitFailureFail` (default) | `NewClient` returns `(nil, *quonfig.InitError)`. If every delivery leg rejects the SDK key (401/403), it returns at once. |
+| `quonfig.InitFailureFail` (default) | `NewClient` returns `(nil, *quonfig.InitError)`. If every configured delivery leg rejects the SDK key (401, 403, 404 or 410), it returns at once. |
 | `quonfig.InitFailureWait` | `NewClient` keeps blocking and retrying until a config arrives. |
 | `quonfig.InitFailureContinue` | `NewClient` returns a client with no config. It keeps retrying in the background; getters answer `ok=false` with an error matching `quonfig.ErrNotFound` until it heals. |
 
@@ -60,6 +60,16 @@ if err != nil {
     log.Fatal(err)
 }
 ```
+
+`WithInitTimeout(0)` (or any value <= 0) means one attempt, then decide:
+`NewClient` runs exactly one fetch attempt and, if it fails, applies the
+policy at once. `InitFailureFail` returns the error, `InitFailureContinue`
+returns a client on code defaults, and `InitFailureWait` keeps retrying. It
+never means "no deadline".
+
+The `InitError` text and the error it wraps name delivery hosts and HTTP
+statuses only. They never carry URL credentials (`user:pass@`) or upstream
+response bodies.
 
 `errors.Is(err, quonfig.ErrInitializationTimeout)` is true when the legs hung
 until the timeout. `client.Ready()` reports whether the client holds a config,

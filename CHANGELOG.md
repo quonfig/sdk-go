@@ -17,8 +17,8 @@ All notable changes to the Quonfig Go SDK are documented here.
     (default 10s) and then returns `*quonfig.InitError`. Before, it returned
     a client whose getters failed with the transport error or
     `ErrInitializationTimeout`. Check the error from `NewClient`.
-  - If every delivery leg rejects the SDK key (401/403), `NewClient` fails at
-    once.
+  - If every configured delivery leg rejects the SDK key (401, 403, 404 or
+    410), `NewClient` fails at once.
   - To keep booting without config, pass
     `WithOnInitFailure(quonfig.InitFailureContinue)`: `NewClient` returns
     after `InitTimeout`, the client keeps retrying in the background, and
@@ -26,6 +26,19 @@ All notable changes to the Quonfig Go SDK are documented here.
     heals. `ReturnZeroValue` users get this behavior through the alias; their
     getters no longer surface a fast transport error.
   - Getters no longer block on initialization.
+
+### Fixed (qfg-9p4i.17.1)
+
+- Config-fetch errors (wrapped by `InitError`, returned by getters, logged by
+  the fallback poller and supervisor) no longer include URL userinfo
+  (`user:pass@`) or the upstream response body. They keep the host and the
+  HTTP status.
+- The auth-rejected init line names only the configured legs ("by primary"
+  with one API URL) instead of always saying "by primary and secondary".
+- Under `InitFailureWait`, the auth-rejected ERROR now fires the first time an
+  attempt is rejected by every leg, not only when attempt 1 is.
+- README and `OnInitFailure` docs list the full auth class (401, 403, 404,
+  410) and document `InitTimeout <= 0` (one attempt, then decide).
 
 ### Added (minor)
 

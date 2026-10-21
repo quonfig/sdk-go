@@ -9,10 +9,11 @@ import (
 	"time"
 )
 
-// A non-200 config-fetch body is embedded in the error getters return, so it
-// must be bounded (qfg-goi1.2.4 item 6): a proxy error page or a misbehaving
-// edge must not put a megabyte into every getter error string and log line.
-func TestFetchErrorBodyIsBounded(t *testing.T) {
+// A non-200 config-fetch body never reaches the error (qfg-9p4i.17.1 D4):
+// that error is wrapped by InitError and logged by the poller and supervisor,
+// so a proxy error page or an upstream body must not ride along. The status
+// is kept.
+func TestFetchErrorOmitsBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte("unauthorized " + strings.Repeat("x", 1<<20) + "\n"))
@@ -25,11 +26,11 @@ func TestFetchErrorBodyIsBounded(t *testing.T) {
 		t.Fatal("expected an error for a 401")
 	}
 	msg := lr.Err.Error()
-	if len(msg) > 2048 {
-		t.Fatalf("error is %d bytes, want <= 2048 (body must be capped)", len(msg))
+	if len(msg) > 256 {
+		t.Fatalf("error is %d bytes, want <= 256 (no body)", len(msg))
 	}
-	if !strings.Contains(msg, "401") || !strings.Contains(msg, "unauthorized") {
-		t.Fatalf("error %q lost the status or the start of the body", msg[:min(len(msg), 200)])
+	if !strings.Contains(msg, "401") || strings.Contains(msg, "unauthorized") {
+		t.Fatalf("error %q: want the status and no body", msg[:min(len(msg), 200)])
 	}
 }
 
