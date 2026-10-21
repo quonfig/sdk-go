@@ -2,7 +2,7 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
-## Unreleased
+## 1.9.0 - 2026-10-21
 
 ### Upgrade notes
 
@@ -70,9 +70,9 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Tests
 
-- integration-test-data pin bumped to v2026.10.20 (init-failure cases);
-  `internal/fixtures` regenerated, with the hand-written
-  `newInitFailureClient`.
+- integration-test-data pin bumped to v2026.10.21.1 (init-failure
+  conformance cases and cross-platform init timings); `internal/fixtures`
+  regenerated, with the hand-written `newInitFailureClient`.
 
 ## 1.8.0 - 2026-10-20
 
