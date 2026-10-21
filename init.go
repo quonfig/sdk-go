@@ -213,6 +213,20 @@ func (c *Client) runInitAttempt(ctx context.Context) initAttempt {
 	return a
 }
 
+// configuredLegsPhrase names the configured delivery legs for the
+// auth-rejected lines: "primary" with one API URL, "primary and secondary"
+// with two.
+func (c *Client) configuredLegsPhrase() string {
+	switch n := len(c.transport.baseURLs); n {
+	case 1:
+		return "primary"
+	case 2:
+		return "primary and secondary"
+	default:
+		return fmt.Sprintf("all %d delivery legs", n)
+	}
+}
+
 func isTimeoutErr(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
@@ -386,6 +400,7 @@ func (c *Client) initLoop(base context.Context, mode OnInitFailure, timeout time
 	backoff := st.cad.backoffBase
 	var last initAttempt
 	attemptsSoFar := 0
+	authLogged := false // wait: the auth-rejected ERROR is logged once
 	for {
 		if c.Ready() {
 			// SSE or the fallback poller healed a continue client.
@@ -429,14 +444,15 @@ func (c *Client) initLoop(base context.Context, mode OnInitFailure, timeout time
 		// Every leg rejected the key: fail and continue decide now; wait
 		// keeps retrying (the key may be provisioned late).
 		if a.allAuth && !decided {
+			rejectedBy := c.configuredLegsPhrase()
 			switch mode {
 			case InitFailureFail:
-				logger.Error(fmt.Sprintf("[quonfig] init FAILED: SDK key rejected (%d) by primary and secondary. Check the key and environment. onInitFailure=fail: returning *quonfig.InitError now.", a.authCode),
+				logger.Error(fmt.Sprintf("[quonfig] init FAILED: SDK key rejected (%d) by %s. Check the key and environment. onInitFailure=fail: returning *quonfig.InitError now.", a.authCode, rejectedBy),
 					slog.String("event", "quonfig.init.unauthorized"))
 				decide(&InitError{Reason: InitErrorUnauthorized, Elapsed: time.Since(st.start), Attempts: attempts, Err: a.err, legs: a.legs})
 				return
 			case InitFailureContinue:
-				logger.Error(fmt.Sprintf("[quonfig] init FAILED: SDK key rejected (%d) by primary and secondary. Check the key and environment. onInitFailure=continue: STARTING ON CODE DEFAULTS. This instance may disagree with the rest of your fleet. Retrying in background.", a.authCode),
+				logger.Error(fmt.Sprintf("[quonfig] init FAILED: SDK key rejected (%d) by %s. Check the key and environment. onInitFailure=continue: STARTING ON CODE DEFAULTS. This instance may disagree with the rest of your fleet. Retrying in background.", a.authCode, rejectedBy),
 					slog.String("event", "quonfig.init.unauthorized"))
 				st.mu.Lock()
 				st.failureLogged = true
@@ -447,8 +463,11 @@ func (c *Client) initLoop(base context.Context, mode OnInitFailure, timeout time
 				c.startBackgroundWorkers()
 				decide(nil)
 			case InitFailureWait:
-				if attempts == 1 {
-					logger.Error(fmt.Sprintf("[quonfig] init: SDK key rejected (%d) by primary and secondary. Check the key and environment. onInitFailure=wait: still blocking startup and retrying.", a.authCode),
+				// Log the first all-auth attempt, whichever it is: attempt 1
+				// may have been a 503 before the key started being rejected.
+				if !authLogged {
+					authLogged = true
+					logger.Error(fmt.Sprintf("[quonfig] init: SDK key rejected (%d) by %s. Check the key and environment. onInitFailure=wait: still blocking startup and retrying.", a.authCode, rejectedBy),
 						slog.String("event", "quonfig.init.unauthorized"))
 					st.mu.Lock()
 					st.failureLogged = true
