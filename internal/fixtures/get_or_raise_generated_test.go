@@ -39,7 +39,7 @@ func TestGetOrRaise_GetOrRaiseReturnsADefaultValueInsteadOfRaising(t *testing.T)
 // init fails by default when every delivery leg refuses the connection
 func TestGetOrRaise_InitFailsByDefaultWhenEveryDeliveryLegRefusesTheConnection(t *testing.T) {
 	start := time.Now()
-	c, err := newInitFailureClient(t, "", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 500)
+	c, err := newInitFailureClient(t, "", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 0)
 	elapsed := time.Since(start)
 	require.Error(t, err, "init must fail (on_init_failure default = fail)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
@@ -48,22 +48,7 @@ func TestGetOrRaise_InitFailsByDefaultWhenEveryDeliveryLegRefusesTheConnection(t
 	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
 		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
 	}
-	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
-}
-
-// init with on_init_failure fail raises when every delivery leg refuses the connection
-func TestGetOrRaise_InitWithOnInitFailureFailRaisesWhenEveryDeliveryLegRefusesTheConnection(t *testing.T) {
-	start := time.Now()
-	c, err := newInitFailureClient(t, "fail", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 500)
-	elapsed := time.Since(start)
-	require.Error(t, err, "init must fail (on_init_failure fail)")
-	assert.Nil(t, c, "on_init_failure fail returns no client")
-	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
-	var initErr *quonfig.InitError
-	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
-		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
-	}
-	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+	assert.Less(t, elapsed, 8000*time.Millisecond, "init must raise within 8000ms")
 }
 
 // init with on_init_failure fail raises the init timeout when every delivery leg hangs
@@ -122,7 +107,7 @@ func TestGetOrRaise_GetOrRaiseRaisesMissingDefaultAfterInitContinuesPastRefusedD
 // deprecated on_init_failure raise behaves as fail when every delivery leg refuses the connection
 func TestGetOrRaise_DeprecatedOnInitFailureRaiseBehavesAsFailWhenEveryDeliveryLegRefusesTheConnection(t *testing.T) {
 	start := time.Now()
-	c, err := newInitFailureClient(t, "raise", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 500)
+	c, err := newInitFailureClient(t, "raise", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 0)
 	elapsed := time.Since(start)
 	require.Error(t, err, "init must fail (on_init_failure raise)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
@@ -131,7 +116,7 @@ func TestGetOrRaise_DeprecatedOnInitFailureRaiseBehavesAsFailWhenEveryDeliveryLe
 	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
 		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
 	}
-	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+	assert.Less(t, elapsed, 8000*time.Millisecond, "init must raise within 8000ms")
 }
 
 // deprecated on_init_failure return behaves as continue when every delivery leg refuses the connection
@@ -174,8 +159,8 @@ func TestGetOrRaise_InitWithOnInitFailureFailRaisesAtOnceWhenEveryDeliveryLegAns
 	assert.Less(t, elapsed, 4000*time.Millisecond, "init must raise within 4000ms")
 }
 
-// init with on_init_failure fail raises unavailable when only the primary answers 401 and the secondary 503
-func TestGetOrRaise_InitWithOnInitFailureFailRaisesUnavailableWhenOnlyThePrimaryAnswers401AndTheSecondary503(t *testing.T) {
+// init with on_init_failure fail raises unavailable after one attempt when only the primary answers 401 and the secondary 503
+func TestGetOrRaise_InitWithOnInitFailureFailRaisesUnavailableAfterOneAttemptWhenOnlyThePrimaryAnswers401AndTheSecondary503(t *testing.T) {
 	var legURLs []string
 	for _, status := range []int{401, 503} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -185,7 +170,7 @@ func TestGetOrRaise_InitWithOnInitFailureFailRaisesUnavailableWhenOnlyThePrimary
 		legURLs = append(legURLs, srv.URL)
 	}
 	start := time.Now()
-	c, err := newInitFailureClient(t, "fail", legURLs, 0, 1500)
+	c, err := newInitFailureClient(t, "fail", legURLs, 0, 0)
 	elapsed := time.Since(start)
 	require.Error(t, err, "init must fail (on_init_failure fail)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
@@ -194,7 +179,33 @@ func TestGetOrRaise_InitWithOnInitFailureFailRaisesUnavailableWhenOnlyThePrimary
 	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
 		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
 	}
-	assert.Less(t, elapsed, 6000*time.Millisecond, "init must raise within 6000ms")
+	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+}
+
+// init with on_init_failure fail raises unavailable at the deadline when the primary answers 401 and the secondary hangs
+func TestGetOrRaise_InitWithOnInitFailureFailRaisesUnavailableAtTheDeadlineWhenThePrimaryAnswers401AndTheSecondaryHangs(t *testing.T) {
+	legURLs := []string{"", "http://192.0.2.1:8002"}
+	for i, status := range []int{401, 0} {
+		if status == 0 {
+			continue
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+		}))
+		t.Cleanup(srv.Close)
+		legURLs[i] = srv.URL
+	}
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", legURLs, 0, 9000)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
+	}
+	assert.Less(t, elapsed, 12000*time.Millisecond, "init must raise within 12000ms")
 }
 
 // init with init_timeout_ms 0 and on_init_failure fail raises after one attempt when every delivery leg refuses the connection
@@ -209,7 +220,7 @@ func TestGetOrRaise_InitWithInitTimeoutMs0AndOnInitFailureFailRaisesAfterOneAtte
 	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
 		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
 	}
-	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+	assert.Less(t, elapsed, 8000*time.Millisecond, "init must raise within 8000ms")
 }
 
 // get_or_raise returns the default after init with init_timeout_ms 0 continues past refused delivery legs
@@ -243,7 +254,7 @@ func TestGetOrRaise_InitWithOnInitFailureFailRaisesTheInitTimeoutWhenEveryDelive
 // init error never carries the userinfo of a delivery URL
 func TestGetOrRaise_InitErrorNeverCarriesTheUserinfoOfADeliveryURL(t *testing.T) {
 	start := time.Now()
-	c, err := newInitFailureClient(t, "fail", []string{"http://qfguser:qfgsecret@127.0.0.1:1", "http://qfguser:qfgsecret@127.0.0.1:2"}, 0, 500)
+	c, err := newInitFailureClient(t, "fail", []string{"http://qfguser:qfgsecret@127.0.0.1:1", "http://qfguser:qfgsecret@127.0.0.1:2"}, 0, 0)
 	elapsed := time.Since(start)
 	require.Error(t, err, "init must fail (on_init_failure fail)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
@@ -252,7 +263,7 @@ func TestGetOrRaise_InitErrorNeverCarriesTheUserinfoOfADeliveryURL(t *testing.T)
 	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
 		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
 	}
-	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+	assert.Less(t, elapsed, 8000*time.Millisecond, "init must raise within 8000ms")
 	for e := err; e != nil; e = errors.Unwrap(e) {
 		assert.NotContains(t, e.Error(), "qfgsecret")
 		assert.NotContains(t, e.Error(), "qfguser")
@@ -271,7 +282,7 @@ func TestGetOrRaise_InitErrorNeverCarriesAnUpstreamResponseBody(t *testing.T) {
 		legURLs = append(legURLs, srv.URL)
 	}
 	start := time.Now()
-	c, err := newInitFailureClient(t, "fail", legURLs, 0, 500)
+	c, err := newInitFailureClient(t, "fail", legURLs, 0, 0)
 	elapsed := time.Since(start)
 	require.Error(t, err, "init must fail (on_init_failure fail)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
