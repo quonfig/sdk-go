@@ -6,6 +6,9 @@
 package fixtures
 
 import (
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -41,6 +44,10 @@ func TestGetOrRaise_InitFailsByDefaultWhenEveryDeliveryLegRefusesTheConnection(t
 	require.Error(t, err, "init must fail (on_init_failure default = fail)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
 	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
+	}
 	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
 }
 
@@ -52,17 +59,25 @@ func TestGetOrRaise_InitWithOnInitFailureFailRaisesWhenEveryDeliveryLegRefusesTh
 	require.Error(t, err, "init must fail (on_init_failure fail)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
 	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
+	}
 	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
 }
 
 // init with on_init_failure fail raises the init timeout when every delivery leg hangs
 func TestGetOrRaise_InitWithOnInitFailureFailRaisesTheInitTimeoutWhenEveryDeliveryLegHangs(t *testing.T) {
 	start := time.Now()
-	c, err := newInitFailureClient(t, "fail", []string{"http://192.0.2.1:1", "http://192.0.2.1:2"}, 0, 200)
+	c, err := newInitFailureClient(t, "fail", []string{"http://192.0.2.1:8001", "http://192.0.2.1:8002"}, 0, 200)
 	elapsed := time.Since(start)
 	require.Error(t, err, "init must fail (on_init_failure fail)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
 	assert.ErrorIs(t, err, quonfig.ErrInitializationTimeout)
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("timeout"), initErr.Reason)
+	}
 	assert.Less(t, elapsed, 2000*time.Millisecond, "init must raise within 2000ms")
 }
 
@@ -74,6 +89,10 @@ func TestGetOrRaise_InitWithOnInitFailureFailRaisesAtOnceWhenEveryDeliveryLegAns
 	require.Error(t, err, "init must fail (on_init_failure fail)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
 	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unauthorized, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unauthorized"), initErr.Reason)
+	}
 	assert.Less(t, elapsed, 4000*time.Millisecond, "init must raise within 4000ms")
 }
 
@@ -108,6 +127,10 @@ func TestGetOrRaise_DeprecatedOnInitFailureRaiseBehavesAsFailWhenEveryDeliveryLe
 	require.Error(t, err, "init must fail (on_init_failure raise)")
 	assert.Nil(t, c, "on_init_failure fail returns no client")
 	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
+	}
 	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
 }
 
@@ -119,6 +142,148 @@ func TestGetOrRaise_DeprecatedOnInitFailureReturnBehavesAsContinueWhenEveryDeliv
 	_, ok, err := c.GetStringValue("any-key", nil)
 	assert.False(t, ok, "%q must have no value", "any-key")
 	require.ErrorIs(t, err, quonfig.ErrNotFound)
+}
+
+// init with on_init_failure fail raises at once when every delivery leg answers 404
+func TestGetOrRaise_InitWithOnInitFailureFailRaisesAtOnceWhenEveryDeliveryLegAnswers404(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", []string{}, 404, 8000)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unauthorized, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unauthorized"), initErr.Reason)
+	}
+	assert.Less(t, elapsed, 4000*time.Millisecond, "init must raise within 4000ms")
+}
+
+// init with on_init_failure fail raises at once when every delivery leg answers 410
+func TestGetOrRaise_InitWithOnInitFailureFailRaisesAtOnceWhenEveryDeliveryLegAnswers410(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", []string{}, 410, 8000)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unauthorized, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unauthorized"), initErr.Reason)
+	}
+	assert.Less(t, elapsed, 4000*time.Millisecond, "init must raise within 4000ms")
+}
+
+// init with on_init_failure fail raises unavailable when only the primary answers 401 and the secondary 503
+func TestGetOrRaise_InitWithOnInitFailureFailRaisesUnavailableWhenOnlyThePrimaryAnswers401AndTheSecondary503(t *testing.T) {
+	var legURLs []string
+	for _, status := range []int{401, 503} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+		}))
+		t.Cleanup(srv.Close)
+		legURLs = append(legURLs, srv.URL)
+	}
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", legURLs, 0, 1500)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
+	}
+	assert.Less(t, elapsed, 6000*time.Millisecond, "init must raise within 6000ms")
+}
+
+// init with init_timeout_ms 0 and on_init_failure fail raises after one attempt when every delivery leg refuses the connection
+func TestGetOrRaise_InitWithInitTimeoutMs0AndOnInitFailureFailRaisesAfterOneAttemptWhenEveryDeliveryLegRefusesTheConnection(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 0)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
+	}
+	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+}
+
+// get_or_raise returns the default after init with init_timeout_ms 0 continues past refused delivery legs
+func TestGetOrRaise_GetOrRaiseReturnsTheDefaultAfterInitWithInitTimeoutMs0ContinuesPastRefusedDeliveryLegs(t *testing.T) {
+	c, err := newInitFailureClient(t, "continue", []string{"http://127.0.0.1:1", "http://127.0.0.1:2"}, 0, 0)
+	require.NoError(t, err, "on_init_failure continue: init must return")
+	require.NotNil(t, c)
+	got, ok, _ := c.GetStringValue("any-key", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// init with on_init_failure fail raises the init timeout when every delivery leg hangs past its per-leg abort
+func TestGetOrRaise_InitWithOnInitFailureFailRaisesTheInitTimeoutWhenEveryDeliveryLegHangsPastItsPerLegAbort(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", []string{"http://192.0.2.1:8001", "http://192.0.2.1:8002"}, 0, 10000)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.ErrorIs(t, err, quonfig.ErrInitializationTimeout)
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("timeout"), initErr.Reason)
+	}
+	assert.Less(t, elapsed, 14000*time.Millisecond, "init must raise within 14000ms")
+}
+
+// init error never carries the userinfo of a delivery URL
+func TestGetOrRaise_InitErrorNeverCarriesTheUserinfoOfADeliveryURL(t *testing.T) {
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", []string{"http://qfguser:qfgsecret@127.0.0.1:1", "http://qfguser:qfgsecret@127.0.0.1:2"}, 0, 500)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
+	}
+	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		assert.NotContains(t, e.Error(), "qfgsecret")
+		assert.NotContains(t, e.Error(), "qfguser")
+	}
+}
+
+// init error never carries an upstream response body
+func TestGetOrRaise_InitErrorNeverCarriesAnUpstreamResponseBody(t *testing.T) {
+	var legURLs []string
+	for _, status := range []int{503, 503} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(status)
+			_, _ = w.Write([]byte("upstream exploded: qfg-upstream-body-marker"))
+		}))
+		t.Cleanup(srv.Close)
+		legURLs = append(legURLs, srv.URL)
+	}
+	start := time.Now()
+	c, err := newInitFailureClient(t, "fail", legURLs, 0, 500)
+	elapsed := time.Since(start)
+	require.Error(t, err, "init must fail (on_init_failure fail)")
+	assert.Nil(t, c, "on_init_failure fail returns no client")
+	assert.NotErrorIs(t, err, quonfig.ErrInitializationTimeout, "reason unavailable, not the init timeout")
+	var initErr *quonfig.InitError
+	if assert.True(t, errors.As(err, &initErr), "init error is a *quonfig.InitError: %v", err) {
+		assert.Equal(t, quonfig.InitErrorReason("unavailable"), initErr.Reason)
+	}
+	assert.Less(t, elapsed, 5000*time.Millisecond, "init must raise within 5000ms")
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		assert.NotContains(t, e.Error(), "qfg-upstream-body-marker")
+	}
 }
 
 // raises an error if a config is provided by a missing environment variable
