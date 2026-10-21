@@ -134,3 +134,34 @@ func TestInitWaitAuthErrorFiresOnLaterAttempt(t *testing.T) {
 	assert.Contains(t, out, "level=ERROR msg=\"[quonfig] init: SDK key rejected (401) by primary. Check the key and environment. onInitFailure=wait")
 	assert.Equal(t, 1, strings.Count(out, "event=quonfig.init.unauthorized"), "logged once")
 }
+
+// D4: a base URL that does not parse (here a bad port) must not leak its
+// userinfo through the leg host or the url.Parse error.
+func TestInitMalformedURLRedactsUserinfo(t *testing.T) {
+	logger, logs := newBufLogger(slog.LevelDebug)
+	c, err := NewClient(append(baseInitOpts([]string{"http://alice:hunter2@127.0.0.1:bad"}, logger),
+		WithInitTimeout(100*time.Millisecond))...)
+	require.Error(t, err)
+	assert.Nil(t, c)
+	for name, s := range map[string]string{
+		"Error()":  err.Error(),
+		"Unwrap()": errors.Unwrap(err).Error(),
+		"logs":     logs.String(),
+	} {
+		assert.NotContains(t, s, "hunter2", "%s leaks the URL password", name)
+		assert.NotContains(t, s, "alice", "%s leaks the URL username", name)
+	}
+	assert.Contains(t, err.Error(), "127.0.0.1:bad", "the host is kept")
+}
+
+func TestRedactURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://alice:hunter2@p.example.test/x": "https://p.example.test/x",
+		"http://alice:hunter2@127.0.0.1:bad/a?b": "http://127.0.0.1:bad/a?b",
+		"http://alice@h:bad":                     "http://h:bad",
+		"https://p.example.test/a@b":             "https://p.example.test/a@b",
+		"https://p.example.test":                 "https://p.example.test",
+	} {
+		assert.Equal(t, want, redactURL(in), in)
+	}
+}

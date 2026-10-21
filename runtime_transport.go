@@ -255,7 +255,7 @@ func (c *runtimeTransport) fetchLegAt(ctx context.Context, i int, abort time.Dur
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/v2/configs", nil)
 	if err != nil {
-		return legResult{Err: fmt.Errorf("creating request: %w", err)}
+		return legResult{Err: fmt.Errorf("creating request: %w", redactURLError(err))}
 	}
 
 	req.SetBasicAuth("1", c.apiKey)
@@ -350,14 +350,38 @@ func (e *authRejectedError) Error() string { return e.err.Error() }
 func (e *authRejectedError) Unwrap() error { return e.err }
 
 // redactURL drops any user:pass@ userinfo from a URL so it is safe in error
-// text and logs (qfg-9p4i.17.1 D4). Unparseable input is returned as is.
+// text and logs (qfg-9p4i.17.1 D4). Input that does not parse (a bad port,
+// say) is redacted textually: anything up to the last '@' in the authority is
+// dropped.
 func redactURL(raw string) string {
 	u, err := url.Parse(raw)
-	if err != nil || u.User == nil {
+	if err != nil {
+		return stripUserinfo(raw)
+	}
+	if u.User == nil {
 		return raw
 	}
 	u.User = nil
 	return u.String()
+}
+
+// stripUserinfo removes "user[:pass]@" from the authority of a URL-shaped
+// string without parsing it.
+func stripUserinfo(raw string) string {
+	start := strings.Index(raw, "://")
+	if start < 0 {
+		return raw
+	}
+	start += len("://")
+	end := len(raw)
+	if i := strings.IndexAny(raw[start:], "/?#"); i >= 0 {
+		end = start + i
+	}
+	at := strings.LastIndex(raw[start:end], "@")
+	if at < 0 {
+		return raw
+	}
+	return raw[:start] + raw[start+at+1:]
 }
 
 // redactURLError strips userinfo from the URL inside a net/http *url.Error
@@ -371,11 +395,11 @@ func redactURLError(err error) error {
 	return &url.Error{Op: ue.Op, URL: redactURL(ue.URL), Err: ue.Err}
 }
 
-// hostOf returns the host[:port] of a base URL, or the input when it does not
-// parse.
+// hostOf returns the host[:port] of a base URL, or the input (userinfo
+// stripped) when it does not parse.
 func hostOf(raw string) string {
 	if u, err := url.Parse(raw); err == nil && u.Host != "" {
 		return u.Host
 	}
-	return raw
+	return redactURL(raw)
 }
