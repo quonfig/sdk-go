@@ -6,6 +6,10 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ### Tests
 
+- Test 8 (auth-class) counts SSE attempts while auth-failed from the SDK's own
+  connect-attempt counter instead of server-side hits. A request the SDK sent
+  just before entering auth-failed could reach the test server after the entry
+  ERROR on a loaded machine and fail the test (qfg-izfx).
 - The chaos harness now reads every metric and state it asserts on from the
   SDK instead of its own bookkeeping, and fails (or SKIPs, with a reason) any
   chaos event it cannot apply instead of treating it as a no-op (qfg-6vno.1).

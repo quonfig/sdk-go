@@ -412,7 +412,10 @@ func TestSupervisor_AuthClassEntersAuthFailedAndProbesSlowly(t *testing.T) {
 			// disconnected throughout.
 			last := t8Index(ev, errIdx, "wait:probe", 7)
 			window := ev[errIdx:last]
-			for _, k := range []string{"hit:sse", "wait:sse", "wait:engage", "wait:poll"} {
+			if n := t8SSEAttempts(t, ev, errIdx, last); n != 0 {
+				t.Errorf("%d SSE attempts while auth-failed, want 0", n)
+			}
+			for _, k := range []string{"wait:sse", "wait:engage", "wait:poll"} {
 				if n := t8Count(window, k); n != 0 {
 					t.Errorf("%d %s events while auth-failed, want 0", n, k)
 				}
@@ -510,7 +513,7 @@ func TestSupervisor_AuthFailedExitsOnFirstValidAnswer(t *testing.T) {
 					t.Fatalf("want an entry ERROR then an exit INFO; events:\n%s", t8Dump(ev))
 				}
 				restart := t8Index(ev, exitIdx, "hit:sse", 1)
-				if n := t8Count(ev[errIdx:exitIdx], "hit:sse"); n != 0 {
+				if n := t8SSEAttempts(t, ev, errIdx, exitIdx); n != 0 {
 					t.Errorf("%d SSE attempts while auth-failed, want 0", n)
 				}
 				if n := t8Count(ev[errIdx:exitIdx], "wait:probe"); n != 2 {

@@ -46,6 +46,13 @@ type t8Event struct {
 	msg    string
 	state  ConnectionState
 	active bool
+	// sseAttempts is the client's own SSE connect-attempt count when the
+	// event was recorded (-1 before the client exists). Count SDK attempts
+	// in a window with t8SSEAttempts, not with hit:sse: the server records a
+	// hit when its handler runs, so a request the SDK sent just before
+	// entering auth-failed can land after the entry ERROR on a loaded
+	// machine (qfg-izfx).
+	sseAttempts int64
 }
 
 // t8Resp is one leg's scripted answer for one fetch cycle.
@@ -75,6 +82,10 @@ type t8Rig struct {
 }
 
 func (r *t8Rig) record(e t8Event) {
+	e.sseAttempts = -1
+	if c := r.client.Load(); c != nil {
+		e.sseAttempts = c.metrics.sseConnectAttempts.Load()
+	}
 	r.mu.Lock()
 	r.events = append(r.events, e)
 	r.mu.Unlock()
@@ -225,6 +236,17 @@ func t8Index(ev []t8Event, from int, kind string, nth int) int {
 		}
 	}
 	return -1
+}
+
+// t8SSEAttempts returns how many SSE connects the SDK started between events
+// a and b. The entry ERROR is logged after the SSE worker has stopped and the
+// exit INFO before it restarts, so the count between them is exact.
+func t8SSEAttempts(t *testing.T, ev []t8Event, a, b int) int64 {
+	t.Helper()
+	if ev[a].sseAttempts < 0 || ev[b].sseAttempts < 0 {
+		t.Fatalf("SSE attempt count not stamped on events %d..%d; events:\n%s", a, b, t8Dump(ev))
+	}
+	return ev[b].sseAttempts - ev[a].sseAttempts
 }
 
 func t8Logs(ev []t8Event, level slog.Level) []string {
