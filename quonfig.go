@@ -1407,9 +1407,11 @@ func (c *Client) deliverConfigUpdates() {
 // a defer/recover so a panic in customer code cannot tear down the goroutine
 // that delivers it (the SSE callback goroutine, the polling supervisor's
 // goroutine, the init goroutine in fetchAndInstall, or a Refresh() caller). On
-// recovery we log at ERROR with the panic value and stack — chaos scenario
-// 10 asserts client.sdkLog('error', /callback|onConfigUpdate/i) matches this
-// line. The SSE-side invokeOnEnvelope guard is still in place as a
+// recovery we log at ERROR with the panic value and stack and count
+// quonfig_sdk_callback_errors_total{callback="on_config_update"}; a callback
+// panic is not a worker restart (contract Test 5, qfg-6vno.26). Chaos
+// scenario 10 asserts client.sdkLog('error', /callback|onConfigUpdate/i)
+// matches this line. The SSE-side invokeOnEnvelope guard is still in place as a
 // belt-and-suspenders catch for non-OnConfigUpdate panics in OnEnvelope
 // (qfg-47c2.30).
 func (c *Client) invokeOnConfigUpdate(fn func()) {
@@ -1418,12 +1420,11 @@ func (c *Client) invokeOnConfigUpdate(fn func()) {
 		if r == nil {
 			return
 		}
-		c.metrics.incRestart("callback_panic")
+		c.metrics.incCallbackError("on_config_update")
 		c.opts.Logger.Error("quonfig: OnConfigUpdate callback panicked; SDK continuing",
 			slog.Any("panic", r),
 			slog.String("stack", string(debug.Stack())),
-			slog.String("layer", "1"),
-			slog.String("reason", "callback_panic"),
+			slog.String("callback", "on_config_update"),
 		)
 	}()
 	fn()

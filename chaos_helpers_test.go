@@ -665,8 +665,9 @@ func (p *chaosProbe) connectionState() string {
 // expectation loudly instead of comparing against a silent 0.
 //
 // Sources: Layer 1 restarts and connect attempts are the Client's internal
-// workerMetrics (counted in sseClient.runLoop/connectOnce and the callback
-// recover guards); Layer 2 restarts are the supervisor's
+// workerMetrics (counted in sseClient.runLoop/connectOnce); callback errors
+// are the same workerMetrics (counted in the callback recover guards);
+// Layer 2 restarts are the supervisor's
 // WorkerRestartTotal("2"). Before the client exists every count is 0.
 func (p *chaosProbe) sdkMetric(name string, labels map[string]string) (value float64, known bool) {
 	p.mu.Lock()
@@ -707,6 +708,13 @@ func (p *chaosProbe) sdkMetric(name string, labels map[string]string) (value flo
 		return 0, false
 	case "quonfig_sse_connect_attempts_total":
 		return float64(attempts()), true
+	case "quonfig_sdk_callback_errors_total":
+		// Callback panics recovered by the SDK (contract Test 5,
+		// qfg-6vno.26); "" sums every callback.
+		if c == nil {
+			return 0, true
+		}
+		return float64(c.metrics.callbackErrorTotal(labels["callback"])), true
 	}
 	return 0, false
 }
@@ -1061,7 +1069,7 @@ var (
 	reFallbackEq  = regexp.MustCompile(`^client\.fallbackPollerActive\(\)\s*==\s*(true|false)$`)
 	reProcAliveEq = regexp.MustCompile(`^client\.processStillAlive\(\)\s*==\s*(true|false)$`)
 	reLastRefresh = regexp.MustCompile(`^client\.lastSuccessfulRefresh\(\)\s*(>=|>|<=|<|==)\s*\(now\(\)\s*-\s*(\d+)\)$`)
-	reSDKMetric   = regexp.MustCompile(`^client\.sdkMetric\(\s*'([^']+)'\s*(?:,\s*layer=\s*'([^']+)'\s*)?\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
+	reSDKMetric   = regexp.MustCompile(`^client\.sdkMetric\(\s*'([^']+)'\s*(?:,\s*(layer|callback)=\s*'([^']+)'\s*)?\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
 	reServerMet   = regexp.MustCompile(`^server_metric\(\s*'([^']+)'\s*\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
 	reSDKLog      = regexp.MustCompile(`^client\.sdkLog\(\s*'([^']+)'\s*,\s*/(.+)/(i?)\s*\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
 
@@ -1152,15 +1160,15 @@ func evalLeaf(expr string, ec *evalCtx) exprResult {
 	if m := reSDKMetric.FindStringSubmatch(expr); m != nil {
 		labels := map[string]string{}
 		if m[2] != "" {
-			labels["layer"] = m[2]
+			labels[m[2]] = m[3]
 		}
 		got, known := ec.probe.sdkMetric(m[1], labels)
 		if !known {
 			return exprResult{verdict: verdictFail, why: fmt.Sprintf("unknown sdkMetric %q: the chaos probe does not implement it", m[1])}
 		}
-		want, _ := strconv.ParseFloat(m[4], 64)
-		ok := compareFloat(m[3], got, want)
-		return leafResult(ok, fmt.Sprintf("sdkMetric(%s,layer=%s)=%v %s %v", m[1], m[2], got, m[3], want))
+		want, _ := strconv.ParseFloat(m[5], 64)
+		ok := compareFloat(m[4], got, want)
+		return leafResult(ok, fmt.Sprintf("sdkMetric(%s,%s=%s)=%v %s %v", m[1], m[2], m[3], got, m[4], want))
 	}
 	if m := reServerMet.FindStringSubmatch(expr); m != nil {
 		note := skipNote{expr: expr, reason: serverMetricSkipReason}

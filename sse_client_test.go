@@ -511,8 +511,9 @@ func TestSSEClientDefaultReadTimeoutIs90s(t *testing.T) {
 // panic on type assertion, etc.) used to take down the whole process because
 // the panic bubbled out of parseStream → connectOnce → runLoop and tore the
 // goroutine apart. After qfg-47c2.11 the panic is recovered, logged at ERROR
-// with the panic value, the quonfig_sdk_worker_restart_total{reason="callback_panic"}
-// counter is incremented, and the loop continues parsing subsequent events.
+// with the panic value, quonfig_sdk_callback_errors_total{callback="on_envelope"}
+// is incremented (not worker_restart_total: no worker restarted,
+// qfg-6vno.26), and the loop continues parsing subsequent events.
 func TestSSEClientRecoversFromOnEnvelopePanic(t *testing.T) {
 	var calls atomic.Int32
 	envCh := make(chan *ConfigEnvelope, 4)
@@ -565,8 +566,11 @@ func TestSSEClientRecoversFromOnEnvelopePanic(t *testing.T) {
 		t.Fatalf("second envelope never delivered after panic recovery; calls=%d", calls.Load())
 	}
 
-	if got := c.workerRestartTotal("callback_panic"); got != 1 {
-		t.Errorf("workerRestartTotal(callback_panic) = %d, want 1", got)
+	if got := c.callbackErrorTotal("on_envelope"); got != 1 {
+		t.Errorf("callbackErrorTotal(on_envelope) = %d, want 1", got)
+	}
+	if got := c.workerRestartTotal(""); got != 0 {
+		t.Errorf("workerRestartTotal = %d after a callback panic, want 0", got)
 	}
 
 	logMu.Lock()

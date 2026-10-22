@@ -523,21 +523,20 @@ func stripFieldPrefix(s, prefix string) (string, bool) {
 // defer/recover so a panic in customer code cannot kill the SSE goroutine
 // (which would silently freeze the SDK at whatever envelope was current at
 // the time of the crash). On recovery we log at ERROR with the panic value
-// and stack, bump the quonfig_sdk_worker_restart_total{layer="1",
-// reason="callback_panic"} counter, and return — the parseStream loop then
-// continues with the next event.
+// and stack, bump quonfig_sdk_callback_errors_total{callback="on_envelope"}
+// (not a worker restart: the worker keeps running, qfg-6vno.26), and return
+// — the parseStream loop then continues with the next event.
 func (c *sseClient) invokeOnEnvelope(env *ConfigEnvelope) {
 	defer func() {
 		r := recover()
 		if r == nil {
 			return
 		}
-		c.incWorkerRestart("callback_panic")
+		c.incCallbackError("on_envelope")
 		c.cfg.Logger.Error("quonfig: OnEnvelope callback panicked; SSE loop continuing",
 			slog.Any("panic", r),
 			slog.String("stack", string(debug.Stack())),
-			slog.String("layer", "1"),
-			slog.String("reason", "callback_panic"),
+			slog.String("callback", "on_envelope"),
 		)
 	}()
 	c.cfg.OnEnvelope(env)
@@ -550,9 +549,15 @@ func (c *sseClient) workerRestartTotal(reason string) int64 {
 	return c.cfg.Metrics.restartTotal(reason)
 }
 
-// incWorkerRestart bumps the Layer 1 restart counter for a given reason.
-func (c *sseClient) incWorkerRestart(reason string) {
-	c.cfg.Metrics.incRestart(reason)
+// callbackErrorTotal returns quonfig_sdk_callback_errors_total for callback
+// ("" sums every callback).
+func (c *sseClient) callbackErrorTotal(callback string) int64 {
+	return c.cfg.Metrics.callbackErrorTotal(callback)
+}
+
+// incCallbackError counts one recovered callback panic.
+func (c *sseClient) incCallbackError(callback string) {
+	c.cfg.Metrics.incCallbackError(callback)
 }
 
 // setConnected records connection state transitions and fires the state
@@ -612,11 +617,11 @@ func (c *sseClient) invokeOnStateChange(v bool) {
 		if r == nil {
 			return
 		}
-		c.incWorkerRestart("callback_panic")
+		c.incCallbackError("on_connection_state_change")
 		c.cfg.Logger.Error("quonfig: OnSSEStateChange callback panicked; SDK continuing",
 			slog.Any("panic", r),
 			slog.String("stack", string(debug.Stack())),
-			slog.String("reason", "callback_panic"),
+			slog.String("callback", "on_connection_state_change"),
 		)
 	}()
 	c.cfg.OnStateChange(v)
