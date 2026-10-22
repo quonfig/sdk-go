@@ -4,6 +4,19 @@ All notable changes to the Quonfig Go SDK are documented here.
 
 ## Unreleased
 
+### Changed
+
+- A `/api/v2/configs` 200 response body over 16 MiB (16,777,216 bytes) is now
+  a failed fetch leg, exactly like a 5xx: nothing is installed, no ETag is
+  stored, and the hedge/failover legs proceed. A declared `Content-Length`
+  over the cap fails at once; otherwise the SDK stops reading at the cap. One
+  WARN per oversized episode names the source (redacted) and the cap; repeats
+  log at DEBUG (Rule — size caps, qfg-6vno.20.7).
+- An SSE event whose multi-line `data:` sums past 4 MiB is now treated like
+  an over-long line (failed attempt, backoff, fallback poller engages), so
+  the 4 MiB cap holds for the whole event, not only for each line
+  (qfg-6vno.20.7).
+
 ### Tests
 
 - The chaos harness now reads every metric and state it asserts on from the

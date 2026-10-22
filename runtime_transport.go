@@ -60,6 +60,11 @@ type runtimeTransport struct {
 	// logger receives the WARN for a config entry skipped during decode.
 	// Nil means slog.Default(). Set once at construction.
 	logger *slog.Logger
+	// oversizedMu guards oversized. oversized[i] is set while baseURLs[i]
+	// is in an oversized-body episode, so the WARN fires once per episode
+	// and repeats log at DEBUG. A valid 200 from that source ends it.
+	oversizedMu sync.Mutex
+	oversized   map[int]bool
 }
 
 // legResult carries one hedged leg's outcome to the caller. Exactly one
@@ -235,6 +240,11 @@ func (c *runtimeTransport) FetchConfigsHedged(ctx context.Context, hedgeDelay, h
 // (and discarded) before the connection is released.
 const maxErrorBodyBytes = 1024
 
+// maxConfigBodyBytes caps a 200 config-fetch body (Rule — size caps,
+// qfg-6vno.20.7). A larger body is a failed leg, exactly like a 5xx: nothing
+// installed, no ETag stored. The decoder stops reading at the cap + 1 byte.
+const maxConfigBodyBytes = 16 * 1024 * 1024
+
 func (c *runtimeTransport) fetchFromURLAt(ctx context.Context, i int, abort time.Duration) legResult {
 	lr := c.fetchLegAt(ctx, i, abort)
 	lr.Index = i
@@ -288,7 +298,16 @@ func (c *runtimeTransport) fetchLegAt(ctx context.Context, i int, abort time.Dur
 		return legResult{Err: fmt.Errorf("unexpected status %d from %s", resp.StatusCode, redactURL(baseURL)), Status: resp.StatusCode}
 	}
 
-	envelope, err := decodeEnvelope(json.NewDecoder(resp.Body).Decode, c.logger)
+	// Rule — size caps: fail early on a declared length over the cap, and
+	// never read more than cap+1 bytes when the length is not declared.
+	if resp.ContentLength > maxConfigBodyBytes {
+		return c.oversizedLeg(i, baseURL, resp.StatusCode)
+	}
+	body := &io.LimitedReader{R: resp.Body, N: maxConfigBodyBytes + 1}
+	envelope, err := decodeEnvelope(json.NewDecoder(body).Decode, c.logger)
+	if body.N <= 0 {
+		return c.oversizedLeg(i, baseURL, resp.StatusCode)
+	}
 	if err != nil {
 		return legResult{Err: fmt.Errorf("decoding response: %w", err), Status: resp.StatusCode}
 	}
@@ -297,6 +316,9 @@ func (c *runtimeTransport) fetchLegAt(ctx context.Context, i int, abort time.Dur
 	if err := envelope.validate(); err != nil {
 		return legResult{Err: fmt.Errorf("invalid response from %s: %w", redactURL(baseURL), err), Status: resp.StatusCode}
 	}
+	c.oversizedMu.Lock()
+	delete(c.oversized, i)
+	c.oversizedMu.Unlock()
 
 	// Store the ETag only after the body decoded and validated. Storing it
 	// first let a truncated or junk 200 pin itself through later 304s.
@@ -308,6 +330,35 @@ func (c *runtimeTransport) fetchLegAt(ctx context.Context, i int, abort time.Dur
 	}
 
 	return legResult{Res: &fetchResult{Envelope: envelope, SourceIndex: i, prevETag: etag, storedETag: newEtag}, Status: resp.StatusCode}
+}
+
+// oversizedLeg reports a 200 body over maxConfigBodyBytes as a failed leg.
+// It logs one WARN per episode for the source (redacted) and the cap in
+// bytes; repeats log at DEBUG.
+func (c *runtimeTransport) oversizedLeg(i int, baseURL string, status int) legResult {
+	c.oversizedMu.Lock()
+	first := !c.oversized[i]
+	if c.oversized == nil {
+		c.oversized = make(map[int]bool)
+	}
+	c.oversized[i] = true
+	c.oversizedMu.Unlock()
+
+	logger := c.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	msg := "quonfig: config response body exceeds the maximum size; treating the fetch as failed"
+	attrs := []any{slog.String("url", redactURL(baseURL)), slog.Int("maxBytes", maxConfigBodyBytes)}
+	if first {
+		logger.Warn(msg, attrs...)
+	} else {
+		logger.Debug(msg, attrs...)
+	}
+	return legResult{
+		Err:    fmt.Errorf("config response from %s exceeds %d bytes", redactURL(baseURL), maxConfigBodyBytes),
+		Status: status,
+	}
 }
 
 // rollbackETag undoes the ETag write of a 200 whose gen<=0 payload the guard
