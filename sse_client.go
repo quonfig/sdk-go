@@ -400,10 +400,9 @@ func (d *deadlineResetReader) Read(p []byte) (int, error) {
 //   - An empty line terminates the event: the accumulated data is fed to
 //     OnEnvelope as a ConfigEnvelope.
 //
-// This deliberately does NOT handle multi-line data frames by concatenating
-// with newlines — api-delivery always emits single-line JSON. If that
-// changes, the bufio.Scanner pre-sized line buffer and this function both
-// need an update.
+// Multi-line data is joined with newlines (api-delivery always emits
+// single-line JSON). Both one line and the joined event are capped at
+// sseMaxLine (Rule — size caps); either overflow returns bufio.ErrTooLong.
 //
 // The first valid frame (a complete comment-only block, or a data block that
 // decodes and validates as a config envelope) reports the connection as
@@ -477,7 +476,17 @@ func (c *sseClient) parseStream(r io.Reader) (bool, error) {
 		sawField = true
 		// Accept both "data: <x>" and "data:<x>" (optional single space).
 		if rest, ok := stripFieldPrefix(line, "data:"); ok {
+			sep := 0
 			if dataBuf.Len() > 0 {
+				sep = 1
+			}
+			// Rule — size caps: the joined event is capped like a single
+			// line, so many short data lines cannot add up past sseMaxLine.
+			// Same overflow path as an over-long line (connectOnce).
+			if dataBuf.Len()+sep+len(rest) > sseMaxLine {
+				return frameSeen, bufio.ErrTooLong
+			}
+			if sep == 1 {
 				dataBuf.WriteByte('\n')
 			}
 			dataBuf.WriteString(rest)
