@@ -46,7 +46,6 @@ import (
 	"net/http"
 	"runtime/debug"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -108,6 +107,11 @@ type sseClientConfig struct {
 	// Wait, if non-nil, maps each requested reconnect sleep to the duration
 	// actually slept (test seam, see Options.testWaitHook).
 	Wait func(kind string, d time.Duration) time.Duration
+
+	// Metrics receives the Layer 1 connect-attempt and restart counts. The
+	// Client passes its own so the counts outlive this sseClient; nil gets a
+	// private one.
+	Metrics *workerMetrics
 }
 
 // sseClient runs a long-lived goroutine that keeps an SSE connection open,
@@ -126,12 +130,6 @@ type sseClient struct {
 	// Both are guarded by connectedMu.
 	pendingStates []bool
 	dispatching   bool
-
-	// workerRestarts tracks the quonfig_sdk_worker_restart_total counter,
-	// labeled by reason (e.g. "callback_panic"). Layer 1 is implied — the SSE
-	// stream itself. The map is allocated lazily under restartsMu.
-	restartsMu     sync.Mutex
-	workerRestarts map[string]*atomic.Int64
 
 	// oversized is set when a stream ended because an event exceeded the
 	// scanner's line limit (bufio.ErrTooLong). While set, a new connection
@@ -164,6 +162,9 @@ func newSSEClient(cfg sseClientConfig) *sseClient {
 	}
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
+	}
+	if cfg.Metrics == nil {
+		cfg.Metrics = &workerMetrics{}
 	}
 	if cfg.Client == nil {
 		// Force HTTP/1.1 on the SSE socket. http.DefaultTransport defaults to
@@ -237,6 +238,13 @@ func (c *sseClient) runLoop() {
 		if c.ctx.Err() != nil {
 			return
 		}
+		// The attempt ended without a shutdown, so the worker restarts the
+		// stream: a Layer 1 worker restart in the cross-SDK accounting.
+		if connectedOK {
+			c.cfg.Metrics.incRestart("stream_ended")
+		} else {
+			c.cfg.Metrics.incRestart("connect_failed")
+		}
 
 		if connectedOK {
 			// The stream delivered at least one valid frame and then ended —
@@ -278,6 +286,7 @@ func (c *sseClient) runLoop() {
 // oversized event. Callers use the return value to distinguish backoff-worthy
 // failures from normal session recycling.
 func (c *sseClient) connectOnce() bool {
+	c.cfg.Metrics.sseConnectAttempts.Add(1)
 	// Per-attempt context so the read-deadline timer can cancel just this
 	// request without affecting the long-lived client context.
 	reqCtx, cancelReq := context.WithCancel(c.ctx)
@@ -526,34 +535,15 @@ func (c *sseClient) invokeOnEnvelope(env *ConfigEnvelope) {
 }
 
 // workerRestartTotal returns the current value of the
-// quonfig_sdk_worker_restart_total{layer="1",reason=<reason>} counter. The
-// counter is incremented on recovered panics inside OnEnvelope (reason =
-// "callback_panic"); future causes (e.g. reader-loop panic) reuse this same
-// surface with a different reason label.
+// quonfig_sdk_worker_restart_total{layer="1",reason=<reason>} counter
+// (see workerMetrics for the reasons).
 func (c *sseClient) workerRestartTotal(reason string) int64 {
-	c.restartsMu.Lock()
-	v := c.workerRestarts[reason]
-	c.restartsMu.Unlock()
-	if v == nil {
-		return 0
-	}
-	return v.Load()
+	return c.cfg.Metrics.restartTotal(reason)
 }
 
-// incWorkerRestart bumps the counter for a given reason label, allocating the
-// map entry on first use.
+// incWorkerRestart bumps the Layer 1 restart counter for a given reason.
 func (c *sseClient) incWorkerRestart(reason string) {
-	c.restartsMu.Lock()
-	v := c.workerRestarts[reason]
-	if v == nil {
-		if c.workerRestarts == nil {
-			c.workerRestarts = make(map[string]*atomic.Int64)
-		}
-		v = &atomic.Int64{}
-		c.workerRestarts[reason] = v
-	}
-	c.restartsMu.Unlock()
-	v.Add(1)
+	c.cfg.Metrics.incRestart(reason)
 }
 
 // setConnected records connection state transitions and fires the state
@@ -613,6 +603,7 @@ func (c *sseClient) invokeOnStateChange(v bool) {
 		if r == nil {
 			return
 		}
+		c.incWorkerRestart("callback_panic")
 		c.cfg.Logger.Error("quonfig: OnSSEStateChange callback panicked; SDK continuing",
 			slog.Any("panic", r),
 			slog.String("stack", string(debug.Stack())),
