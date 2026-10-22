@@ -56,6 +56,21 @@ jobs:
         working-directory: sdk-go
         run: go vet ./...
 
+      # Every workflow must pin integration-test-data at the same tag, so the
+      # chaos gates cannot drift behind the unit pin (qfg-6vno.7).
+      - name: Check integration-test-data refs match
+        working-directory: sdk-go
+        run: scripts/check-itd-refs.sh
+
+      # The chaos harness is behind the `chaos` build tag, so the steps above
+      # never compile it. Vet it and run its probe/evaluator unit tests here
+      # (they need no toxiproxy); the scenarios themselves run in chaos.yaml.
+      - name: Chaos harness unit tests
+        working-directory: sdk-go
+        run: |
+          go vet -tags chaos .
+          go test -race -tags chaos -count=1 -run 'TestChaos(Probe|EventValidation|Expr|Skip|Step)' .
+
       # Node is needed only to run the integration-test-data generator below.
       - name: Set up Node (integration-test generator)
         if: matrix.go-version == '1.26'

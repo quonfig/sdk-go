@@ -29,7 +29,6 @@ package quonfig
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -37,6 +36,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -116,23 +116,36 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	tp.setEnabled(t, "sse", true)
 	tp.setEnabled(t, "http", true)
 
+	skipReason, err := validateChaosEvents(run.Chaos)
+	if err != nil {
+		t.Fatalf("scenario cannot run on this rig: %v", err)
+	}
+	if skipReason != "" {
+		t.Skipf("SKIPPED: %s", skipReason)
+	}
+
+	initMode, initFailureScenario, err := chaosInitFailureMode(run.Setup)
+	if err != nil {
+		t.Fatalf("scenario cannot run on this rig: %v", err)
+	}
+	if run.Setup.OnInitFailure == "fail" && run.Setup.CatchInitFailure {
+		// ITD chaos/README "Init-failure vocabulary"; init-failure design,
+		// Decisions 4.
+		t.Skip("SKIPPED: sdk-go's onInitFailure=fail returns no client object, so there is no caught client to heal")
+	}
+
 	probe := newChaosProbe()
-	logger := slog.New(&chaosLogHandler{p: probe})
 
 	apiURL := fmt.Sprintf("http://127.0.0.1:%d", httpPort)
 	streamURL := fmt.Sprintf("http://127.0.0.1:%d", ssePort)
 
-	opts := []Option{
+	opts := append(chaosProbeClientOptions(probe),
 		WithSdkKey("test-backend-key"),
 		WithAPIURLs([]string{apiURL}),
 		withTestStreamURLOverride(streamURL),
 		WithSSE(true),
-		WithSSEStateCallback(func(connected bool) { probe.onSSEState(connected) }),
-		WithOnConfigUpdate(func() { probe.onConfigUpdate() }),
-		WithLogger(logger),
 		WithAllTelemetryDisabled(),
-		WithInitTimeout(15 * time.Second),
-		WithOnInitFailure(InitFailureContinue),
+		WithOnConfigUpdate(probe.recordReadyEvent),
 		// Compress the production 90s SSE read deadline to 10s for chaos
 		// scenarios — the spec is "3x the server heartbeat", and the
 		// harness uses a 30s heartbeat in production but we don't have
@@ -143,12 +156,23 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 		// "restart == 0 for 55s" once that row held to its window end
 		// (ITD v2026.10.16.2; same fix as sdk-java, qfg-k9at). 07-half-open
 		// disables the proxy, so it does not depend on this deadline.
-		withTestSSEReadTimeout(10 * time.Second),
+		withTestSSEReadTimeout(10*time.Second),
 		// Enable Layer 2 fallback polling per qfg-47c2.20. Scenarios 5/6
 		// expect the poller to engage after the 120s default threshold;
 		// other scenarios still benefit from the poller being available
 		// as a safety net.
 		WithFallbackPoll(true, 30*time.Second),
+	)
+	if initFailureScenario {
+		opts = append(opts,
+			WithInitTimeout(time.Duration(run.Setup.InitTimeoutMs)*time.Millisecond),
+			WithOnInitFailure(initMode),
+		)
+	} else {
+		opts = append(opts,
+			WithInitTimeout(15*time.Second),
+			WithOnInitFailure(InitFailureContinue),
+		)
 	}
 
 	// Scenario 10 (user_callback: throw) — a user callback panic that the
@@ -161,23 +185,80 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	// the scenario (qfg-47c2.30).
 	if run.Setup.UserCallback == "throw" {
 		opts = append(opts, WithOnConfigUpdate(func() {
-			probe.onConfigUpdate()
+			probe.recordReadyEvent()
 			panic("simulated user-callback panic for chaos scenario 10")
 		}))
 	}
 
-	client, err := NewClient(opts...)
-	if err != nil {
-		t.Logf("client init failed: %v — continuing (the scenario may still observe disconnected state)", err)
+	injections := make(map[string]*injectionState)
+	var injMu sync.Mutex
+	inject := func(at int, inj *chaosInject) {
+		st := applyInject(t, tp, inj)
+		if inj.Name != "" && st != nil {
+			injMu.Lock()
+			injections[inj.Name] = st
+			injMu.Unlock()
+		}
+		t.Logf("[%6dms] inject %+v", at, inj)
+	}
+
+	// Timeline rule 2 (ITD chaos/README): for an init-failure scenario t=0 is
+	// taken BEFORE the init call, an at_ms<=0 outage is in place before the
+	// first fetch, and the init call runs on its own goroutine so the
+	// expectations tick while it blocks.
+	var baseline time.Time
+	scheduled := run.Chaos
+	if initFailureScenario {
+		scheduled = nil
+		for _, ev := range run.Chaos {
+			if ev.Inject != nil && ev.AtMs <= 0 {
+				inject(ev.AtMs, ev.Inject)
+				continue
+			}
+			scheduled = append(scheduled, ev)
+		}
+		baseline = time.Now()
+		probe.setInitState("pending")
+		initDone := make(chan struct{})
+		go func() {
+			defer close(initDone)
+			client, err := NewClient(opts...)
+			if err != nil {
+				t.Logf("[%6dms] init raised: %v", time.Since(baseline).Milliseconds(), err)
+				probe.setInitState("raised")
+				return
+			}
+			probe.setClient(client)
+			probe.setInitState("returned")
+			t.Logf("[%6dms] init returned", time.Since(baseline).Milliseconds())
+		}()
+		t.Cleanup(func() {
+			select {
+			case <-initDone:
+			case <-time.After(10 * time.Second):
+				t.Errorf("init call still blocked at scenario end")
+				return
+			}
+			probe.mu.Lock()
+			c := probe.client
+			probe.mu.Unlock()
+			if c != nil {
+				c.Close()
+			}
+		})
 	} else {
-		t.Cleanup(client.Close)
-		probe.setClient(client)
+		client, err := NewClient(opts...)
+		if err != nil {
+			t.Logf("client init failed: %v — continuing (the scenario may still observe disconnected state)", err)
+		} else {
+			t.Cleanup(client.Close)
+			probe.setClient(client)
+		}
+		baseline = time.Now()
 	}
 
 	// Schedule chaos events.
-	baseline := time.Now()
-	injections := make(map[string]*injectionState)
-	for _, ev := range run.Chaos {
+	for _, ev := range scheduled {
 		ev := ev // capture
 		when := baseline.Add(time.Duration(ev.AtMs) * time.Millisecond)
 		go func() {
@@ -187,14 +268,13 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 			}
 			switch {
 			case ev.Inject != nil:
-				st := applyInject(t, tp, ev.Inject)
-				if ev.Inject.Name != "" && st != nil {
-					injections[ev.Inject.Name] = st
-				}
-				t.Logf("[%6dms] inject %+v", ev.AtMs, ev.Inject)
+				inject(ev.AtMs, ev.Inject)
 			case ev.Clear != "":
-				clearInject(t, tp, injections[ev.Clear])
+				injMu.Lock()
+				st := injections[ev.Clear]
 				delete(injections, ev.Clear)
+				injMu.Unlock()
+				clearInject(t, tp, st)
 				t.Logf("[%6dms] clear %s", ev.AtMs, ev.Clear)
 			case ev.Process != nil:
 				applyProcess(t, tp, ev.Process, baseline)
@@ -399,4 +479,30 @@ func dialOK(host string, port int) bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+// chaosInitFailureMode maps setup.on_init_failure to the SDK option. ok is
+// false when the scenario does not set it. An unknown spelling is an error:
+// the runner must fail such a scenario rather than run it with its usual
+// client setup (ITD chaos/README).
+func chaosInitFailureMode(s chaosSetup) (mode OnInitFailure, ok bool, err error) {
+	switch s.OnInitFailure {
+	case "":
+		if s.InitTimeoutMs != 0 || s.CatchInitFailure {
+			return 0, false, fmt.Errorf("init_timeout_ms/catch_init_failure set without on_init_failure")
+		}
+		return 0, false, nil
+	case "fail":
+		mode = InitFailureFail
+	case "wait":
+		mode = InitFailureWait
+	case "continue":
+		mode = InitFailureContinue
+	default:
+		return 0, false, fmt.Errorf("unknown on_init_failure %q", s.OnInitFailure)
+	}
+	if s.InitTimeoutMs <= 0 {
+		return 0, false, fmt.Errorf("on_init_failure=%s needs a positive init_timeout_ms", s.OnInitFailure)
+	}
+	return mode, true, nil
 }

@@ -35,7 +35,6 @@ package quonfig
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -142,32 +141,33 @@ func runRigScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, dri
 		tp.setEnabled(t, p, true)
 	}
 
+	if err := validateFailoverChaosEvents(run.Chaos); err != nil {
+		t.Fatalf("scenario cannot run on this rig: %v", err)
+	}
+
 	probe := newChaosProbe()
-	logger := slog.New(&chaosLogHandler{p: probe})
 
 	primaryURL := fmt.Sprintf("http://127.0.0.1:%d", rigPrimaryPort)
 	secondaryURL := fmt.Sprintf("http://127.0.0.1:%d", rigSecondaryPort)
 	streamURL := fmt.Sprintf("http://127.0.0.1:%d", rigSSEPort)
 
 	sseEnabled := run.Setup.SSEEndpoint != "" && run.Setup.SSEEndpoint != "disabled"
-	opts := []Option{
+	opts := append(chaosProbeClientOptions(probe),
 		WithSdkKey("test-backend-key"),
 		WithAPIURLs([]string{primaryURL, secondaryURL}),
 		WithAllTelemetryDisabled(),
 		WithInitTimeout(rigInitTimeout),
 		WithOnInitFailure(InitFailureContinue),
-		WithLogger(logger),
 		WithSSE(sseEnabled),
 		// Background polling is driven explicitly via the Refresh loop below for
 		// the ordering rig; leave the fallback poller off so install accounting
 		// (o04's configInstallCount) is deterministic.
 		WithFallbackPoll(false, 0),
-	}
+	)
 	if sseEnabled {
 		opts = append(opts,
 			withTestStreamURLOverride(streamURL),
 			withTestSSEReadTimeout(5*time.Second),
-			WithSSEStateCallback(func(connected bool) { probe.onSSEState(connected) }),
 		)
 	}
 
@@ -331,7 +331,9 @@ func applyFailoverInject(t *testing.T, tp *toxiproxyClient, inj *chaosInject) {
 		tp.setEnabled(t, "sse", false)
 		restoreAfter(*inj.SSEDownMs, func() { tp.setEnabled(t, "sse", true) })
 	default:
-		t.Logf("applyFailoverInject: unhandled inject shape %+v — no-op", inj)
+		// validateFailoverChaosEvents fails a scenario carrying this before
+		// it starts, so reaching here is a rig bug.
+		t.Errorf("applyFailoverInject: unhandled inject shape %+v — the rig cannot apply it", inj)
 	}
 }
 

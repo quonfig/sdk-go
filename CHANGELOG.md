@@ -2,6 +2,19 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+### Tests
+
+- The chaos harness now reads every metric and state it asserts on from the
+  SDK instead of its own bookkeeping, and fails (or SKIPs, with a reason) any
+  chaos event it cannot apply instead of treating it as a no-op (qfg-6vno.1).
+  To back this, the SSE worker keeps internal, unexported Layer 1 counters
+  (connect attempts; restarts by reason). No public API or runtime behavior
+  changes. The chaos and failover-chaos workflows now pin
+  integration-test-data at the unit pin, and CI fails if the pins differ
+  (qfg-6vno.7).
+
 ## 1.9.0 - 2026-10-21
 
 ### Upgrade notes

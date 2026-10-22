@@ -110,6 +110,10 @@ type Client struct {
 	// Client rather than the supervisor so the init fetch — which runs before
 	// background workers exist — stamps too (qfg-41nh.11).
 	lastRefresh time.Time
+
+	// metrics holds the internal Layer 1 counters the chaos harness reads
+	// (see workerMetrics; test-only, not exported).
+	metrics workerMetrics
 }
 
 // NewClient creates a new Quonfig client with the given options.
@@ -926,6 +930,7 @@ func (c *Client) startSSE() {
 		OnStateChange:         c.opts.OnSSEStateChange,
 		OnStateChangeInternal: internalStateChange,
 		Wait:                  c.opts.testWaitHook,
+		Metrics:               &c.metrics,
 	})
 
 	// If Close ran before we got here, don't install or start the SSE
@@ -1413,6 +1418,7 @@ func (c *Client) invokeOnConfigUpdate(fn func()) {
 		if r == nil {
 			return
 		}
+		c.metrics.incRestart("callback_panic")
 		c.opts.Logger.Error("quonfig: OnConfigUpdate callback panicked; SDK continuing",
 			slog.Any("panic", r),
 			slog.String("stack", string(debug.Stack())),

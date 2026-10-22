@@ -12,11 +12,11 @@
 //   - evaluates the small expression vocabulary used in the scenarios
 //   - tracks SDK state via the probe struct
 //
-// The probe is intentionally a thin wrapper over the SDK's existing public
-// callbacks (OnSSEStateChange, OnConfigUpdate, slog handler). It does NOT
-// invent metrics the SDK does not emit — that is the whole point of this
-// bead: the missing surface area (worker_restart_total, fallbackPollerActive,
-// lastSuccessfulRefresh, …) is what makes scenarios 2/5/7/9 fail today.
+// The probe is a thin reader over the SDK: every state and metric it reports
+// comes from the Client's accessors or its internal counters (workerMetrics,
+// the supervisor's restart counter), never from the probe's own bookkeeping
+// (qfg-6vno.1). The only thing it records itself is the log text sdkLog
+// scans, which is the SDK's own output.
 
 package quonfig
 
@@ -35,7 +35,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -65,6 +64,11 @@ type chaosSetup struct {
 	UserCallback     string          `yaml:"user_callback"`
 	Topology         string          `yaml:"topology"`  // "", single, failover, ordering
 	Upstreams        []chaosUpstream `yaml:"upstreams"` // ordering rig: per-leg generations
+
+	// Init-failure scenarios (00-boot-both-down-then-restore).
+	OnInitFailure    string `yaml:"on_init_failure"` // fail | wait | continue
+	InitTimeoutMs    int    `yaml:"init_timeout_ms"`
+	CatchInitFailure bool   `yaml:"catch_init_failure"`
 }
 
 // chaosUpstream is one leg of the ordering rig — a fixture upstream pinned to a
@@ -428,8 +432,10 @@ func applyInject(t *testing.T, tp *toxiproxyClient, inj *chaosInject) *injection
 		// HTTP-level status injection is not toxiproxy-native (toxiproxy is
 		// TCP-only). Skipping this case turns the scenario into a no-op —
 		// the runner records it as `skipped: not supported`.
-		t.Logf("inject: sse_http_status=%d — toxiproxy is TCP-only, not implemented (scenario will be skipped/unsupported)", *inj.SSEHTTPStatus)
-		return &injectionState{}
+		// validateChaosEvents SKIPs a scenario carrying it before it starts, so
+		// reaching here is a rig bug.
+		t.Errorf("inject: sse_http_status=%d — toxiproxy is TCP-only and cannot apply it", *inj.SSEHTTPStatus)
+		return nil
 	case inj.Proxy != "" && inj.Toxic != nil:
 		toxicType, _ := inj.Toxic["type"].(string)
 		attrs, _ := inj.Toxic["attributes"].(map[string]interface{})
@@ -439,7 +445,67 @@ func applyInject(t *testing.T, tp *toxiproxyClient, inj *chaosInject) *injection
 		tp.addToxic(t, inj.Proxy, name, toxicType, "downstream", attrs)
 		return &injectionState{proxy: inj.Proxy, toxic: name}
 	}
-	t.Logf("inject: unknown shape (%+v) — no-op", inj)
+	t.Errorf("inject: unknown shape (%+v) — the rig cannot apply it", inj)
+	return nil
+}
+
+// validateChaosEvents checks, before a scenario starts, that this rig can
+// perform every chaos event in it. An event it cannot perform must never turn
+// into a silent no-op: the expectations would then run against an
+// undisturbed client and pass. It returns an error for an event shape the rig
+// does not know (the scenario fails), or a non-empty skip reason for a known
+// shape this TCP-only rig deliberately cannot apply (the scenario is SKIPPED,
+// never PASS).
+func validateChaosEvents(events []chaosEvent) (skipReason string, err error) {
+	injected := map[string]bool{}
+	for i, ev := range events {
+		switch {
+		case ev.Inject != nil:
+			inj := ev.Inject
+			switch {
+			case inj.SSEHTTPStatus != nil:
+				if skipReason == "" {
+					skipReason = "sse_http_status needs the HTTP-aware fault proxy (scenarios-http-proxy/); toxiproxy is TCP-only"
+				}
+			case inj.SSESilentStallAfterMs != nil, inj.SSELatencyMs != nil, inj.SSEBandwidthKbps != nil,
+				inj.SSEDownMs != nil, inj.BothDownMs != nil, inj.SSEHalfOpenAfterBytes != nil,
+				inj.Proxy != "" && inj.Toxic != nil:
+			default:
+				return "", fmt.Errorf("chaos[%d]: inject shape %+v is not supported by this rig", i, *inj)
+			}
+			if inj.Name != "" {
+				injected[inj.Name] = true
+			}
+		case ev.Clear != "":
+			if !injected[ev.Clear] {
+				return "", fmt.Errorf("chaos[%d]: clear %q names no earlier inject", i, ev.Clear)
+			}
+		case ev.Process != nil:
+			if ev.Process.Action != "kill_sse_proxy" {
+				return "", fmt.Errorf("chaos[%d]: process action %q is not supported by this rig", i, ev.Process.Action)
+			}
+		default:
+			return "", fmt.Errorf("chaos[%d]: event has no inject, clear or process", i)
+		}
+	}
+	return skipReason, nil
+}
+
+// validateFailoverChaosEvents is validateChaosEvents for the failover rig,
+// which applies only its self-restoring inject aliases (applyFailoverInject)
+// and has no clear or process handling.
+func validateFailoverChaosEvents(events []chaosEvent) error {
+	for i, ev := range events {
+		inj := ev.Inject
+		if inj == nil || ev.Clear != "" || ev.Process != nil {
+			return fmt.Errorf("chaos[%d]: the failover rig handles only inject events (primary_refused_ms, primary_hang_ms, primary_latency_ms, sse_down_ms); got %+v", i, ev)
+		}
+		switch {
+		case inj.PrimaryRefusedMs != nil, inj.PrimaryHangMs != nil, inj.PrimaryLatencyMs != nil, inj.SSEDownMs != nil:
+		default:
+			return fmt.Errorf("chaos[%d]: inject shape %+v is not supported by the failover rig", i, *inj)
+		}
+	}
 	return nil
 }
 
@@ -484,7 +550,7 @@ func applyProcess(t *testing.T, tp *toxiproxyClient, p *chaosProc, baseline time
 			}
 		}()
 	default:
-		t.Logf("process: unknown action %q — no-op", p.Action)
+		t.Errorf("process: unknown action %q — the rig cannot apply it", p.Action)
 	}
 	_ = baseline
 }
@@ -492,21 +558,79 @@ func applyProcess(t *testing.T, tp *toxiproxyClient, p *chaosProc, baseline time
 // ----- SDK probe -----
 
 // chaosProbe wraps an sdk-go Client with the test-time observation surface
-// the scenarios reference. After qfg-47c2.20, ConnectionState and
-// FallbackPollerActive read directly from the Client's supervisor-backed
-// accessors; layer="1" restart counts and process-liveness are still derived
-// from callbacks since the SSE worker has not been migrated under the
-// supervisor yet (qfg-47c2.21).
+// the scenarios reference. Every value it reports is read from the SDK (see
+// the file header); the probe keeps no counters of its own.
 type chaosProbe struct {
 	client *Client
 
-	mu             sync.Mutex
-	connAttempts   int64 // count of (any) state transition into connected
-	restartLayer1  int64 // count of (connected → disconnected) edges from the SSE worker
-	restartLayer2  int64 // currently unused — Layer 2 panics/errors go through the supervisor counter
-	processCrashed atomic.Bool
-	logBuf         bytes.Buffer
-	logMu          sync.Mutex
+	mu sync.Mutex
+	// initStatus backs client.initState() for init-failure scenarios:
+	// "pending" while NewClient has not returned, then "returned" or
+	// "raised". It records what the init call did; it is not an SDK metric.
+	initStatus string
+	// initReturned gates readyEvents: readyEventCount() counts the SDK's
+	// OnConfigUpdate callbacks fired after the init call returned.
+	initReturned bool
+	readyEvents  int64
+
+	logBuf bytes.Buffer
+	logMu  sync.Mutex
+}
+
+func (p *chaosProbe) setInitState(s string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.initStatus = s
+	if s == "returned" || s == "raised" {
+		p.initReturned = true
+	}
+}
+
+func (p *chaosProbe) initState() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.initStatus
+}
+
+// recordReadyEvent is the OnConfigUpdate hook: one SDK-fired update event,
+// counted only once the init call has returned.
+func (p *chaosProbe) recordReadyEvent() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.initReturned {
+		p.readyEvents++
+	}
+}
+
+func (p *chaosProbe) readyEventCount() int64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.readyEvents
+}
+
+// getString is the SDK's public string getter with a caller default: the live
+// value, or def when the SDK has no value for the key (including before the
+// client exists).
+func (p *chaosProbe) getString(key, def string) string {
+	p.mu.Lock()
+	c := p.client
+	p.mu.Unlock()
+	if c == nil {
+		return def
+	}
+	v, ok, err := c.GetStringValue(key, nil)
+	if err != nil || !ok {
+		return def
+	}
+	return v
+}
+
+// chaosProbeClientOptions are the options every chaos rig passes so the probe
+// can observe the client: the SDK's log output, for sdkLog.
+func chaosProbeClientOptions(p *chaosProbe) []Option {
+	return []Option{
+		WithLogger(slog.New(&chaosLogHandler{p: p})),
+	}
 }
 
 func newChaosProbe() *chaosProbe {
@@ -526,27 +650,63 @@ func (p *chaosProbe) connectionState() string {
 	if c == nil {
 		return "initializing"
 	}
-	return string(c.ConnectionState())
+	state := c.ConnectionState()
+	switch state {
+	case ConnStateInitializing, ConnStateConnected, ConnStateDisconnected, ConnStateFallingBack:
+		return string(state)
+	}
+	// The supervisor contract fixes these four values; report anything else
+	// so no expectation can match it.
+	return "invalid:" + string(state)
 }
 
 // sdkMetric returns the probe's value for an SDK-side metric. known is false
 // for a metric name the probe does not implement, so the evaluator fails the
 // expectation loudly instead of comparing against a silent 0.
+//
+// Sources: Layer 1 restarts and connect attempts are the Client's internal
+// workerMetrics (counted in sseClient.runLoop/connectOnce and the callback
+// recover guards); Layer 2 restarts are the supervisor's
+// WorkerRestartTotal("2"). Before the client exists every count is 0.
 func (p *chaosProbe) sdkMetric(name string, labels map[string]string) (value float64, known bool) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	c := p.client
+	p.mu.Unlock()
+	layer1 := func() int64 { return 0 }
+	layer2 := func() int64 { return 0 }
+	attempts := func() int64 { return 0 }
+	if c != nil {
+		c.mu.RLock()
+		sup := c.sup
+		c.mu.RUnlock()
+		layer1 = func() int64 {
+			n := c.metrics.restartTotal("")
+			if sup != nil {
+				n += sup.WorkerRestartTotal("1")
+			}
+			return n
+		}
+		layer2 = func() int64 {
+			if sup == nil {
+				return 0
+			}
+			return sup.WorkerRestartTotal("2")
+		}
+		attempts = c.metrics.sseConnectAttempts.Load
+	}
 	switch name {
 	case "quonfig_sdk_worker_restart_total":
 		switch labels["layer"] {
 		case "1":
-			return float64(p.restartLayer1), true
+			return float64(layer1()), true
 		case "2":
-			return float64(p.restartLayer2), true
-		default:
-			return float64(p.restartLayer1 + p.restartLayer2), true
+			return float64(layer2()), true
+		case "":
+			return float64(layer1() + layer2()), true
 		}
+		return 0, false
 	case "quonfig_sse_connect_attempts_total":
-		return float64(p.connAttempts), true
+		return float64(attempts()), true
 	}
 	return 0, false
 }
@@ -575,8 +735,12 @@ func (p *chaosProbe) lastSuccessfulRefreshMs() int64 {
 	return last.UnixMilli()
 }
 
+// processStillAlive is true by construction, and that is a real observation:
+// the SDK runs in this test process, and in Go an unrecovered panic on any
+// goroutine aborts the whole `go test` binary, so a crash fails the run
+// before any expectation can be evaluated as passing.
 func (p *chaosProbe) processStillAlive() bool {
-	return !p.processCrashed.Load()
+	return true
 }
 
 // ---- failover + ordering observability (read the public accessors added for
@@ -589,9 +753,7 @@ func (p *chaosProbe) ready() bool {
 	if c == nil {
 		return false
 	}
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.initialized
+	return c.Ready()
 }
 
 func (p *chaosProbe) resolvedFrom() string {
@@ -642,8 +804,9 @@ func (p *chaosProbe) sdkLogMatches(level string, re *regexp.Regexp) int {
 		if line == "" {
 			continue
 		}
-		// Best-effort: the slog text handler emits `level=ERROR`.
-		if level != "" && !strings.Contains(strings.ToLower(line), "level="+strings.ToLower(level)) {
+		// chaosLogHandler writes every line as `level=<SLOG LEVEL> msg=...`;
+		// sdkLog counts lines at exactly that level.
+		if level != "" && !strings.HasPrefix(line, "level="+slogLevelName(level)+" ") {
 			continue
 		}
 		if re == nil || re.MatchString(line) {
@@ -653,24 +816,14 @@ func (p *chaosProbe) sdkLogMatches(level string, re *regexp.Regexp) int {
 	return out
 }
 
-func (p *chaosProbe) onSSEState(connected bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if connected {
-		p.connAttempts++
-		return
+// slogLevelName maps a scenario log level ('warn', 'error', ...) to the name
+// slog prints for it.
+func slogLevelName(level string) string {
+	switch strings.ToLower(level) {
+	case "warn", "warning":
+		return "WARN"
 	}
-	// A drop from connected counts as a Layer 1 worker restart: the SSE
-	// reconnect loop is starting a fresh attempt after a deadline trip,
-	// EOF, or server-side close. We approximate this by counting any
-	// false-edge that arrives after at least one connect.
-	if p.connAttempts > 0 {
-		p.restartLayer1++
-	}
-}
-
-func (p *chaosProbe) onConfigUpdate() {
-	// LastSuccessfulRefresh comes off the Client accessor now.
+	return strings.ToUpper(level)
 }
 
 // slogHandler collects everything the SDK logs into logBuf so sdkLog can scan.
@@ -679,8 +832,6 @@ type chaosLogHandler struct {
 }
 
 func (h *chaosLogHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
-
-var reCallbackPanicLog = regexp.MustCompile(`(?i)callback panicked`)
 
 func (h *chaosLogHandler) Handle(_ context.Context, r slog.Record) error {
 	h.p.logMu.Lock()
@@ -691,17 +842,6 @@ func (h *chaosLogHandler) Handle(_ context.Context, r slog.Record) error {
 	})
 	h.p.logBuf.WriteByte('\n')
 	h.p.logMu.Unlock()
-
-	// Mirror sdk-ruby/sdk-python: a recovered callback panic is a Layer 1
-	// worker restart in the cross-SDK chaos accounting. The SDK already logs
-	// at ERROR with "...callback panicked..." from both invokeOnEnvelope and
-	// invokeOnConfigUpdate, so deriving the counter from the log keeps the
-	// probe in sync without depending on private SDK accessors. (qfg-47c2.30)
-	if r.Level >= slog.LevelError && reCallbackPanicLog.MatchString(r.Message) {
-		h.p.mu.Lock()
-		h.p.restartLayer1++
-		h.p.mu.Unlock()
-	}
 	return nil
 }
 
@@ -923,7 +1063,12 @@ var (
 	reLastRefresh = regexp.MustCompile(`^client\.lastSuccessfulRefresh\(\)\s*(>=|>|<=|<|==)\s*\(now\(\)\s*-\s*(\d+)\)$`)
 	reSDKMetric   = regexp.MustCompile(`^client\.sdkMetric\(\s*'([^']+)'\s*(?:,\s*layer=\s*'([^']+)'\s*)?\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
 	reServerMet   = regexp.MustCompile(`^server_metric\(\s*'([^']+)'\s*\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
-	reSDKLog      = regexp.MustCompile(`^client\.sdkLog\(\s*'([^']+)'\s*,\s*/(.+)/i\s*\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
+	reSDKLog      = regexp.MustCompile(`^client\.sdkLog\(\s*'([^']+)'\s*,\s*/(.+)/(i?)\s*\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
+
+	// Init-failure vocabulary (00-boot-both-down-then-restore).
+	reInitState   = regexp.MustCompile(`^client\.initState\(\)\s*(==|!=)\s*'([^']*)'$`)
+	reGetString   = regexp.MustCompile(`^client\.getString\(\s*'([^']*)'\s*,\s*'([^']*)'\s*\)\s*(==|!=)\s*'([^']*)'$`)
+	reReadyEvents = regexp.MustCompile(`^client\.readyEventCount\(\)\s*(>=|<=|==|!=|<|>)\s*(\d+)$`)
 
 	// Failover + ordering vocabulary.
 	reReady        = regexp.MustCompile(`^client\.ready\(\)\s*==\s*(true|false)$`)
@@ -1022,15 +1167,35 @@ func evalLeaf(expr string, ec *evalCtx) exprResult {
 		return exprResult{verdict: verdictSkipped, why: note.String(), skipped: []skipNote{note}}
 	}
 	if m := reSDKLog.FindStringSubmatch(expr); m != nil {
-		level := m[1]
-		re, err := regexp.Compile("(?i)" + m[2])
+		level, pattern, flags := m[1], m[2], m[3]
+		src := pattern
+		if flags == "i" {
+			src = "(?i)" + pattern
+		}
+		re, err := regexp.Compile(src)
 		if err != nil {
-			return leafResult(false, fmt.Sprintf("bad regex %q: %v", m[2], err))
+			return leafResult(false, fmt.Sprintf("bad regex %q: %v", pattern, err))
 		}
 		n := ec.probe.sdkLogMatches(level, re)
-		want, _ := strconv.Atoi(m[4])
-		ok := compareInt(m[3], int64(n), int64(want))
-		return leafResult(ok, fmt.Sprintf("sdkLog(%s,/%s/i)=%d %s %d", level, m[2], n, m[3], want))
+		want, _ := strconv.Atoi(m[5])
+		ok := compareInt(m[4], int64(n), int64(want))
+		return leafResult(ok, fmt.Sprintf("sdkLog(%s,/%s/%s)=%d %s %d", level, pattern, flags, n, m[4], want))
+	}
+	if m := reInitState.FindStringSubmatch(expr); m != nil {
+		got := ec.probe.initState()
+		ok := (got == m[2]) == (m[1] == "==")
+		return leafResult(ok, fmt.Sprintf("initState=%q %s %q", got, m[1], m[2]))
+	}
+	if m := reGetString.FindStringSubmatch(expr); m != nil {
+		got := ec.probe.getString(m[1], m[2])
+		ok := (got == m[4]) == (m[3] == "==")
+		return leafResult(ok, fmt.Sprintf("getString(%s)=%q %s %q", m[1], got, m[3], m[4]))
+	}
+	if m := reReadyEvents.FindStringSubmatch(expr); m != nil {
+		got := ec.probe.readyEventCount()
+		want, _ := strconv.ParseInt(m[2], 10, 64)
+		ok := compareInt(m[1], got, want)
+		return leafResult(ok, fmt.Sprintf("readyEventCount=%d %s %d", got, m[1], want))
 	}
 	return leafResult(false, fmt.Sprintf("unrecognized expression: %s", expr))
 }
