@@ -80,6 +80,28 @@ func TestChaosExprUnknownSDKMetricFailsLoudly(t *testing.T) {
 	}
 }
 
+// Scenario 10 exp[0] (ITD v2026.10.22.2): the probe reads
+// quonfig_sdk_callback_errors_total{callback} from the SDK (qfg-6vno.26).
+func TestChaosExprCallbackErrorsMetric(t *testing.T) {
+	probe := newChaosProbe()
+	c := &Client{}
+	c.metrics.incCallbackError("on_config_update")
+	probe.mu.Lock()
+	probe.client = c
+	probe.mu.Unlock()
+	ec := &evalCtx{probe: probe}
+	for expr, want := range map[string]exprVerdict{
+		"client.sdkMetric('quonfig_sdk_callback_errors_total', callback='on_config_update') >= 1":           verdictPass,
+		"client.sdkMetric('quonfig_sdk_callback_errors_total', callback='on_connection_state_change') == 0": verdictPass,
+		"client.sdkMetric('quonfig_sdk_callback_errors_total') == 1":                                        verdictPass,
+		"client.sdkMetric('quonfig_sdk_worker_restart_total', layer='1') == 0":                              verdictPass,
+	} {
+		if r := evaluate(expr, ec); r.verdict != want {
+			t.Errorf("%s: verdict=%s why=%q, want %s", expr, r.verdict, r.why, want)
+		}
+	}
+}
+
 func TestChaosExprUnrecognizedExpressionFails(t *testing.T) {
 	ec := &evalCtx{probe: newChaosProbe()}
 	if r := evaluate("client.somethingNew() == 1", ec); r.verdict != verdictFail {

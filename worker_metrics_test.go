@@ -9,13 +9,17 @@ import (
 	"time"
 )
 
-// A recovered OnConfigUpdate panic is a Layer 1 worker restart with reason
-// callback_panic (chaos scenario 10), counted by the SDK itself (qfg-6vno.1).
-func TestOnConfigUpdatePanicCountsCallbackPanicRestart(t *testing.T) {
+// A recovered OnConfigUpdate panic is a callback error, not a worker restart
+// (contract Test 5, qfg-6vno.26): quonfig_sdk_callback_errors_total
+// {callback="on_config_update"} goes up by one and no restart is counted.
+func TestOnConfigUpdatePanicCountsCallbackErrorNotRestart(t *testing.T) {
 	c := &Client{opts: Options{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}}
 	c.invokeOnConfigUpdate(func() { panic("boom") })
-	if got := c.metrics.restartTotal("callback_panic"); got != 1 {
-		t.Fatalf("restartTotal(callback_panic) = %d, want 1", got)
+	if got := c.metrics.callbackErrorTotal("on_config_update"); got != 1 {
+		t.Fatalf("callbackErrorTotal(on_config_update) = %d, want 1", got)
+	}
+	if got := c.metrics.restartTotal(""); got != 0 {
+		t.Fatalf("restartTotal = %d after a callback panic, want 0", got)
 	}
 }
 

@@ -176,13 +176,13 @@ func runChaosScenario(t *testing.T, tp *toxiproxyClient, run chaosScenarioRun, h
 	}
 
 	// Scenario 10 (user_callback: throw) — a user callback panic that the
-	// SDK's invokeOnEnvelope recover() boundary must catch. The panic
-	// propagates installEnvelope → sseClient.OnEnvelope wrapper →
-	// invokeOnEnvelope, which logs at ERROR ("OnEnvelope callback panicked")
-	// and bumps quonfig_sdk_worker_restart_total{reason="callback_panic"}.
-	// Do NOT wrap the user callback in its own defer/recover — that would
-	// swallow the panic before the SDK's recovery path could fire, defeating
-	// the scenario (qfg-47c2.30).
+	// SDK's invokeOnConfigUpdate recover() boundary must catch. It logs at
+	// ERROR ("OnConfigUpdate callback panicked") and bumps
+	// quonfig_sdk_callback_errors_total{callback="on_config_update"}; it is
+	// not a worker restart (contract Test 5, qfg-6vno.26). Do NOT wrap the
+	// user callback in its own defer/recover — that would swallow the panic
+	// before the SDK's recovery path could fire, defeating the scenario
+	// (qfg-47c2.30).
 	if run.Setup.UserCallback == "throw" {
 		opts = append(opts, WithOnConfigUpdate(func() {
 			probe.recordReadyEvent()

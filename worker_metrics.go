@@ -22,41 +22,69 @@ type workerMetrics struct {
 
 	// restarts backs quonfig_sdk_worker_restart_total{layer="1",reason=...}.
 	// Reasons: "stream_ended" (a live stream ended and the worker
-	// reconnects), "connect_failed" (an attempt ended before its first frame
-	// and the worker retries), "callback_panic" (a recovered panic in a user
-	// or SDK callback on the SSE path). Allocated lazily under mu.
+	// reconnects) and "connect_failed" (an attempt ended before its first
+	// frame and the worker retries). A callback panic is never a restart
+	// (contract Test 5, qfg-6vno.26). Allocated lazily under mu.
 	mu       sync.Mutex
 	restarts map[string]*atomic.Int64
+
+	// callbackErrors backs quonfig_sdk_callback_errors_total{callback=...}:
+	// one per user callback invocation that panicked and was recovered.
+	// Callbacks: "on_config_update", "on_connection_state_change", and
+	// "on_envelope" (the SDK's own SSE envelope hook, a last-line guard).
+	// Allocated lazily under mu.
+	callbackErrors map[string]*atomic.Int64
 }
 
 // incRestart bumps the Layer 1 restart counter for reason.
 func (m *workerMetrics) incRestart(reason string) {
-	m.mu.Lock()
-	v := m.restarts[reason]
-	if v == nil {
-		if m.restarts == nil {
-			m.restarts = make(map[string]*atomic.Int64)
-		}
-		v = &atomic.Int64{}
-		m.restarts[reason] = v
-	}
-	m.mu.Unlock()
-	v.Add(1)
+	m.inc(&m.restarts, reason)
 }
 
 // restartTotal returns the Layer 1 restart count for reason, or the sum over
 // every reason when reason is "".
 func (m *workerMetrics) restartTotal(reason string) int64 {
+	return m.total(&m.restarts, reason)
+}
+
+// incCallbackError bumps quonfig_sdk_callback_errors_total for callback.
+func (m *workerMetrics) incCallbackError(callback string) {
+	m.inc(&m.callbackErrors, callback)
+}
+
+// callbackErrorTotal returns the callback error count for callback, or the
+// sum over every callback when callback is "".
+func (m *workerMetrics) callbackErrorTotal(callback string) int64 {
+	return m.total(&m.callbackErrors, callback)
+}
+
+// inc and total take a pointer to the map field so the field itself is only
+// read and written under mu.
+func (m *workerMetrics) inc(counters *map[string]*atomic.Int64, label string) {
+	m.mu.Lock()
+	v := (*counters)[label]
+	if v == nil {
+		if *counters == nil {
+			*counters = make(map[string]*atomic.Int64)
+		}
+		v = &atomic.Int64{}
+		(*counters)[label] = v
+	}
+	m.mu.Unlock()
+	v.Add(1)
+}
+
+func (m *workerMetrics) total(counters *map[string]*atomic.Int64, label string) int64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if reason != "" {
-		if v := m.restarts[reason]; v != nil {
+	if label != "" {
+		if v := (*counters)[label]; v != nil {
 			return v.Load()
 		}
 		return 0
 	}
 	var sum int64
-	for _, v := range m.restarts {
+	for _, v := range *counters {
 		sum += v.Load()
 	}
 	return sum

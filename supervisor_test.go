@@ -174,9 +174,11 @@ func TestSupervisorWorkerRestartTotalIncrements(t *testing.T) {
 	}
 }
 
-// Test 5 — A panic that surfaces *from* the worker (e.g. a panic that the
-// in-worker OnEnvelope recover() failed to catch, or a future worker shape
-// that re-raises) is caught by the supervisor as a last line of defense.
+// Supervisor last line of defense — a panic that surfaces *from* the worker
+// (e.g. a panic that the in-worker OnEnvelope recover() failed to catch, or a
+// future worker shape that re-raises) is caught by the supervisor. That IS a
+// worker restart. Contract Test 5 (a user callback throw is caught in place
+// and is not a restart) is in callback_errors_test.go.
 // The supervisor restarts the worker, the process stays alive, and the
 // restart counter records the event under layer="1".
 func TestSupervisorRecoversFromOnEnvelopeStylePanic(t *testing.T) {

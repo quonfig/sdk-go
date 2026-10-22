@@ -16,6 +16,15 @@ All notable changes to the Quonfig Go SDK are documented here.
   an over-long line (failed attempt, backoff, fallback poller engages), so
   the 4 MiB cap holds for the whole event, not only for each line
   (qfg-6vno.20.7).
+- A recovered panic in a user callback (`OnConfigUpdate`,
+  `OnSSEStateChange`) is no longer counted as a worker restart. It now
+  counts in a new internal `quonfig_sdk_callback_errors_total{callback}`
+  counter (`on_config_update`, `on_connection_state_change`), and the
+  internal `worker_restart_total` drops the `callback_panic` reason, so it
+  counts only real SSE/poller restarts (contract Test 5, qfg-6vno.26). Both
+  counters are internal test seams; no public API changes. The ERROR log is
+  unchanged except its attributes: `callback=<name>` replaces
+  `layer`/`reason`.
 
 ### Tests
 
@@ -27,6 +36,10 @@ All notable changes to the Quonfig Go SDK are documented here.
   changes. The chaos and failover-chaos workflows now pin
   integration-test-data at the unit pin, and CI fails if the pins differ
   (qfg-6vno.7).
+- integration-test-data pinned at v2026.10.22.2 (size caps rule / Test 10;
+  restart-counter semantics / Test 5). The chaos probe reads
+  `sdkMetric('quonfig_sdk_callback_errors_total', callback=...)` for scenario
+  10 (qfg-6vno.26).
 
 ## 1.9.0 - 2026-10-21
 

@@ -501,6 +501,125 @@ func TestEnabled_ReturnsFalseForPROPDOESNOTMATCHRuleWhenTheGivenPropMatchesTheRe
 	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.does-not-match")
 }
 
+// returns true for PROP_MATCHES when the regex matches part of the prop (unanchored search)
+func TestEnabled_ReturnsTrueForPROPMATCHESWhenTheRegexMatchesPartOfThePropUnanchoredSearch(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "xaab"}})).FeatureIsOn("feature-flag.matches")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.matches")
+}
+
+// returns false for PROP_DOES_NOT_MATCH when the regex matches part of the prop (unanchored search)
+func TestEnabled_ReturnsFalseForPROPDOESNOTMATCHWhenTheRegexMatchesPartOfThePropUnanchoredSearch(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "xaab"}})).FeatureIsOn("feature-flag.does-not-match")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.does-not-match")
+}
+
+// returns true for PROP_MATCHES with an anchored regex when the whole prop matches
+func TestEnabled_ReturnsTrueForPROPMATCHESWithAnAnchoredRegexWhenTheWholePropMatches(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "123"}})).FeatureIsOn("feature-flag.matches.anchored")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.matches.anchored")
+}
+
+// returns false for PROP_MATCHES with an anchored regex when the prop is too long
+func TestEnabled_ReturnsFalseForPROPMATCHESWithAnAnchoredRegexWhenThePropIsTooLong(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "1234"}})).FeatureIsOn("feature-flag.matches.anchored")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.matches.anchored")
+}
+
+// returns false for PROP_MATCHES with an anchored regex when the prop has a non-matching character
+func TestEnabled_ReturnsFalseForPROPMATCHESWithAnAnchoredRegexWhenThePropHasANonMatchingCharacter(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "12a"}})).FeatureIsOn("feature-flag.matches.anchored")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.matches.anchored")
+}
+
+// returns false for PROP_MATCHES when the prop is not a string
+func TestEnabled_ReturnsFalseForPROPMATCHESWhenThePropIsNotAString(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": 123}})).FeatureIsOn("feature-flag.matches.anchored")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.matches.anchored")
+}
+
+// returns false for PROP_MATCHES when the prop is missing
+func TestEnabled_ReturnsFalseForPROPMATCHESWhenThePropIsMissing(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"key": "michael"}})).FeatureIsOn("feature-flag.matches.anchored")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.matches.anchored")
+}
+
+// returns true for PROP_DOES_NOT_MATCH with an anchored regex when the prop is too long
+func TestEnabled_ReturnsTrueForPROPDOESNOTMATCHWithAnAnchoredRegexWhenThePropIsTooLong(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "1234"}})).FeatureIsOn("feature-flag.does-not-match.anchored")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.does-not-match.anchored")
+}
+
+// returns true for PROP_DOES_NOT_MATCH with an anchored regex when the prop has a non-matching character
+func TestEnabled_ReturnsTrueForPROPDOESNOTMATCHWithAnAnchoredRegexWhenThePropHasANonMatchingCharacter(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "12a"}})).FeatureIsOn("feature-flag.does-not-match.anchored")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.does-not-match.anchored")
+}
+
+// returns false for PROP_DOES_NOT_MATCH with an anchored regex when the whole prop matches
+func TestEnabled_ReturnsFalseForPROPDOESNOTMATCHWithAnAnchoredRegexWhenTheWholePropMatches(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "123"}})).FeatureIsOn("feature-flag.does-not-match.anchored")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.does-not-match.anchored")
+}
+
+// returns false for PROP_DOES_NOT_MATCH when the prop is not a string
+func TestEnabled_ReturnsFalseForPROPDOESNOTMATCHWhenThePropIsNotAString(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": 123}})).FeatureIsOn("feature-flag.does-not-match.anchored")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.does-not-match.anchored")
+}
+
+// returns false for PROP_DOES_NOT_MATCH when the prop is missing
+func TestEnabled_ReturnsFalseForPROPDOESNOTMATCHWhenThePropIsMissing(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"key": "michael"}})).FeatureIsOn("feature-flag.does-not-match.anchored")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.does-not-match.anchored")
+}
+
+// returns false for PROP_MATCHES when the stored regex is invalid
+func TestEnabled_ReturnsFalseForPROPMATCHESWhenTheStoredRegexIsInvalid(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "("}})).FeatureIsOn("feature-flag.matches.invalid-pattern")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.matches.invalid-pattern")
+}
+
+// returns false for PROP_DOES_NOT_MATCH when the stored regex is invalid
+func TestEnabled_ReturnsFalseForPROPDOESNOTMATCHWhenTheStoredRegexIsInvalid(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "abc"}})).FeatureIsOn("feature-flag.does-not-match.invalid-pattern")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.does-not-match.invalid-pattern")
+}
+
+// returns true for IN_SEG when the segment's PROP_DOES_NOT_MATCH criterion holds
+func TestEnabled_ReturnsTrueForINSEGWhenTheSegmentSPROPDOESNOTMATCHCriterionHolds(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "abc"}})).FeatureIsOn("feature-flag.in-segment.does-not-match")
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "feature-flag.in-segment.does-not-match")
+}
+
+// returns false for IN_SEG when the segment's PROP_DOES_NOT_MATCH regex matches
+func TestEnabled_ReturnsFalseForINSEGWhenTheSegmentSPROPDOESNOTMATCHRegexMatches(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"code": "123"}})).FeatureIsOn("feature-flag.in-segment.does-not-match")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.in-segment.does-not-match")
+}
+
+// returns false for IN_SEG when the segment's PROP_DOES_NOT_MATCH prop is missing
+func TestEnabled_ReturnsFalseForINSEGWhenTheSegmentSPROPDOESNOTMATCHPropIsMissing(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"key": "michael"}})).FeatureIsOn("feature-flag.in-segment.does-not-match")
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.in-segment.does-not-match")
+}
+
 // returns true for IS_PRESENT rule when the given prop is a non-empty string
 func TestEnabled_ReturnsTrueForISPRESENTRuleWhenTheGivenPropIsANonEmptyString(t *testing.T) {
 	c := mustPublicClient(t)
