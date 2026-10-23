@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 )
 
 func TestStoreEmpty(t *testing.T) {

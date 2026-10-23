@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 )
 
 // Parallel-failover hedge unit tests (qfg-7h5d.1.14). These pin the behaviors

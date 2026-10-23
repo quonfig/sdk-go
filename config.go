@@ -158,11 +158,15 @@ func (v *Value) UnmarshalJSON(data []byte) error {
 		}
 		v.Value = b
 	case ValueTypeInt:
+		// A stored int that does not parse is kept as its raw string rather
+		// than failing the whole config: the typed getters report it as
+		// ErrUnableToCoerce, so the caller's default applies (qfg-zvyy, qfg-zqoh).
 		var s string
 		if err := json.Unmarshal(raw.Value, &s); err == nil {
 			i, err := strconv.ParseInt(s, 10, 64)
 			if err != nil {
-				return fmt.Errorf("invalid int value %q: %w", s, err)
+				v.Value = s
+				return nil
 			}
 			v.Value = i
 		} else {
@@ -172,11 +176,13 @@ func (v *Value) UnmarshalJSON(data []byte) error {
 			}
 			i, err := n.Int64()
 			if err != nil {
-				return err
+				v.Value = n.String()
+				return nil
 			}
 			v.Value = i
 		}
 	case ValueTypeDouble:
+		// As for int: an unparseable stored double is kept as its raw string.
 		var f float64
 		if err := json.Unmarshal(raw.Value, &f); err != nil {
 			var s string
@@ -185,7 +191,8 @@ func (v *Value) UnmarshalJSON(data []byte) error {
 			}
 			parsed, err := strconv.ParseFloat(s, 64)
 			if err != nil {
-				return err
+				v.Value = s
+				return nil
 			}
 			f = parsed
 		}

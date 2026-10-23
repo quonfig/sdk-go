@@ -1,4 +1,4 @@
-# Contributing to `github.com/quonfig/sdk-go`
+# Contributing to `github.com/quonfig/sdk-go/v2`
 
 Thanks for your interest in contributing! This guide covers the basics of getting set up,
 running tests, and sending pull requests.
@@ -11,7 +11,7 @@ reported or fixed.
 
 When filing a bug, include:
 
-- The version of `github.com/quonfig/sdk-go` you're running (`go list -m github.com/quonfig/sdk-go`)
+- The version of `github.com/quonfig/sdk-go/v2` you're running (`go list -m github.com/quonfig/sdk-go/v2`)
 - Go version (`go version`) — we test against Go 1.23
 - A minimal reproduction (a snippet, or ideally a failing test) and the actual vs. expected
   behavior

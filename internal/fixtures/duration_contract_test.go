@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 )
 
 // Malformed-duration contract through the PUBLIC getter (qfg-2agi.13; plan

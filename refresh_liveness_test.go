@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 )
 
 // WS2.4 (qfg-41nh.11): LastSuccessfulRefresh is a LIVENESS signal, not an

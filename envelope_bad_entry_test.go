@@ -3,6 +3,7 @@ package quonfig
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -113,10 +114,12 @@ func TestAllConfigEntriesBadRejectsEnvelope(t *testing.T) {
 	}
 }
 
-// The WARN for a skipped entry must never print the raw value: the decode
-// error text embeds it (`invalid int value "hunter2-secret"`), and the value
-// may be confidential. It names the key only.
-func TestBadConfigEntryWarnNeverLogsValue(t *testing.T) {
+// A stored int that does not parse used to fail its entry with a decode error
+// embedding the value (`invalid int value "hunter2-secret"`). Since v2
+// (qfg-zvyy) the entry installs and the typed getter reports
+// ErrUnableToCoerce; neither that error nor its once-per-key WARN may print
+// the raw value, which may be confidential. They name the key only.
+func TestMalformedIntNeverLeaksValue(t *testing.T) {
 	for _, tc := range []struct {
 		name, confidential string
 	}{
@@ -132,16 +135,27 @@ func TestBadConfigEntryWarnNeverLogsValue(t *testing.T) {
 			if err != nil {
 				t.Fatalf("decodeEnvelope: %v", err)
 			}
-			if len(env.Configs) != 1 {
-				t.Fatalf("got %d configs, want 1", len(env.Configs))
+			if len(env.Configs) != 2 {
+				t.Fatalf("got %d configs, want 2", len(env.Configs))
+			}
+			client, err := NewClient(WithLogger(logger))
+			if err != nil {
+				t.Fatal(err)
+			}
+			client.installEnvelope(env, -1)
+			got, ok, getErr := client.GetIntValue("db.port", nil)
+			if ok || got != 0 || !errors.Is(getErr, ErrUnableToCoerce) {
+				t.Fatalf("GetIntValue = (%v, %v, %v), want (0, false, ErrUnableToCoerce)", got, ok, getErr)
 			}
 			out := logBuf.String()
 			t.Log(out)
 			if !strings.Contains(out, "db.port") {
 				t.Errorf("WARN should name the key db.port, got: %q", out)
 			}
-			if strings.Contains(out, "hunter2-secret") {
-				t.Errorf("WARN leaked the raw value: %q", out)
+			for _, text := range []string{out, getErr.Error()} {
+				if strings.Contains(text, "hunter2-secret") {
+					t.Errorf("leaked the raw value: %q", text)
+				}
 			}
 		})
 	}

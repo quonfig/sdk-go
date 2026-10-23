@@ -3,7 +3,7 @@ package store
 import (
 	"sync"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 )
 
 // Store is a concurrency-safe in-memory config store.

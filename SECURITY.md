@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you believe you have found a security vulnerability in `github.com/quonfig/sdk-go`, please
+If you believe you have found a security vulnerability in `github.com/quonfig/sdk-go/v2`, please
 report it privately so we can fix it before it becomes public.
 
 **Email:** security@quonfig.com
@@ -11,7 +11,7 @@ Please include:
 
 - A description of the issue and the impact you believe it has
 - Steps to reproduce, or a proof-of-concept if available
-- The version of `github.com/quonfig/sdk-go` you tested against (`go list -m github.com/quonfig/sdk-go`)
+- The version of `github.com/quonfig/sdk-go/v2` you tested against (`go list -m github.com/quonfig/sdk-go/v2`)
 - Any relevant configuration (cloud vs. datadir mode, transport options)
 
 We will acknowledge receipt within two business days and aim to provide an initial assessment
@@ -28,7 +28,7 @@ you are running one, please upgrade before reporting.
 
 In scope:
 
-- The published `github.com/quonfig/sdk-go` module
+- The published `github.com/quonfig/sdk-go/v2` module
 - Source in this repository (Go packages, `internal/`, build/release config)
 
 Out of scope:

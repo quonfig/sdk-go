@@ -3,18 +3,18 @@
 Go SDK for [Quonfig](https://quonfig.com) — Feature Flags, Live Config, and
 Dynamic Log Levels.
 
-> **Note:** This SDK is stable (v1) and follows [Semantic Versioning](https://semver.org): breaking changes to the public API land only in a major (`x.0.0`) release.
+> **Note:** This SDK is stable (v2) and follows [Semantic Versioning](https://semver.org): breaking changes to the public API land only in a major (`x.0.0`) release.
 
 ## Installation
 
 ```bash
-go get github.com/quonfig/sdk-go
+go get github.com/quonfig/sdk-go/v2
 ```
 
 ## Quick Start
 
 ```go
-import "github.com/quonfig/sdk-go"
+import "github.com/quonfig/sdk-go/v2"
 
 client, err := quonfig.NewClient(
     quonfig.WithSdkKey("your-sdk-key"),
@@ -29,9 +29,44 @@ if on, _, _ := client.GetBoolValue("new-dashboard", nil); on {
     // show new dashboard
 }
 
-// Config value
-limit, _, _ := client.GetIntValue("rate-limit", nil)
+// Config value, with a default
+limit, ok, _ := client.GetIntValue("rate-limit", nil)
+if !ok {
+    limit = 100
+}
 ```
+
+Upgrading from v1? See [UPGRADE to v2](CHANGELOG.md#upgrade-to-v2).
+
+## Typed getters
+
+Every `Get*Value(key, ctx)` returns `(value, ok, err)`. When `ok` is true,
+`value` is the config's value. When `ok` is false there is no value; apply
+your default. `err` says why:
+
+| Situation | `ok` | `err` matches | Logged |
+|---|---|---|---|
+| Value of the getter's type | true | nil | no |
+| Missing key, or no rule matched | false | `quonfig.ErrNotFound`, or nil | no |
+| Value of another type (e.g. `GetBoolValue` on a string config) | false | `quonfig.ErrTypeMismatch` | once per key |
+| Malformed stored or ENV_VAR value (an int `"twelve"`, a duration `"30s"`) | false | `quonfig.ErrUnableToCoerce` | once per key |
+| ENV_VAR not set | false | `quonfig.ErrMissingEnvVar` | once per key |
+| Secret cannot be decrypted | false | `quonfig.ErrUnableToDecrypt` | once per key |
+
+Strings are never coerced: a stored `"false"` is a string, so
+`GetBoolValue` reports a type mismatch instead of `false`. The only
+conversions are between numbers, and only when exact: `GetFloatValue` reads an
+int config (`30` -> `30.0`), and `GetIntValue` reads a double config holding a
+whole number within +/-(2^53-1) (`3.0` -> `3`; `3.9` is a type mismatch, never
+truncated).
+
+`FeatureIsOn` never fails: it returns `(false, false)` for a missing key, a
+flag with no matching rule, a non-bool value or any resolution error, and logs
+once per key.
+
+A wrong decryption key or an unset ENV_VAR therefore degrades to your defaults
+with one WARN per key. If a broken config must stop your service, check `err`
+and fail on it.
 
 ## Startup failure
 

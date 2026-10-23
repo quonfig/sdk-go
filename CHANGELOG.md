@@ -2,6 +2,72 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 2.0.0 - unreleased
+
+The typed-getter contract (qfg-zvyy), shared by every Quonfig SDK and pinned
+by the integration-test-data matrix (`getter.contract.*`). A typed read that
+cannot return a value of the getter's type now reports no value instead of a
+made-up one, so your default applies.
+
+### UPGRADE to v2
+
+1. **Module path.** v2 is a new Go module:
+
+   ```bash
+   go get github.com/quonfig/sdk-go/v2
+   ```
+
+   and change every import from `github.com/quonfig/sdk-go` (and its
+   subpackages, such as `/evalcore`) to `github.com/quonfig/sdk-go/v2`. The
+   package name is still `quonfig`, so no other code changes are needed for
+   this step.
+
+2. **Wrong-type reads return `ok=false`.** In v1 a typed getter on a config of
+   another type returned the zero value with `ok=true` and no error, so the
+   caller's default never applied: `GetBoolValue` on a string config returned
+   `false`, `GetIntValue` on a string returned `0`, `GetStringValue` on an int
+   returned its text. In v2 they return `(zero, false, err)` with `err`
+   matching the new `quonfig.ErrTypeMismatch`. Code that applies its default
+   when `ok` is false (the documented pattern) needs no change and now gets
+   its default. Code that ignored `ok` keeps getting the zero value.
+
+3. **No string coercion.** A stored string `"false"`, `"3"` or `"PT1S"` is a
+   string: `GetBoolValue`, `GetIntValue`, `GetFloatValue` and
+   `GetDurationValue` report a type mismatch. Store values with the config
+   type you read them with.
+
+4. **Numbers convert only when exact.** `GetIntValue` on a double config
+   returns the value only when it is whole and within +/-(2^53-1) (`3.0` ->
+   `3`). v1 truncated (`3.9` -> `3`); v2 reports a type mismatch.
+   `GetFloatValue` on an int config still works (`30` -> `30.0`).
+
+5. **Malformed stored ints and doubles.** A stored int or double that does not
+   parse (for example `"twelve"`) used to drop the whole config at load, so
+   reads saw `ErrNotFound`. The config now loads and the typed getter returns
+   `ok=false` with `ErrUnableToCoerce`, the same as a malformed ENV_VAR value
+   or duration.
+
+6. **One WARN per key.** A type mismatch, a malformed value, an unset ENV_VAR
+   or a decryption failure logs one WARN per key per client (it names the key,
+   never the value). `FeatureIsOn` also logs once per key when it returns
+   false because the key is missing or no rule matched. A wrong decryption key
+   in production now degrades to your defaults with these WARNs; if that must
+   be fatal, check `err` from the typed getter.
+
+### Added
+
+- `quonfig.ErrTypeMismatch`, returned (wrapped) by the typed getters on a
+  wrong-type value. `EvaluateDetails` is untyped and unchanged.
+
+### Changed
+
+- `GetStringValue` reads string and log_level configs only;
+  `GetBoolValue` bool; `GetStringSliceValue` string_list; `GetJSONValue` json;
+  `GetDurationValue` duration; `GetIntValue` int (and exact doubles);
+  `GetFloatValue` double and int. Anything else is `ErrTypeMismatch`.
+- `FeatureIsOn` returns `(false, false)` for a non-bool value (v1 returned
+  `(false, true)`).
+
 ## 1.10.0 - 2026-10-23
 
 ### Upgrade notes

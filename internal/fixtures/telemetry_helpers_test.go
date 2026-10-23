@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 )
 
 // telemetryContextProbeKey is the config a context-telemetry case evaluates

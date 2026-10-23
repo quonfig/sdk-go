@@ -1,4 +1,4 @@
-module github.com/quonfig/sdk-go
+module github.com/quonfig/sdk-go/v2
 
 go 1.23
 

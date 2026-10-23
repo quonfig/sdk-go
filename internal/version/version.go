@@ -14,7 +14,7 @@ import (
 	"sync"
 )
 
-const modulePath = "github.com/quonfig/sdk-go"
+const modulePath = "github.com/quonfig/sdk-go/v2"
 
 // fallback is used when running in-tree (go test, replace directives) where
 // debug.ReadBuildInfo returns "(devel)". Bump in lockstep with `git tag`.

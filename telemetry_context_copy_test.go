@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quonfig/sdk-go/internal/telemetry"
+	"github.com/quonfig/sdk-go/v2/internal/telemetry"
 )
 
 // Telemetry must not keep references to caller-owned nested context values

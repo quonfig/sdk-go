@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/quonfig/sdk-go/internal/version"
+	"github.com/quonfig/sdk-go/v2/internal/version"
 )
 
 type fetchResult struct {
