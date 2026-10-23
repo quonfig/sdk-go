@@ -1,6 +1,6 @@
 package quonfig
 
-import evalcore "github.com/quonfig/sdk-go/evalcore"
+import evalcore "github.com/quonfig/sdk-go/v2/evalcore"
 
 type runtimeEvaluator struct {
 	shared *evalcore.Evaluator

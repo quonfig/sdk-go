@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -419,4 +419,450 @@ func TestGetOrRaise_RaisesAnErrorIfAStoredDurationEmptyCannotBeCoerced(t *testin
 	_, ok, err := c.GetDurationValue("test.duration.malformed.empty", nil)
 	assert.False(t, ok, "%q must have no value", "test.duration.malformed.empty")
 	require.ErrorIs(t, err, quonfig.ErrUnableToCoerce)
+}
+
+// STRING get_or_raise on stored int raises type_mismatch
+func TestGetOrRaise_STRINGGetOrRaiseOnStoredIntRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING get_or_raise on stored double raises type_mismatch
+func TestGetOrRaise_STRINGGetOrRaiseOnStoredDoubleRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING get_or_raise on stored bool raises type_mismatch
+func TestGetOrRaise_STRINGGetOrRaiseOnStoredBoolRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING get_or_raise on stored string_list raises type_mismatch
+func TestGetOrRaise_STRINGGetOrRaiseOnStoredStringListRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING get_or_raise on stored json raises type_mismatch
+func TestGetOrRaise_STRINGGetOrRaiseOnStoredJsonRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING get_or_raise on stored duration raises type_mismatch
+func TestGetOrRaise_STRINGGetOrRaiseOnStoredDurationRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// INT get_or_raise on stored string raises type_mismatch
+func TestGetOrRaise_INTGetOrRaiseOnStoredStringRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// INT get_or_raise on stored double 3.9 raises type_mismatch
+func TestGetOrRaise_INTGetOrRaiseOnStoredDouble39RaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// INT get_or_raise on stored bool raises type_mismatch
+func TestGetOrRaise_INTGetOrRaiseOnStoredBoolRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// INT get_or_raise on stored string_list raises type_mismatch
+func TestGetOrRaise_INTGetOrRaiseOnStoredStringListRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// INT get_or_raise on stored json raises type_mismatch
+func TestGetOrRaise_INTGetOrRaiseOnStoredJsonRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// INT get_or_raise on stored duration raises type_mismatch
+func TestGetOrRaise_INTGetOrRaiseOnStoredDurationRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DOUBLE get_or_raise on stored string raises type_mismatch
+func TestGetOrRaise_DOUBLEGetOrRaiseOnStoredStringRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetFloatValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DOUBLE get_or_raise on stored bool raises type_mismatch
+func TestGetOrRaise_DOUBLEGetOrRaiseOnStoredBoolRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetFloatValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DOUBLE get_or_raise on stored string_list raises type_mismatch
+func TestGetOrRaise_DOUBLEGetOrRaiseOnStoredStringListRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetFloatValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DOUBLE get_or_raise on stored json raises type_mismatch
+func TestGetOrRaise_DOUBLEGetOrRaiseOnStoredJsonRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetFloatValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DOUBLE get_or_raise on stored duration raises type_mismatch
+func TestGetOrRaise_DOUBLEGetOrRaiseOnStoredDurationRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetFloatValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// BOOLEAN get_or_raise on stored string raises type_mismatch
+func TestGetOrRaise_BOOLEANGetOrRaiseOnStoredStringRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetBoolValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// BOOLEAN get_or_raise on stored int raises type_mismatch
+func TestGetOrRaise_BOOLEANGetOrRaiseOnStoredIntRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetBoolValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// BOOLEAN get_or_raise on stored double raises type_mismatch
+func TestGetOrRaise_BOOLEANGetOrRaiseOnStoredDoubleRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetBoolValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// BOOLEAN get_or_raise on stored string_list raises type_mismatch
+func TestGetOrRaise_BOOLEANGetOrRaiseOnStoredStringListRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetBoolValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// BOOLEAN get_or_raise on stored json raises type_mismatch
+func TestGetOrRaise_BOOLEANGetOrRaiseOnStoredJsonRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetBoolValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// BOOLEAN get_or_raise on stored duration raises type_mismatch
+func TestGetOrRaise_BOOLEANGetOrRaiseOnStoredDurationRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetBoolValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING_LIST get_or_raise on stored string raises type_mismatch
+func TestGetOrRaise_STRINGLISTGetOrRaiseOnStoredStringRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringSliceValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING_LIST get_or_raise on stored int raises type_mismatch
+func TestGetOrRaise_STRINGLISTGetOrRaiseOnStoredIntRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringSliceValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING_LIST get_or_raise on stored double raises type_mismatch
+func TestGetOrRaise_STRINGLISTGetOrRaiseOnStoredDoubleRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringSliceValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING_LIST get_or_raise on stored bool raises type_mismatch
+func TestGetOrRaise_STRINGLISTGetOrRaiseOnStoredBoolRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringSliceValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING_LIST get_or_raise on stored json raises type_mismatch
+func TestGetOrRaise_STRINGLISTGetOrRaiseOnStoredJsonRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringSliceValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// STRING_LIST get_or_raise on stored duration raises type_mismatch
+func TestGetOrRaise_STRINGLISTGetOrRaiseOnStoredDurationRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringSliceValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// JSON get_or_raise on stored string raises type_mismatch
+func TestGetOrRaise_JSONGetOrRaiseOnStoredStringRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetJSONValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// JSON get_or_raise on stored int raises type_mismatch
+func TestGetOrRaise_JSONGetOrRaiseOnStoredIntRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetJSONValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// JSON get_or_raise on stored double raises type_mismatch
+func TestGetOrRaise_JSONGetOrRaiseOnStoredDoubleRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetJSONValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// JSON get_or_raise on stored bool raises type_mismatch
+func TestGetOrRaise_JSONGetOrRaiseOnStoredBoolRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetJSONValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// JSON get_or_raise on stored string_list raises type_mismatch
+func TestGetOrRaise_JSONGetOrRaiseOnStoredStringListRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetJSONValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// JSON get_or_raise on stored duration raises type_mismatch
+func TestGetOrRaise_JSONGetOrRaiseOnStoredDurationRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetJSONValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DURATION get_or_raise on stored string raises type_mismatch
+func TestGetOrRaise_DURATIONGetOrRaiseOnStoredStringRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetDurationValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DURATION get_or_raise on stored int raises type_mismatch
+func TestGetOrRaise_DURATIONGetOrRaiseOnStoredIntRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetDurationValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DURATION get_or_raise on stored double raises type_mismatch
+func TestGetOrRaise_DURATIONGetOrRaiseOnStoredDoubleRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetDurationValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DURATION get_or_raise on stored bool raises type_mismatch
+func TestGetOrRaise_DURATIONGetOrRaiseOnStoredBoolRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetDurationValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DURATION get_or_raise on stored string_list raises type_mismatch
+func TestGetOrRaise_DURATIONGetOrRaiseOnStoredStringListRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetDurationValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DURATION get_or_raise on stored json raises type_mismatch
+func TestGetOrRaise_DURATIONGetOrRaiseOnStoredJsonRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetDurationValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// BOOLEAN get_or_raise on stored string "false" raises type_mismatch
+func TestGetOrRaise_BOOLEANGetOrRaiseOnStoredStringFalseRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetBoolValue("getter.contract.string.false", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.false")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// BOOLEAN get_or_raise on stored string "true" raises type_mismatch
+func TestGetOrRaise_BOOLEANGetOrRaiseOnStoredStringTrueRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetBoolValue("getter.contract.string.true", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.true")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// INT get_or_raise on stored string "3" raises type_mismatch
+func TestGetOrRaise_INTGetOrRaiseOnStoredString3RaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.string.number", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.number")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DOUBLE get_or_raise on stored string "3" raises type_mismatch
+func TestGetOrRaise_DOUBLEGetOrRaiseOnStoredString3RaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetFloatValue("getter.contract.string.number", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.number")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DURATION get_or_raise on stored string "PT1S" raises type_mismatch
+func TestGetOrRaise_DURATIONGetOrRaiseOnStoredStringPT1SRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetDurationValue("getter.contract.string.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.duration")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// DOUBLE get_or_raise on stored int 30 returns 30.0
+func TestGetOrRaise_DOUBLEGetOrRaiseOnStoredInt30Returns300(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetFloatValue("getter.contract.int", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "getter.contract.int")
+	want := 30.0
+	assert.Equal(t, want, got)
+}
+
+// INT get_or_raise on stored whole double 3.0 returns 3
+func TestGetOrRaise_INTGetOrRaiseOnStoredWholeDouble30Returns3(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetIntValue("getter.contract.double.whole", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "getter.contract.double.whole")
+	want := int64(3)
+	assert.Equal(t, want, got)
+}
+
+// INT get_or_raise on stored double 1e300 raises type_mismatch
+func TestGetOrRaise_INTGetOrRaiseOnStoredDouble1e300RaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.double.huge", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double.huge")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// INT get_or_raise on stored double 2^53 (outside the safe int range) raises type_mismatch
+func TestGetOrRaise_INTGetOrRaiseOnStoredDouble253OutsideTheSafeIntRangeRaisesTypeMismatch(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.double.unsafe", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double.unsafe")
+	require.ErrorIs(t, err, quonfig.ErrTypeMismatch)
+}
+
+// INT get_or_raise on stored malformed int "twelve" raises unable_to_coerce_env_var
+func TestGetOrRaise_INTGetOrRaiseOnStoredMalformedIntTwelveRaisesUnableToCoerceEnvVar(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.int.malformed", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int.malformed")
+	require.ErrorIs(t, err, quonfig.ErrUnableToCoerce)
+}
+
+// DOUBLE get_or_raise on stored malformed double "abc" raises unable_to_coerce_env_var
+func TestGetOrRaise_DOUBLEGetOrRaiseOnStoredMalformedDoubleAbcRaisesUnableToCoerceEnvVar(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetFloatValue("getter.contract.double.malformed", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double.malformed")
+	require.ErrorIs(t, err, quonfig.ErrUnableToCoerce)
+}
+
+// INT get_or_raise on env-var-provided malformed int "twelve" raises unable_to_coerce_env_var
+func TestGetOrRaise_INTGetOrRaiseOnEnvVarProvidedMalformedIntTwelveRaisesUnableToCoerceEnvVar(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_GETTER_INT", "twelve")
+	c := mustPublicClient(t)
+	_, ok, err := c.GetIntValue("getter.contract.provided.int.malformed", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.provided.int.malformed")
+	require.ErrorIs(t, err, quonfig.ErrUnableToCoerce)
+}
+
+// DOUBLE get_or_raise on env-var-provided malformed double "abc" raises unable_to_coerce_env_var
+func TestGetOrRaise_DOUBLEGetOrRaiseOnEnvVarProvidedMalformedDoubleAbcRaisesUnableToCoerceEnvVar(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_GETTER_DOUBLE", "abc")
+	c := mustPublicClient(t)
+	_, ok, err := c.GetFloatValue("getter.contract.provided.double.malformed", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.provided.double.malformed")
+	require.ErrorIs(t, err, quonfig.ErrUnableToCoerce)
+}
+
+// BOOLEAN get_or_raise on a missing bool env var raises missing_env_var
+func TestGetOrRaise_BOOLEANGetOrRaiseOnAMissingBoolEnvVarRaisesMissingEnvVar(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetBoolValue("getter.contract.provided.bool.missing", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.provided.bool.missing")
+	require.ErrorIs(t, err, quonfig.ErrMissingEnvVar)
 }

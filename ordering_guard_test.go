@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 )
 
 // orderingEnvelopeJSON returns a minimal config envelope pinned to the given

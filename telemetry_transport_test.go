@@ -30,7 +30,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/quonfig/sdk-go/internal/telemetry"
+	"github.com/quonfig/sdk-go/v2/internal/telemetry"
 )
 
 // ---------------------------------------------------------------------------

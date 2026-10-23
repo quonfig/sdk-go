@@ -552,3 +552,1116 @@ func TestGet_EnvVarProvidedMalformedDurationGarbageWithNoDefaultReturnsNil(t *te
 	assert.False(t, ok, "%q must have no value", "provided.duration.malformed.garbage")
 	assert.Zero(t, got)
 }
+
+// STRING getter on stored int returns the default
+func TestGet_STRINGGetterOnStoredIntReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.int", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// STRING getter on stored int with no default returns nil
+func TestGet_STRINGGetterOnStoredIntWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	assert.Zero(t, got)
+}
+
+// STRING getter on stored double returns the default
+func TestGet_STRINGGetterOnStoredDoubleReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.double", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// STRING getter on stored double with no default returns nil
+func TestGet_STRINGGetterOnStoredDoubleWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	assert.Zero(t, got)
+}
+
+// STRING getter on stored bool returns the default
+func TestGet_STRINGGetterOnStoredBoolReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.bool", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// STRING getter on stored bool with no default returns nil
+func TestGet_STRINGGetterOnStoredBoolWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	assert.Zero(t, got)
+}
+
+// STRING getter on stored string_list returns the default
+func TestGet_STRINGGetterOnStoredStringListReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.string_list", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// STRING getter on stored string_list with no default returns nil
+func TestGet_STRINGGetterOnStoredStringListWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	assert.Zero(t, got)
+}
+
+// STRING getter on stored json returns the default
+func TestGet_STRINGGetterOnStoredJsonReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.json", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// STRING getter on stored json with no default returns nil
+func TestGet_STRINGGetterOnStoredJsonWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	assert.Zero(t, got)
+}
+
+// STRING getter on stored duration returns the default
+func TestGet_STRINGGetterOnStoredDurationReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.duration", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// STRING getter on stored duration with no default returns nil
+func TestGet_STRINGGetterOnStoredDurationWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	assert.Zero(t, got)
+}
+
+// INT getter on stored string returns the default
+func TestGet_INTGetterOnStoredStringReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.string", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored string with no default returns nil
+func TestGet_INTGetterOnStoredStringWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	assert.Zero(t, got)
+}
+
+// INT getter on stored double 3.9 returns the default
+func TestGet_INTGetterOnStoredDouble39ReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.double", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored double 3.9 with no default returns nil
+func TestGet_INTGetterOnStoredDouble39WithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	assert.Zero(t, got)
+}
+
+// INT getter on stored bool returns the default
+func TestGet_INTGetterOnStoredBoolReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.bool", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored bool with no default returns nil
+func TestGet_INTGetterOnStoredBoolWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	assert.Zero(t, got)
+}
+
+// INT getter on stored string_list returns the default
+func TestGet_INTGetterOnStoredStringListReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.string_list", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored string_list with no default returns nil
+func TestGet_INTGetterOnStoredStringListWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	assert.Zero(t, got)
+}
+
+// INT getter on stored json returns the default
+func TestGet_INTGetterOnStoredJsonReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.json", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored json with no default returns nil
+func TestGet_INTGetterOnStoredJsonWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	assert.Zero(t, got)
+}
+
+// INT getter on stored duration returns the default
+func TestGet_INTGetterOnStoredDurationReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.duration", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored duration with no default returns nil
+func TestGet_INTGetterOnStoredDurationWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	assert.Zero(t, got)
+}
+
+// DOUBLE getter on stored string returns the default
+func TestGet_DOUBLEGetterOnStoredStringReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.string", nil)
+	if !ok {
+		got = 7.5
+	}
+	want := 7.5
+	assert.Equal(t, want, got)
+}
+
+// DOUBLE getter on stored string with no default returns nil
+func TestGet_DOUBLEGetterOnStoredStringWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	assert.Zero(t, got)
+}
+
+// DOUBLE getter on stored bool returns the default
+func TestGet_DOUBLEGetterOnStoredBoolReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.bool", nil)
+	if !ok {
+		got = 7.5
+	}
+	want := 7.5
+	assert.Equal(t, want, got)
+}
+
+// DOUBLE getter on stored bool with no default returns nil
+func TestGet_DOUBLEGetterOnStoredBoolWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	assert.Zero(t, got)
+}
+
+// DOUBLE getter on stored string_list returns the default
+func TestGet_DOUBLEGetterOnStoredStringListReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.string_list", nil)
+	if !ok {
+		got = 7.5
+	}
+	want := 7.5
+	assert.Equal(t, want, got)
+}
+
+// DOUBLE getter on stored string_list with no default returns nil
+func TestGet_DOUBLEGetterOnStoredStringListWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	assert.Zero(t, got)
+}
+
+// DOUBLE getter on stored json returns the default
+func TestGet_DOUBLEGetterOnStoredJsonReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.json", nil)
+	if !ok {
+		got = 7.5
+	}
+	want := 7.5
+	assert.Equal(t, want, got)
+}
+
+// DOUBLE getter on stored json with no default returns nil
+func TestGet_DOUBLEGetterOnStoredJsonWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	assert.Zero(t, got)
+}
+
+// DOUBLE getter on stored duration returns the default
+func TestGet_DOUBLEGetterOnStoredDurationReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.duration", nil)
+	if !ok {
+		got = 7.5
+	}
+	want := 7.5
+	assert.Equal(t, want, got)
+}
+
+// DOUBLE getter on stored duration with no default returns nil
+func TestGet_DOUBLEGetterOnStoredDurationWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on stored string returns the default
+func TestGet_BOOLEANGetterOnStoredStringReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.string", nil)
+	if !ok {
+		got = false
+	}
+	want := false
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on stored string with no default returns nil
+func TestGet_BOOLEANGetterOnStoredStringWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on stored int returns the default
+func TestGet_BOOLEANGetterOnStoredIntReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.int", nil)
+	if !ok {
+		got = false
+	}
+	want := false
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on stored int with no default returns nil
+func TestGet_BOOLEANGetterOnStoredIntWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on stored double returns the default
+func TestGet_BOOLEANGetterOnStoredDoubleReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.double", nil)
+	if !ok {
+		got = false
+	}
+	want := false
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on stored double with no default returns nil
+func TestGet_BOOLEANGetterOnStoredDoubleWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on stored string_list returns the default
+func TestGet_BOOLEANGetterOnStoredStringListReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.string_list", nil)
+	if !ok {
+		got = false
+	}
+	want := false
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on stored string_list with no default returns nil
+func TestGet_BOOLEANGetterOnStoredStringListWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on stored json returns the default
+func TestGet_BOOLEANGetterOnStoredJsonReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.json", nil)
+	if !ok {
+		got = false
+	}
+	want := false
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on stored json with no default returns nil
+func TestGet_BOOLEANGetterOnStoredJsonWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on stored duration returns the default
+func TestGet_BOOLEANGetterOnStoredDurationReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.duration", nil)
+	if !ok {
+		got = false
+	}
+	want := false
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on stored duration with no default returns nil
+func TestGet_BOOLEANGetterOnStoredDurationWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	assert.Zero(t, got)
+}
+
+// STRING_LIST getter on stored string returns the default
+func TestGet_STRINGLISTGetterOnStoredStringReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.string", nil)
+	if !ok {
+		got = []string{"DEFAULT"}
+	}
+	want := []string{"DEFAULT"}
+	assert.Equal(t, want, got)
+}
+
+// STRING_LIST getter on stored string with no default returns nil
+func TestGet_STRINGLISTGetterOnStoredStringWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	assert.Zero(t, got)
+}
+
+// STRING_LIST getter on stored int returns the default
+func TestGet_STRINGLISTGetterOnStoredIntReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.int", nil)
+	if !ok {
+		got = []string{"DEFAULT"}
+	}
+	want := []string{"DEFAULT"}
+	assert.Equal(t, want, got)
+}
+
+// STRING_LIST getter on stored int with no default returns nil
+func TestGet_STRINGLISTGetterOnStoredIntWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	assert.Zero(t, got)
+}
+
+// STRING_LIST getter on stored double returns the default
+func TestGet_STRINGLISTGetterOnStoredDoubleReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.double", nil)
+	if !ok {
+		got = []string{"DEFAULT"}
+	}
+	want := []string{"DEFAULT"}
+	assert.Equal(t, want, got)
+}
+
+// STRING_LIST getter on stored double with no default returns nil
+func TestGet_STRINGLISTGetterOnStoredDoubleWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	assert.Zero(t, got)
+}
+
+// STRING_LIST getter on stored bool returns the default
+func TestGet_STRINGLISTGetterOnStoredBoolReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.bool", nil)
+	if !ok {
+		got = []string{"DEFAULT"}
+	}
+	want := []string{"DEFAULT"}
+	assert.Equal(t, want, got)
+}
+
+// STRING_LIST getter on stored bool with no default returns nil
+func TestGet_STRINGLISTGetterOnStoredBoolWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	assert.Zero(t, got)
+}
+
+// STRING_LIST getter on stored json returns the default
+func TestGet_STRINGLISTGetterOnStoredJsonReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.json", nil)
+	if !ok {
+		got = []string{"DEFAULT"}
+	}
+	want := []string{"DEFAULT"}
+	assert.Equal(t, want, got)
+}
+
+// STRING_LIST getter on stored json with no default returns nil
+func TestGet_STRINGLISTGetterOnStoredJsonWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	assert.Zero(t, got)
+}
+
+// STRING_LIST getter on stored duration returns the default
+func TestGet_STRINGLISTGetterOnStoredDurationReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.duration", nil)
+	if !ok {
+		got = []string{"DEFAULT"}
+	}
+	want := []string{"DEFAULT"}
+	assert.Equal(t, want, got)
+}
+
+// STRING_LIST getter on stored duration with no default returns nil
+func TestGet_STRINGLISTGetterOnStoredDurationWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringSliceValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	assert.Zero(t, got)
+}
+
+// JSON getter on stored string returns the default
+func TestGet_JSONGetterOnStoredStringReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.string", nil)
+	if !ok {
+		got = map[string]interface{}{"default": true}
+	}
+	want := map[string]interface{}{"default": true}
+	assertJSONValue(t, want, got)
+}
+
+// JSON getter on stored string with no default returns nil
+func TestGet_JSONGetterOnStoredStringWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	assert.Zero(t, got)
+}
+
+// JSON getter on stored int returns the default
+func TestGet_JSONGetterOnStoredIntReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.int", nil)
+	if !ok {
+		got = map[string]interface{}{"default": true}
+	}
+	want := map[string]interface{}{"default": true}
+	assertJSONValue(t, want, got)
+}
+
+// JSON getter on stored int with no default returns nil
+func TestGet_JSONGetterOnStoredIntWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	assert.Zero(t, got)
+}
+
+// JSON getter on stored double returns the default
+func TestGet_JSONGetterOnStoredDoubleReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.double", nil)
+	if !ok {
+		got = map[string]interface{}{"default": true}
+	}
+	want := map[string]interface{}{"default": true}
+	assertJSONValue(t, want, got)
+}
+
+// JSON getter on stored double with no default returns nil
+func TestGet_JSONGetterOnStoredDoubleWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	assert.Zero(t, got)
+}
+
+// JSON getter on stored bool returns the default
+func TestGet_JSONGetterOnStoredBoolReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.bool", nil)
+	if !ok {
+		got = map[string]interface{}{"default": true}
+	}
+	want := map[string]interface{}{"default": true}
+	assertJSONValue(t, want, got)
+}
+
+// JSON getter on stored bool with no default returns nil
+func TestGet_JSONGetterOnStoredBoolWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	assert.Zero(t, got)
+}
+
+// JSON getter on stored string_list returns the default
+func TestGet_JSONGetterOnStoredStringListReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.string_list", nil)
+	if !ok {
+		got = map[string]interface{}{"default": true}
+	}
+	want := map[string]interface{}{"default": true}
+	assertJSONValue(t, want, got)
+}
+
+// JSON getter on stored string_list with no default returns nil
+func TestGet_JSONGetterOnStoredStringListWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	assert.Zero(t, got)
+}
+
+// JSON getter on stored duration returns the default
+func TestGet_JSONGetterOnStoredDurationReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.duration", nil)
+	if !ok {
+		got = map[string]interface{}{"default": true}
+	}
+	want := map[string]interface{}{"default": true}
+	assertJSONValue(t, want, got)
+}
+
+// JSON getter on stored duration with no default returns nil
+func TestGet_JSONGetterOnStoredDurationWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetJSONValue("getter.contract.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.duration")
+	assert.Zero(t, got)
+}
+
+// DURATION getter on stored string returns the default
+func TestGet_DURATIONGetterOnStoredStringReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.string", nil)
+	if !ok {
+		got = time.Duration(7000) * time.Millisecond
+	}
+	want := time.Duration(7000) * time.Millisecond
+	assert.Equal(t, want, got)
+}
+
+// DURATION getter on stored string with no default returns nil
+func TestGet_DURATIONGetterOnStoredStringWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.string", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string")
+	assert.Zero(t, got)
+}
+
+// DURATION getter on stored int returns the default
+func TestGet_DURATIONGetterOnStoredIntReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.int", nil)
+	if !ok {
+		got = time.Duration(7000) * time.Millisecond
+	}
+	want := time.Duration(7000) * time.Millisecond
+	assert.Equal(t, want, got)
+}
+
+// DURATION getter on stored int with no default returns nil
+func TestGet_DURATIONGetterOnStoredIntWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.int", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int")
+	assert.Zero(t, got)
+}
+
+// DURATION getter on stored double returns the default
+func TestGet_DURATIONGetterOnStoredDoubleReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.double", nil)
+	if !ok {
+		got = time.Duration(7000) * time.Millisecond
+	}
+	want := time.Duration(7000) * time.Millisecond
+	assert.Equal(t, want, got)
+}
+
+// DURATION getter on stored double with no default returns nil
+func TestGet_DURATIONGetterOnStoredDoubleWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.double", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double")
+	assert.Zero(t, got)
+}
+
+// DURATION getter on stored bool returns the default
+func TestGet_DURATIONGetterOnStoredBoolReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.bool", nil)
+	if !ok {
+		got = time.Duration(7000) * time.Millisecond
+	}
+	want := time.Duration(7000) * time.Millisecond
+	assert.Equal(t, want, got)
+}
+
+// DURATION getter on stored bool with no default returns nil
+func TestGet_DURATIONGetterOnStoredBoolWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.bool", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.bool")
+	assert.Zero(t, got)
+}
+
+// DURATION getter on stored string_list returns the default
+func TestGet_DURATIONGetterOnStoredStringListReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.string_list", nil)
+	if !ok {
+		got = time.Duration(7000) * time.Millisecond
+	}
+	want := time.Duration(7000) * time.Millisecond
+	assert.Equal(t, want, got)
+}
+
+// DURATION getter on stored string_list with no default returns nil
+func TestGet_DURATIONGetterOnStoredStringListWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.string_list", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string_list")
+	assert.Zero(t, got)
+}
+
+// DURATION getter on stored json returns the default
+func TestGet_DURATIONGetterOnStoredJsonReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.json", nil)
+	if !ok {
+		got = time.Duration(7000) * time.Millisecond
+	}
+	want := time.Duration(7000) * time.Millisecond
+	assert.Equal(t, want, got)
+}
+
+// DURATION getter on stored json with no default returns nil
+func TestGet_DURATIONGetterOnStoredJsonWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.json", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.json")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on stored string "false" returns the default
+func TestGet_BOOLEANGetterOnStoredStringFalseReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.string.false", nil)
+	if !ok {
+		got = false
+	}
+	want := false
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on stored string "false" with no default returns nil
+func TestGet_BOOLEANGetterOnStoredStringFalseWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.string.false", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.false")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on stored string "false" returns a true default
+func TestGet_BOOLEANGetterOnStoredStringFalseReturnsATrueDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.string.false", nil)
+	if !ok {
+		got = true
+	}
+	want := true
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on stored string "true" returns the default
+func TestGet_BOOLEANGetterOnStoredStringTrueReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.string.true", nil)
+	if !ok {
+		got = false
+	}
+	want := false
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on stored string "true" with no default returns nil
+func TestGet_BOOLEANGetterOnStoredStringTrueWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.string.true", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.true")
+	assert.Zero(t, got)
+}
+
+// INT getter on stored string "3" returns the default
+func TestGet_INTGetterOnStoredString3ReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.string.number", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored string "3" with no default returns nil
+func TestGet_INTGetterOnStoredString3WithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.string.number", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.number")
+	assert.Zero(t, got)
+}
+
+// DOUBLE getter on stored string "3" returns the default
+func TestGet_DOUBLEGetterOnStoredString3ReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.string.number", nil)
+	if !ok {
+		got = 7.5
+	}
+	want := 7.5
+	assert.Equal(t, want, got)
+}
+
+// DOUBLE getter on stored string "3" with no default returns nil
+func TestGet_DOUBLEGetterOnStoredString3WithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.string.number", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.number")
+	assert.Zero(t, got)
+}
+
+// DURATION getter on stored string "PT1S" returns the default
+func TestGet_DURATIONGetterOnStoredStringPT1SReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.string.duration", nil)
+	if !ok {
+		got = time.Duration(7000) * time.Millisecond
+	}
+	want := time.Duration(7000) * time.Millisecond
+	assert.Equal(t, want, got)
+}
+
+// DURATION getter on stored string "PT1S" with no default returns nil
+func TestGet_DURATIONGetterOnStoredStringPT1SWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetDurationValue("getter.contract.string.duration", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.string.duration")
+	assert.Zero(t, got)
+}
+
+// DOUBLE get on stored int 30 returns 30.0
+func TestGet_DOUBLEGetOnStoredInt30Returns300(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetFloatValue("getter.contract.int", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "getter.contract.int")
+	want := 30.0
+	assert.Equal(t, want, got)
+}
+
+// INT get on stored whole double 3.0 returns 3
+func TestGet_INTGetOnStoredWholeDouble30Returns3(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetIntValue("getter.contract.double.whole", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "getter.contract.double.whole")
+	want := int64(3)
+	assert.Equal(t, want, got)
+}
+
+// DOUBLE getter on stored int 30 ignores the default
+func TestGet_DOUBLEGetterOnStoredInt30IgnoresTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.int", nil)
+	if !ok {
+		got = 7.5
+	}
+	want := 30.0
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored whole double 3.0 ignores the default
+func TestGet_INTGetterOnStoredWholeDouble30IgnoresTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.double.whole", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(3)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored double 1e300 returns the default
+func TestGet_INTGetterOnStoredDouble1e300ReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.double.huge", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored double 1e300 with no default returns nil
+func TestGet_INTGetterOnStoredDouble1e300WithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.double.huge", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double.huge")
+	assert.Zero(t, got)
+}
+
+// INT getter on stored double 2^53 (outside the safe int range) returns the default
+func TestGet_INTGetterOnStoredDouble253OutsideTheSafeIntRangeReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.double.unsafe", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored double 2^53 (outside the safe int range) with no default returns nil
+func TestGet_INTGetterOnStoredDouble253OutsideTheSafeIntRangeWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.double.unsafe", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double.unsafe")
+	assert.Zero(t, got)
+}
+
+// INT getter on stored malformed int "twelve" returns the default
+func TestGet_INTGetterOnStoredMalformedIntTwelveReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.int.malformed", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on stored malformed int "twelve" with no default returns nil
+func TestGet_INTGetterOnStoredMalformedIntTwelveWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.int.malformed", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.int.malformed")
+	assert.Zero(t, got)
+}
+
+// DOUBLE getter on stored malformed double "abc" returns the default
+func TestGet_DOUBLEGetterOnStoredMalformedDoubleAbcReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.double.malformed", nil)
+	if !ok {
+		got = 7.5
+	}
+	want := 7.5
+	assert.Equal(t, want, got)
+}
+
+// DOUBLE getter on stored malformed double "abc" with no default returns nil
+func TestGet_DOUBLEGetterOnStoredMalformedDoubleAbcWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.double.malformed", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.double.malformed")
+	assert.Zero(t, got)
+}
+
+// INT getter on env-var-provided malformed int "twelve" returns the default
+func TestGet_INTGetterOnEnvVarProvidedMalformedIntTwelveReturnsTheDefault(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_GETTER_INT", "twelve")
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.provided.int.malformed", nil)
+	if !ok {
+		got = int64(7)
+	}
+	want := int64(7)
+	assert.Equal(t, want, got)
+}
+
+// INT getter on env-var-provided malformed int "twelve" with no default returns nil
+func TestGet_INTGetterOnEnvVarProvidedMalformedIntTwelveWithNoDefaultReturnsNil(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_GETTER_INT", "twelve")
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetIntValue("getter.contract.provided.int.malformed", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.provided.int.malformed")
+	assert.Zero(t, got)
+}
+
+// DOUBLE getter on env-var-provided malformed double "abc" returns the default
+func TestGet_DOUBLEGetterOnEnvVarProvidedMalformedDoubleAbcReturnsTheDefault(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_GETTER_DOUBLE", "abc")
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.provided.double.malformed", nil)
+	if !ok {
+		got = 7.5
+	}
+	want := 7.5
+	assert.Equal(t, want, got)
+}
+
+// DOUBLE getter on env-var-provided malformed double "abc" with no default returns nil
+func TestGet_DOUBLEGetterOnEnvVarProvidedMalformedDoubleAbcWithNoDefaultReturnsNil(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_GETTER_DOUBLE", "abc")
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetFloatValue("getter.contract.provided.double.malformed", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.provided.double.malformed")
+	assert.Zero(t, got)
+}
+
+// STRING getter on a missing env var returns the default
+func TestGet_STRINGGetterOnAMissingEnvVarReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("provided.by.missing.env.var", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// STRING getter on a missing env var with no default returns nil
+func TestGet_STRINGGetterOnAMissingEnvVarWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("provided.by.missing.env.var", nil)
+	assert.False(t, ok, "%q must have no value", "provided.by.missing.env.var")
+	assert.Zero(t, got)
+}
+
+// STRING getter on a decryption failure returns the default
+func TestGet_STRINGGetterOnADecryptionFailureReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("a.broken.secret.config", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// STRING getter on a decryption failure with no default returns nil
+func TestGet_STRINGGetterOnADecryptionFailureWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("a.broken.secret.config", nil)
+	assert.False(t, ok, "%q must have no value", "a.broken.secret.config")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on a missing bool env var returns the default
+func TestGet_BOOLEANGetterOnAMissingBoolEnvVarReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.provided.bool.missing", nil)
+	if !ok {
+		got = true
+	}
+	want := true
+	assert.Equal(t, want, got)
+}
+
+// BOOLEAN getter on a missing bool env var with no default returns nil
+func TestGet_BOOLEANGetterOnAMissingBoolEnvVarWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetBoolValue("getter.contract.provided.bool.missing", nil)
+	assert.False(t, ok, "%q must have no value", "getter.contract.provided.bool.missing")
+	assert.Zero(t, got)
+}
+
+// BOOLEAN getter on env-var-provided bool "false" returns false
+func TestGet_BOOLEANGetterOnEnvVarProvidedBoolFalseReturnsFalse(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_GETTER_BOOL", "false")
+	c := mustPublicClient(t)
+	got, ok, err := c.GetBoolValue("getter.contract.provided.bool", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "getter.contract.provided.bool")
+	want := false
+	assert.Equal(t, want, got)
+}

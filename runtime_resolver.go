@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/quonfig/sdk-go/internal/encryption"
+	"github.com/quonfig/sdk-go/v2/internal/encryption"
 )
 
 type runtimeResolver struct {

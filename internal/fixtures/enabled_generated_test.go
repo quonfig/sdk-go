@@ -1004,3 +1004,88 @@ func TestEnabled_ReturnsFalseForPROPGREATERTHAN30WhenTheGivenPropIsANumericStrin
 	on, _ := c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"age": "35"}})).FeatureIsOn("feature-flag.greater-than")
 	assert.Equal(t, false, on, "FeatureIsOn(%q)", "feature-flag.greater-than")
 }
+
+// enabled on stored bool true returns true
+func TestEnabled_EnabledOnStoredBoolTrueReturnsTrue(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.bool", nil)
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "getter.contract.bool")
+}
+
+// enabled on env-var-provided bool "true" returns true
+func TestEnabled_EnabledOnEnvVarProvidedBoolTrueReturnsTrue(t *testing.T) {
+	t.Setenv("QUONFIG_ITD_GETTER_BOOL", "true")
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.provided.bool", nil)
+	assert.Equal(t, true, on, "FeatureIsOn(%q)", "getter.contract.provided.bool")
+}
+
+// enabled on stored string returns false
+func TestEnabled_EnabledOnStoredStringReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.string", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "getter.contract.string")
+}
+
+// enabled on stored int returns false
+func TestEnabled_EnabledOnStoredIntReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.int", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "getter.contract.int")
+}
+
+// enabled on stored double returns false
+func TestEnabled_EnabledOnStoredDoubleReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.double", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "getter.contract.double")
+}
+
+// enabled on stored string_list returns false
+func TestEnabled_EnabledOnStoredStringListReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.string_list", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "getter.contract.string_list")
+}
+
+// enabled on stored json returns false
+func TestEnabled_EnabledOnStoredJsonReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.json", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "getter.contract.json")
+}
+
+// enabled on stored duration returns false
+func TestEnabled_EnabledOnStoredDurationReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.duration", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "getter.contract.duration")
+}
+
+// enabled on stored string "true" returns false
+func TestEnabled_EnabledOnStoredStringTrueReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.string.true", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "getter.contract.string.true")
+}
+
+// enabled on stored malformed int "twelve" returns false
+func TestEnabled_EnabledOnStoredMalformedIntTwelveReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.int.malformed", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "getter.contract.int.malformed")
+}
+
+// enabled on a missing bool env var returns false
+func TestEnabled_EnabledOnAMissingBoolEnvVarReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("getter.contract.provided.bool.missing", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "getter.contract.provided.bool.missing")
+}
+
+// enabled on a decryption failure returns false
+func TestEnabled_EnabledOnADecryptionFailureReturnsFalse(t *testing.T) {
+	c := mustPublicClient(t)
+	on, _ := c.FeatureIsOn("a.broken.secret.config", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "a.broken.secret.config")
+}

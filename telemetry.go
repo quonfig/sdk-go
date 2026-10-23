@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/quonfig/sdk-go/internal/telemetry"
+	"github.com/quonfig/sdk-go/v2/internal/telemetry"
 )
 
 // reportableValuePrefix is the redaction prefix for confidential values in

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/quonfig/sdk-go/internal/version"
+	"github.com/quonfig/sdk-go/v2/internal/version"
 )
 
 // ErrNotFound is returned when a config key does not exist.
@@ -28,6 +28,12 @@ var ErrUnableToCoerce = errors.New("unable_to_coerce_env_var")
 
 // ErrUnableToDecrypt is returned when a confidential value cannot be decrypted.
 var ErrUnableToDecrypt = errors.New("unable_to_decrypt")
+
+// ErrTypeMismatch is returned by a typed getter when the config's value is not
+// of the getter's type, for example GetBoolValue on a string config. Strings
+// are never coerced: a stored "false" is a string, not a bool. The only
+// conversions are int to double, and a whole double within +/-(2^53-1) to int.
+var ErrTypeMismatch = errors.New("type_mismatch")
 
 // configStore is a minimal interface for looking up configs by key.
 type configStore interface {
@@ -100,6 +106,11 @@ type Client struct {
 	// rollout whose hash property was missing from the context, so each key
 	// logs once per client (qfg-9dxb.8). Only touched on that missing path.
 	hashPropertyWarned sync.Map
+
+	// readFailureWarned holds the config keys already warned about a typed
+	// read or FeatureIsOn that returned no value (type mismatch, malformed
+	// value, resolution error), so each key logs once per client (qfg-zvyy).
+	readFailureWarned sync.Map
 
 	// lastRefresh backs LastSuccessfulRefresh (guarded by mu). Stamped by
 	// every successful refresh: an envelope install (any path, including the
@@ -364,83 +375,71 @@ func (c *Client) effectiveDebounce() time.Duration {
 	return DefaultDataDirAutoReloadDebounce
 }
 
-// GetStringValue returns the string value for a config key.
+// The typed getters below share one contract (qfg-zvyy). Each returns
+// (value, true, nil) for a value of its type. When there is no value to
+// return it returns the zero value with ok=false, and the caller applies its
+// default:
+//   - a missing key, or no matching rule: err is ErrNotFound or nil;
+//   - a value of another type: err wraps ErrTypeMismatch;
+//   - a malformed stored or ENV_VAR value: err wraps ErrUnableToCoerce;
+//   - a missing ENV_VAR or a decryption failure: err wraps ErrMissingEnvVar
+//     or ErrUnableToDecrypt.
+// The last three also log a warning, once per key per client. A caller that
+// must fail hard on a broken config checks err.
+
+// GetStringValue returns the value of a string (or log_level) config.
 func (c *Client) GetStringValue(key string, ctx *ContextSet) (string, bool, error) {
-	val, ok, err := c.resolve(key, ctx)
-	if err != nil || !ok {
-		return "", false, err
-	}
-	return val.StringValue(), true, nil
+	return readTyped(c, key, ctx, stringOf)
 }
 
-// GetIntValue returns the int64 value for a config key.
+// GetIntValue returns the value of an int config, or of a double config
+// holding a whole number within +/-(2^53-1). It never truncates: 3.9 is a
+// type mismatch.
 func (c *Client) GetIntValue(key string, ctx *ContextSet) (int64, bool, error) {
-	val, ok, err := c.resolve(key, ctx)
-	if err != nil || !ok {
-		return 0, false, err
-	}
-	return val.IntValue(), true, nil
+	return readTyped(c, key, ctx, intOf)
 }
 
-// GetBoolValue returns the bool value for a config key.
+// GetBoolValue returns the value of a bool config.
 func (c *Client) GetBoolValue(key string, ctx *ContextSet) (bool, bool, error) {
-	val, ok, err := c.resolve(key, ctx)
-	if err != nil || !ok {
-		return false, false, err
-	}
-	return val.BoolValue(), true, nil
+	return readTyped(c, key, ctx, boolOf)
 }
 
-// GetFloatValue returns the float64 value for a config key.
+// GetFloatValue returns the value of a double config, or of an int config
+// converted to float64.
 func (c *Client) GetFloatValue(key string, ctx *ContextSet) (float64, bool, error) {
-	val, ok, err := c.resolve(key, ctx)
-	if err != nil || !ok {
-		return 0, false, err
-	}
-	return val.DoubleValue(), true, nil
+	return readTyped(c, key, ctx, floatOf)
 }
 
-// GetStringSliceValue returns the []string value for a config key.
+// GetStringSliceValue returns the value of a string_list config.
 func (c *Client) GetStringSliceValue(key string, ctx *ContextSet) ([]string, bool, error) {
-	val, ok, err := c.resolve(key, ctx)
-	if err != nil || !ok {
-		return nil, false, err
-	}
-	return val.StringListValue(), true, nil
+	return readTyped(c, key, ctx, stringSliceOf)
 }
 
-// GetDurationValue returns the time.Duration value for a config key.
+// GetDurationValue returns the value of a duration config.
 // The value must be an ISO 8601 duration string in the Quonfig grammar
 // (e.g., "PT90S", "PT30M", "P1DT6H2M1.5S"; see ParseISO8601Duration).
 // A malformed value, stored or ENV_VAR-provided, returns (0, false, err)
 // with err wrapping ErrUnableToCoerce.
 func (c *Client) GetDurationValue(key string, ctx *ContextSet) (time.Duration, bool, error) {
-	val, ok, err := c.resolve(key, ctx)
-	if err != nil || !ok {
-		return 0, false, err
-	}
-	d, parseErr := ParseISO8601Duration(val.StringValue())
-	if parseErr != nil {
-		return 0, false, fmt.Errorf("%w: config %q: %v", ErrUnableToCoerce, key, parseErr)
-	}
-	return d, true, nil
+	return readTyped(c, key, ctx, durationOf)
 }
 
-// GetJSONValue returns the parsed JSON value for a config key.
+// GetJSONValue returns the parsed value of a json config.
 // Values are stored natively (object/array/number/boolean/null). Objects and
 // arrays are returned as a fresh copy, so the caller may modify the result.
 func (c *Client) GetJSONValue(key string, ctx *ContextSet) (interface{}, bool, error) {
-	val, ok, err := c.resolve(key, ctx)
-	if err != nil || !ok {
-		return nil, false, err
-	}
-	return val.Value, true, nil
+	return readTyped(c, key, ctx, jsonOf)
 }
 
-// FeatureIsOn returns whether a feature flag is on. Returns false if the key is not found.
+// FeatureIsOn reports whether a feature flag is on. It never fails: a missing
+// key, a flag with no matching rule, a non-bool value or any resolution error
+// returns (false, false) and logs a warning once per key per client.
 func (c *Client) FeatureIsOn(key string, ctx *ContextSet) (bool, bool) {
 	val, ok, err := c.GetBoolValue(key, ctx)
 	if err != nil || !ok {
+		if err == nil || errors.Is(err, ErrNotFound) {
+			c.warnReadFailure(key, "missing key or no matching rule; FeatureIsOn returns false")
+		}
 		return false, false
 	}
 	return val, true
@@ -731,7 +730,7 @@ func errorCodeFor(err error) ErrorCode {
 		return ErrorCodeFlagNotFound
 	case errors.Is(err, ErrInitializationTimeout):
 		return ErrorCodeProviderNotReady
-	case errors.Is(err, ErrUnableToCoerce):
+	case errors.Is(err, ErrUnableToCoerce), errors.Is(err, ErrTypeMismatch):
 		return ErrorCodeTypeMismatch
 	case errors.Is(err, ErrMissingEnvVar), errors.Is(err, ErrUnableToDecrypt):
 		return ErrorCodeGeneral

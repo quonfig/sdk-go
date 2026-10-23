@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 )
 
 // qfg-eefx: OnConfigUpdate used to run while the install path held refreshMu,

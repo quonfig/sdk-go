@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	quonfig "github.com/quonfig/sdk-go"
+	quonfig "github.com/quonfig/sdk-go/v2"
 )
 
 // Failover telemetry emission (qfg-41nh.18). These drive the real client paths

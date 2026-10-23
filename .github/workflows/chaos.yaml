@@ -70,7 +70,7 @@ jobs:
           # Pinned so the chaos gate moves only when the scenarios are
           # deliberately rev'd. Keep it equal to test.yaml's unit pin
           # (one ITD tag per repo, qfg-goi1.1.1).
-          ref: v2026.10.22.2
+          ref: v2026.10.23
 
       - name: Checkout api-delivery
         # api-delivery is private; the default GITHUB_TOKEN cannot read

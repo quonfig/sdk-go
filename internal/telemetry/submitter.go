@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/quonfig/sdk-go/internal/version"
+	"github.com/quonfig/sdk-go/v2/internal/version"
 )
 
 const queueCapacity = 10000

@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/quonfig/sdk-go/internal/telemetry"
+	"github.com/quonfig/sdk-go/v2/internal/telemetry"
 )
 
 // OnInitFailure picks what NewClient does when it has no config by the end of
