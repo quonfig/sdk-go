@@ -2,7 +2,19 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
-## Unreleased
+## 1.10.0 - 2026-10-23
+
+### Upgrade notes
+
+- **UPGRADE: config responses over 16 MiB and SSE events over 4 MiB are now
+  rejected (qfg-6vno.20.7).** An oversized `/api/v2/configs` body counts as a
+  failed fetch (the client keeps its current config and fails over), and an
+  oversized SSE event counts as a failed stream attempt (the fallback poller
+  takes over). Real workspaces are far below these caps, so you should see no
+  difference; a WARN names the source if one is ever hit.
+- Callback panics in `OnConfigUpdate` and `OnSSEStateChange` are still
+  recovered and logged at ERROR; only the log attributes and the internal
+  counters changed (qfg-6vno.26). No public API changes.
 
 ### Changed
 
