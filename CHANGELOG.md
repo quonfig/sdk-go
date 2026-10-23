@@ -2,7 +2,7 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
-## 2.0.0 - unreleased
+## 2.0.0 - 2026-10-23
 
 The typed-getter contract (qfg-zvyy), shared by every Quonfig SDK and pinned
 by the integration-test-data matrix (`getter.contract.*`). A typed read that
