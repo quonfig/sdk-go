@@ -29,7 +29,7 @@ comparison section. The history below shows the trend.
 
 ## Files
 
-- [`audit/PROMPT.md`](audit/PROMPT.md) — the exact audit prompt (versioned).
+- [`audit/PROMPT-v3.md`](audit/PROMPT-v3.md) — the exact audit prompt (v3, current). [`audit/PROMPT.md`](audit/PROMPT.md) is v1, kept as the record for the 2026-09 runs below.
   It tells the auditor to work for the customer, not for us.
 - [`audit/reports/`](audit/reports/) — one report per run, named
   `YYYY-MM-DD-<model>.md`. Reports are never edited after the fact; fixes show
@@ -49,14 +49,14 @@ comparison section. The history below shows the trend.
 From the root of this repo, give an AI coding agent this instruction:
 
 ```
-Read audit/PROMPT.md and follow it exactly. Write your report to
+Read audit/PROMPT-v3.md and follow it exactly. Write your report to
 audit/reports/<YYYY-MM-DD>-<model-id>.md.
 ```
 
 With Claude Code, for example:
 
 ```
-claude -p "Read audit/PROMPT.md and follow it exactly. Write your report to audit/reports/$(date +%F)-<model-id>.md."
+claude -p "Read audit/PROMPT-v3.md and follow it exactly. Write your report to audit/reports/$(date +%F)-<model-id>.md."
 ```
 
 Use a fresh session with no other context about Quonfig; the point is an
