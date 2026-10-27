@@ -1193,9 +1193,12 @@ func (c *Client) fetchCycle(ctx context.Context) (cycleOutcome, error) {
 			// Classify the rejection while still holding refreshMu, so it sees
 			// the same held generation the guard decision saw (qfg-rr5b).
 			strictlyOlder = c.isStrictlyOlderThanHeld(res.Envelope)
-			// A dropped gen<=0 payload must not leave its ETag behind, or a
-			// later same-sha response with a repaired generation 304s.
-			if res.Envelope.Meta.Generation <= 0 {
+			// A dropped gen<=0 or strictly older payload must not leave its
+			// ETag behind, or a later same-sha response with a repaired
+			// generation 304s until the next commit (qfg-9dxb.9, qfg-j7ui;
+			// supervisor contract Test 11). Only a same-generation 200 keeps
+			// its ETag.
+			if strictlyOlder || res.Envelope.Meta.Generation <= 0 {
 				c.transport.rollbackETag(res)
 			}
 		}
