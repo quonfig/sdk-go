@@ -243,3 +243,58 @@ func TestDroppedGenZero200DoesNotPinItsETag(t *testing.T) {
 		t.Fatalf("after repaired generation: flag.bool=%v held=%d, want false/6 (dropped gen-0 ETag must not pin a 304)", v, client.HeldGeneration())
 	}
 }
+
+// qfg-j7ui (supervisor contract Test 11): a 200 the guard drops as STRICTLY
+// older must not leave its ETag remembered either. A shallow-clone server can
+// serve sha B at a low generation and later repair it to a higher one for the
+// SAME sha; a kept ETag would 304 the repair until the next commit.
+func TestRejectedOlder200DoesNotPinItsETag(t *testing.T) {
+	envelope := func(flag bool, gen int) string {
+		return fmt.Sprintf(`{"configs":[{"id":"1","key":"flag.bool","type":"feature_flag","valueType":"bool","default":{"rules":[{"criteria":[{"operator":"ALWAYS_TRUE"}],"value":{"type":"bool","value":%t}}]}}],"meta":{"version":"v","environment":"Production","generation":%d}}`, flag, gen)
+	}
+	var phase atomic.Int32 // 0: A@gen10, 1: B@gen3, 2: B@gen11 (same ETag as phase 1)
+	var lastINM atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lastINM.Store(r.Header.Get("If-None-Match"))
+		switch phase.Load() {
+		case 0:
+			w.Header().Set("ETag", `"shaA"`)
+			_, _ = w.Write([]byte(envelope(true, 10)))
+		case 1:
+			w.Header().Set("ETag", `"shaB"`)
+			_, _ = w.Write([]byte(envelope(false, 3)))
+		default:
+			if r.Header.Get("If-None-Match") == `"shaB"` {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			w.Header().Set("ETag", `"shaB"`)
+			_, _ = w.Write([]byte(envelope(false, 11)))
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	client := newValidationClient(t, []string{srv.URL})
+	if v, ok, _ := client.GetBoolValue("flag.bool", nil); !v || !ok || client.HeldGeneration() != 10 {
+		t.Fatalf("setup: flag.bool=%v ok=%v held=%d, want true/true/10", v, ok, client.HeldGeneration())
+	}
+
+	phase.Store(1)
+	if err := client.Refresh(); err != nil {
+		t.Fatalf("Refresh (gen 3): %v", err)
+	}
+	if v, _, _ := client.GetBoolValue("flag.bool", nil); !v || client.HeldGeneration() != 10 {
+		t.Fatalf("gen-3 200 must be rejected as older: flag.bool=%v held=%d, want true/10", v, client.HeldGeneration())
+	}
+
+	phase.Store(2)
+	if err := client.Refresh(); err != nil {
+		t.Fatalf("Refresh (gen 11): %v", err)
+	}
+	if inm, _ := lastINM.Load().(string); inm == `"shaB"` {
+		t.Fatalf("the rejected-older response's ETag was sent as If-None-Match")
+	}
+	if v, _, _ := client.GetBoolValue("flag.bool", nil); v || client.HeldGeneration() != 11 {
+		t.Fatalf("after repaired generation: flag.bool=%v held=%d, want false/11 (rejected-older ETag must not pin a 304)", v, client.HeldGeneration())
+	}
+}

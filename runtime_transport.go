@@ -25,7 +25,7 @@ type fetchResult struct {
 	// report which upstream a config was resolved from (failover observability).
 	SourceIndex int
 	// prevETag and storedETag let the caller undo this response's ETag write
-	// when the guard drops a gen<=0 payload (see rollbackETag).
+	// when the guard drops a gen<=0 or strictly older payload (see rollbackETag).
 	prevETag   string
 	storedETag string
 }
@@ -361,9 +361,9 @@ func (c *runtimeTransport) oversizedLeg(i int, baseURL string, status int) legRe
 	}
 }
 
-// rollbackETag undoes the ETag write of a 200 whose gen<=0 payload the guard
-// dropped (qfg-9dxb.9). Keeping it would let the server's later same-sha
-// repaired-generation response 304 forever. Only rolls back if the slot still
+// rollbackETag undoes the ETag write of a 200 whose gen<=0 or strictly older
+// payload the guard dropped (qfg-9dxb.9, qfg-j7ui). Keeping it would let the
+// server's later same-sha repaired-generation response 304 forever. Only rolls back if the slot still
 // holds the ETag this response wrote, so a concurrent leg's write is kept.
 func (c *runtimeTransport) rollbackETag(res *fetchResult) {
 	if res == nil || res.storedETag == "" || res.SourceIndex < 0 || res.SourceIndex >= len(c.etags) {
