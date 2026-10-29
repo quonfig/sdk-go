@@ -730,7 +730,11 @@ func errorCodeFor(err error) ErrorCode {
 		return ErrorCodeFlagNotFound
 	case errors.Is(err, ErrInitializationTimeout):
 		return ErrorCodeProviderNotReady
-	case errors.Is(err, ErrUnableToCoerce), errors.Is(err, ErrTypeMismatch):
+	case errors.Is(err, ErrUnableToCoerce):
+		// Malformed data (an ENV_VAR or stored value that does not parse as
+		// the config's type) is PARSE_ERROR, not a wrong-type read (qfg-wg1n).
+		return ErrorCodeParseError
+	case errors.Is(err, ErrTypeMismatch):
 		return ErrorCodeTypeMismatch
 	case errors.Is(err, ErrMissingEnvVar), errors.Is(err, ErrUnableToDecrypt):
 		return ErrorCodeGeneral

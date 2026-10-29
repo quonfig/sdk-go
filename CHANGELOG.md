@@ -2,6 +2,41 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## 2.1.0 - 2026-10-29
+
+Malformed data now has its own error code (qfg-wg1n). Error path only: a
+well-formed value resolves exactly as before.
+
+### Changed (edge-case behaviour change, minor)
+
+- `EvaluateDetails` reports the new `ErrorCodeParseError` (`"PARSE_ERROR"`)
+  instead of `ErrorCodeTypeMismatch` when a value is malformed: an `ENV_VAR`
+  value that does not parse as the config's type (for example `twelve` for an
+  int config). The value is still absent and the reason is still `ERROR`, so
+  your default applies as before. Only the error code changes.
+- The typed getters' errors are unchanged: a malformed `ENV_VAR` value or a
+  malformed stored int, double or duration still wraps `ErrUnableToCoerce`,
+  and a wrong-type read still wraps `ErrTypeMismatch`. Internally the first
+  now maps to `PARSE_ERROR` and the second stays `TYPE_MISMATCH`.
+- Upgrade note: code that compares `EvaluationDetails.ErrorCode` with
+  `ErrorCodeTypeMismatch` to detect a malformed `ENV_VAR` value should compare
+  with `ErrorCodeParseError`. openfeature-go 2.2.0 and later pass the new code
+  straight through as OpenFeature `PARSE_ERROR`; openfeature-go 2.1.x does not
+  know it and reports `GENERAL`, so upgrade the provider to 2.2.0 with this
+  release. Shipped as a minor under the edge-case semver policy
+  (malformed-value error path only; qfg-wg1n).
+
+### Added
+
+- `ErrorCodeParseError` (`"PARSE_ERROR"`).
+
+### Fixed
+
+- A 200 response that the reject-older guard drops as strictly older now
+  rolls back its leg's ETag, as the gen<=0 case does, so a server that repairs
+  the generation for the same sha no longer gets 304s that keep the client on
+  old config (qfg-j7ui).
+
 ## 2.0.0 - 2026-10-23
 
 The typed-getter contract (qfg-zvyy), shared by every Quonfig SDK and pinned

@@ -52,8 +52,13 @@ const (
 	ErrorCodeNone ErrorCode = ""
 	// ErrorCodeFlagNotFound indicates the requested key is not present in the store.
 	ErrorCodeFlagNotFound ErrorCode = "FLAG_NOT_FOUND"
-	// ErrorCodeTypeMismatch indicates a value could not be coerced to the requested type.
+	// ErrorCodeTypeMismatch indicates the config's value is of another type
+	// than the one requested (for example an int read of a string config).
 	ErrorCodeTypeMismatch ErrorCode = "TYPE_MISMATCH"
+	// ErrorCodeParseError indicates malformed data: an ENV_VAR-provided value
+	// that does not parse as the config's type, or a stored int, double or
+	// duration that does not parse. Errors carrying it wrap ErrUnableToCoerce.
+	ErrorCodeParseError ErrorCode = "PARSE_ERROR"
 	// ErrorCodeProviderNotReady indicates the SDK has not finished initialization.
 	ErrorCodeProviderNotReady ErrorCode = "PROVIDER_NOT_READY"
 	// ErrorCodeGeneral covers errors that don't fit the more specific categories

@@ -229,7 +229,7 @@ func TestEvaluateDetails_FlagNotFound_TypedErrorCode(t *testing.T) {
 	}
 }
 
-func TestEvaluateDetails_TypeMismatch_FromEnvVarCoercion(t *testing.T) {
+func TestEvaluateDetails_ParseError_FromEnvVarCoercion(t *testing.T) {
 	envLookup := func(key string) (string, bool) {
 		if key == "PORT" {
 			return "not-a-number", true
@@ -257,8 +257,8 @@ func TestEvaluateDetails_TypeMismatch_FromEnvVarCoercion(t *testing.T) {
 
 	d := client.EvaluateDetails("server.port", nil)
 
-	if d.ErrorCode != ErrorCodeTypeMismatch {
-		t.Fatalf("ErrorCode = %q, want %q (got message: %q)", d.ErrorCode, ErrorCodeTypeMismatch, d.ErrorMessage)
+	if d.ErrorCode != ErrorCodeParseError {
+		t.Fatalf("ErrorCode = %q, want %q (got message: %q)", d.ErrorCode, ErrorCodeParseError, d.ErrorMessage)
 	}
 	if d.ErrorMessage == "" {
 		t.Errorf("ErrorMessage should not be empty for coerce failure")
@@ -272,6 +272,7 @@ func TestErrorCode_StableValues(t *testing.T) {
 		ErrorCodeNone:             "",
 		ErrorCodeFlagNotFound:     "FLAG_NOT_FOUND",
 		ErrorCodeTypeMismatch:     "TYPE_MISMATCH",
+		ErrorCodeParseError:       "PARSE_ERROR",
 		ErrorCodeProviderNotReady: "PROVIDER_NOT_READY",
 		ErrorCodeGeneral:          "GENERAL",
 	}
