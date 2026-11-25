@@ -683,6 +683,14 @@ func forbiddenFrom(secrets [][]byte, plaintext []byte) []string {
 	var out []string
 	for _, s := range secrets {
 		out = append(out, encodings(s)...)
+		// A 6-byte slice of any intermediate is a leak too: hex at every
+		// offset, base64 at the 3-byte boundaries where its text aligns.
+		for i := 0; i+6 <= len(s); i++ {
+			out = append(out, hex.EncodeToString(s[i:i+6]))
+			if i%3 == 0 {
+				out = append(out, base64.RawStdEncoding.EncodeToString(s[i:i+6]), base64.RawURLEncoding.EncodeToString(s[i:i+6]))
+			}
+		}
 	}
 	out = append(out, encodings(plaintext)...)
 	// Any 6-byte window of the plaintext, as text or hex, is a leak too.
