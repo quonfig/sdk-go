@@ -581,6 +581,12 @@ func TestReaderCacheFollowsEnvValue(t *testing.T) {
 		t.Fatalf("want keyset_missing first, got %v", err)
 	}
 	mu.Lock()
+	env[c.Keyset] = "not-a-key"
+	mu.Unlock()
+	if _, err := r.Decrypt(c.Ciphertext); classOf(err) != KeysetInvalid {
+		t.Fatalf("want keyset_invalid for a bad value, got %v", err)
+	}
+	mu.Lock()
 	env[c.Keyset] = v.PositiveEnv[c.Keyset]
 	mu.Unlock()
 	got, err := r.Decrypt(c.Ciphertext)
