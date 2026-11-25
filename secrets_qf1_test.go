@@ -378,3 +378,69 @@ func TestReportableValueForSecret(t *testing.T) {
 		t.Fatal("plain config value redacted")
 	}
 }
+
+func newWireClient(t *testing.T, body string, env map[string]string) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	c, err := NewClient(
+		WithSdkKey("test-key"),
+		WithAPIURLs([]string{srv.URL}),
+		WithSSE(false),
+		WithFallbackPoll(false, 0),
+		WithAllTelemetryDisabled(),
+		WithInitTimeout(5*time.Second),
+		WithEnvLookup(mapEnvLookup(env)),
+	)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Close)
+	return c
+}
+
+// Rule R1 wins over the secret path: a secret value that ALSO carries
+// decryptWith is refused, never decrypted, in datadir and wire mode, even
+// though its qf1 ciphertext would decrypt with the env held.
+func TestDecryptWithOnSecretValueIsRefused(t *testing.T) {
+	v := loadSDKQf1Vectors(t)
+	short := positiveByName(t, v, "short-ascii")
+	doc := stringDoc("both", "secret", short.Ciphertext, true, "some.key")
+	clients := map[string]*Client{
+		"datadir": newDatadirClient(t, writeQf1Workspace(t, map[string]string{"secrets/both.json": doc}), v.PositiveEnv),
+		"wire":    newWireClient(t, envelopeJSON(doc), v.PositiveEnv),
+	}
+	for mode, c := range clients {
+		got, ok, err := c.GetStringValue("both", nil)
+		if !errors.Is(err, ErrUnableToDecrypt) || ok || got != "" {
+			t.Fatalf("%s: both = %q ok=%v err=%v; want ErrUnableToDecrypt", mode, got, ok, err)
+		}
+		if !strings.Contains(err.Error(), "decryptWith") {
+			t.Fatalf("%s: error %q does not name decryptWith", mode, err)
+		}
+	}
+}
+
+// The decrypted value keeps Confidential: true (so every redaction path that
+// keys on it still applies), also when the stored secret lacks the flag.
+func TestDecryptedSecretStaysConfidential(t *testing.T) {
+	v := loadSDKQf1Vectors(t)
+	short := positiveByName(t, v, "short-ascii")
+	dir := writeQf1Workspace(t, map[string]string{
+		"secrets/flagged.json":   stringDoc("flagged", "secret", short.Ciphertext, true, ""),
+		"secrets/unflagged.json": stringDoc("unflagged", "secret", short.Ciphertext, false, ""),
+	})
+	c := newDatadirClient(t, dir, v.PositiveEnv)
+	for _, key := range []string{"flagged", "unflagged"} {
+		val, _, ok, err := c.EvaluateKey(key, nil)
+		if err != nil || !ok || val == nil {
+			t.Fatalf("%s: %v ok=%v err=%v", key, val, ok, err)
+		}
+		if !val.Confidential || val.Type != ValueTypeString || val.StringValue() != short.Plaintext {
+			t.Fatalf("%s: got %+v, want a confidential string %q", key, *val, short.Plaintext)
+		}
+	}
+}
