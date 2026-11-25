@@ -34,6 +34,9 @@ const (
 	ConfigTypeSegment     ConfigType = "segment"
 	ConfigTypeLogLevel    ConfigType = "log_level"
 	ConfigTypeSchema      ConfigType = "schema"
+	// ConfigTypeSecret is a qf1 secret (a document in a workspace's secrets/
+	// directory). Its values are ciphertext; evalcore never decrypts them.
+	ConfigTypeSecret ConfigType = "secret"
 )
 
 // ProvidedData holds the source info for ENV_VAR-provided values.
