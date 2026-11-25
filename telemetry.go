@@ -18,15 +18,16 @@ import (
 const reportableValuePrefix = "*****"
 
 // reportableValueFor returns the redacted form of a value for telemetry
-// reporting, or nil if the value is not confidential and does not require
-// decryption. The hash is computed over the raw stored string value (the
-// ciphertext for decryptWith values, the plaintext for plain confidential
-// values) -- not over the decrypted plaintext.
-func reportableValueFor(val *Value) *string {
+// reporting, or nil if the value needs none. Confidential values, values of a
+// secret document (always, even without the confidential flag) and leftover
+// decryptWith values are redacted. The hash is computed over the raw STORED
+// string (the qf1 ciphertext for a secret, the stored string for a plain
+// confidential value), never over a decrypted plaintext (qf1 spec 13.5).
+func reportableValueFor(val *Value, cfgType ConfigType) *string {
 	if val == nil {
 		return nil
 	}
-	if !val.Confidential && val.DecryptWith == "" {
+	if !val.Confidential && val.DecryptWith == "" && cfgType != ConfigTypeSecret {
 		return nil
 	}
 	raw := val.StringValue()
@@ -87,9 +88,10 @@ func (t *telemetrySubmitter) Stop() {
 // resolver or resolution failed). It is used only for a non-confidential
 // provided (ENV_VAR) value, which reports its resolved value like any ordinary
 // value. A confidential provided value keeps the redaction over the stored
-// (pre-resolution) descriptor, and decryptWith values keep the redaction over
-// the ciphertext, so the env contents and the plaintext never reach telemetry
-// (qfg-goi1.10.16; matches sdk-node fe09070).
+// (pre-resolution) descriptor, and secret values keep the redaction over the
+// stored qf1 ciphertext, so the env contents and the plaintext never reach
+// telemetry (qfg-goi1.10.16; matches sdk-node fe09070; qf1 spec 13.5). The
+// summary type of a secret is "secret" (spec decision 27).
 func (t *telemetrySubmitter) RecordEvaluation(result *EvalResult, resolved *Value) {
 	if result == nil || !result.IsMatch {
 		return
@@ -110,7 +112,7 @@ func (t *telemetrySubmitter) RecordEvaluation(result *EvalResult, resolved *Valu
 		RuleIndex:          result.RuleIndex,
 		WeightedValueIndex: result.WeightedValueIndex,
 		SelectedValue:      selectedValue,
-		ReportableValue:    reportableValueFor(result.Value),
+		ReportableValue:    reportableValueFor(result.Value, result.ConfigType),
 		Reason:             int(result.Reason),
 	})
 }

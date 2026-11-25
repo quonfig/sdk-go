@@ -64,9 +64,59 @@ truncated).
 flag with no matching rule, a non-bool value or any resolution error, and logs
 once per key.
 
-A wrong decryption key or an unset ENV_VAR therefore degrades to your defaults
-with one WARN per key. If a broken config must stop your service, check `err`
-and fail on it.
+A missing or wrong keyset or an unset ENV_VAR therefore degrades to your
+defaults with one WARN per key. If a broken config must stop your service,
+check `err` and fail on it.
+
+## Secrets
+
+Secrets are documents in the workspace's `secrets/` directory. Each value is a
+`qf1:<KEYSET>:<fingerprint>:<payload>` string encrypted to a public key (X25519,
+HKDF-SHA256, AES-256-GCM). The SDK decrypts it when you read the key, so a
+secret is read like any string config:
+
+```go
+dsn, ok, err := client.GetStringValue("database.password", nil)
+```
+
+The private keys come from the environment variable the value names, for
+example `QUONFIG_KEYSET` or `QUONFIG_KEYSET_PROD` (names match
+`^QUONFIG_KEYSET(_[A-Z0-9]+)*$`). The value is one or more `qf1-priv-...`
+entries separated by commas; spaces, tabs and newlines around an entry are
+ignored. The SDK picks the key by the value's keyset name and fingerprint and
+reads no other variable. `WithEnvLookup` replaces the environment lookup, as
+for ENV_VAR-provided values.
+
+- Keysets are read on the first read of a secret, never at startup. A runtime
+  with no keyset (or the wrong one) starts and serves every other key; only
+  the secret reads fail and your default applies. Detect the failure with
+  `errors.Is(err, quonfig.ErrUnableToDecrypt)`. The message reads
+  `unable_to_decrypt: config "<key>": qf1 <class>: ...` (for example
+  `qf1 key_not_held`) and names the keyset and the fingerprints this runtime
+  holds versus the one needed. It never contains key material or the secret,
+  and an invalid keyset name in a value is not echoed. The text is for
+  people; match with `errors.Is`, not on the message.
+- Each read of a secret decrypts it again (one X25519 plus AES-GCM, about
+  40-50 microseconds); the SDK does not cache plaintext. In a hot loop, read
+  the secret once and keep the value.
+- Runtimes that disallow X25519 (for example `GODEBUG=fips140=only`) cannot
+  read secrets: each read fails with `ErrUnableToDecrypt` naming that
+  restriction.
+- Minimum version: older sdk-go releases do not read secrets. Over the wire
+  an older release returns the raw `qf1:` string as the value of a secret
+  key. In datadir mode an older release never opens `secrets/`: a key that
+  exists only there is missing, and a key that still has an old copy in
+  `configs/` is served from that copy. Upgrade every reader before relying on
+  secrets.
+- In datadir mode `secrets/` is read after the other directories, so a secret
+  replaces a same-key document left in `configs/`.
+- Values in the old format (a `decryptWith` reference to a key config) are no
+  longer read. Reading one fails with `quonfig.ErrUnableToDecrypt` and a
+  message naming `decryptWith`; move the secret to `secrets/` with the `qfg`
+  CLI. `Value.DecryptWith` is deprecated.
+- Telemetry reports a secret's evaluations with type `secret` and its value
+  redacted (`*****` plus a short hash of the stored ciphertext), never the
+  plaintext.
 
 ## Startup failure
 

@@ -28,12 +28,12 @@ const (
 )
 
 // testEnvVars is the process environment the integration data expects
-// (ENV_VAR-provided configs and the decryption key). MISSING_ENV_VAR is
-// intentionally NOT set. Cases that need more set their own via t.Setenv.
+// (ENV_VAR-provided configs). MISSING_ENV_VAR is intentionally NOT set. Cases
+// that need more set their own via t.Setenv (the qf1 cases set their
+// QUONFIG_KEYSET* test keysets that way).
 var testEnvVars = map[string]string{
-	"PREFAB_INTEGRATION_TEST_ENCRYPTION_KEY": "c87ba22d8662282abe8a0e4651327b579cb64a454ab0f4c170b45b15f049a221",
-	"IS_A_NUMBER":                            "1234",
-	"NOT_A_NUMBER":                           "not_a_number",
+	"IS_A_NUMBER":  "1234",
+	"NOT_A_NUMBER": "not_a_number",
 }
 
 func TestMain(m *testing.M) {

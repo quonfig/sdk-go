@@ -16,11 +16,12 @@ func confidentialConfig(key, decryptWith, ciphertext string) *ConfigResponse {
 	}
 }
 
-// A decryptWith chain that loops back on itself (a key config that is itself
-// confidential and decrypted with itself, or A->B->A) must surface
-// ErrUnableToDecrypt, not recurse until an unrecoverable stack overflow
-// (qfg-9dxb.4). Same for ciphertext too short to hold a GCM tag.
-func TestGetStringValue_MalformedDecryptionDoesNotCrash(t *testing.T) {
+// Rule R1 (qf1 spec 13.3): this SDK has no decryptWith code, so every value
+// that carries decryptWith fails with ErrUnableToDecrypt on its own, whatever
+// the key config it names looks like: a self-reference, an A->B->A loop
+// (which once overflowed the stack, qfg-9dxb.4) or a key config holding an
+// old-format key. None of them is resolved or followed.
+func TestGetStringValue_DecryptWithValuesFailWithoutFollowingKeyConfigs(t *testing.T) {
 	defer debug.SetMaxStack(debug.SetMaxStack(64 << 20))
 
 	const ct = "AA--00112233445566778899AABB--BB"
@@ -37,7 +38,7 @@ func TestGetStringValue_MalformedDecryptionDoesNotCrash(t *testing.T) {
 		"value decrypts with itself": {
 			"secret": confidentialConfig("secret", "secret", ct),
 		},
-		"short ciphertext": {
+		"old-format key config present": {
 			"secret": confidentialConfig("secret", "k", ct),
 			"k": {
 				Key: "k", ValueType: ValueTypeString,

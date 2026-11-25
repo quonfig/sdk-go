@@ -7,6 +7,7 @@ package fixtures
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -216,4 +217,53 @@ func TestGetWeightedValues_WeightedValueWithNoHashPropertyIsRandomOnEveryEvaluat
 		seen[got] = true
 	}
 	assert.Equal(t, map[int64]bool{int64(1): true, int64(2): true}, seen, "values seen over 200 evaluations")
+}
+
+// weighted json variant returns the json object
+func TestGetWeightedValues_WeightedJsonVariantReturnsTheJsonObject(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetJSONValue("weighted.variant.json", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "weighted.variant.json")
+	want := map[string]interface{}{"variant": "json", "n": 1}
+	assertJSONValue(t, want, got)
+}
+
+// weighted duration variant returns the duration
+func TestGetWeightedValues_WeightedDurationVariantReturnsTheDuration(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetDurationValue("weighted.variant.duration", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "weighted.variant.duration")
+	want := time.Duration(90000) * time.Millisecond
+	assert.Equal(t, want, got)
+}
+
+// weighted ENV_VAR variant reads the env var coerced to int
+func TestGetWeightedValues_WeightedENVVARVariantReadsTheEnvVarCoercedToInt(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetIntValue("weighted.variant.provided.int", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "weighted.variant.provided.int")
+	want := int64(1234)
+	assert.Equal(t, want, got)
+}
+
+// weighted ENV_VAR variant with a missing env var returns the default
+func TestGetWeightedValues_WeightedENVVARVariantWithAMissingEnvVarReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("weighted.variant.provided.missing", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}}))
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// weighted ENV_VAR variant with a missing env var and no default returns nil
+func TestGetWeightedValues_WeightedENVVARVariantWithAMissingEnvVarAndNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("weighted.variant.provided.missing", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}}))
+	assert.False(t, ok, "%q must have no value", "weighted.variant.provided.missing")
+	assert.Zero(t, got)
 }

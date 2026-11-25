@@ -1085,7 +1085,11 @@ func TestEnabled_EnabledOnAMissingBoolEnvVarReturnsFalse(t *testing.T) {
 
 // enabled on a decryption failure returns false
 func TestEnabled_EnabledOnADecryptionFailureReturnsFalse(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
 	c := mustPublicClient(t)
-	on, _ := c.FeatureIsOn("a.broken.secret.config", nil)
-	assert.Equal(t, false, on, "FeatureIsOn(%q)", "a.broken.secret.config")
+	on, _ := c.FeatureIsOn("qf1.secret.key.not.held", nil)
+	assert.Equal(t, false, on, "FeatureIsOn(%q)", "qf1.secret.key.not.held")
 }

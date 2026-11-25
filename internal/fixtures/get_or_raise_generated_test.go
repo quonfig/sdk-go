@@ -305,6 +305,24 @@ func TestGetOrRaise_RaisesAnErrorIfAConfigIsProvidedByAMissingEnvironmentVariabl
 	require.ErrorIs(t, err, quonfig.ErrMissingEnvVar)
 }
 
+// raises an error if a weighted variant is provided by a missing environment variable
+func TestGetOrRaise_RaisesAnErrorIfAWeightedVariantIsProvidedByAMissingEnvironmentVariable(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("weighted.variant.provided.missing", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}}))
+	assert.False(t, ok, "%q must have no value", "weighted.variant.provided.missing")
+	require.ErrorIs(t, err, quonfig.ErrMissingEnvVar)
+}
+
+// get_or_raise on a weighted ENV_VAR variant returns the env var coerced to int
+func TestGetOrRaise_GetOrRaiseOnAWeightedENVVARVariantReturnsTheEnvVarCoercedToInt(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, err := c.GetIntValue("weighted.variant.provided.int", contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}}))
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "weighted.variant.provided.int")
+	want := int64(1234)
+	assert.Equal(t, want, got)
+}
+
 // raises an error if an env-var-provided config cannot be coerced to configured type
 func TestGetOrRaise_RaisesAnErrorIfAnEnvVarProvidedConfigCannotBeCoercedToConfiguredType(t *testing.T) {
 	c := mustPublicClient(t)
@@ -337,11 +355,116 @@ func TestGetOrRaise_CoercionErrorForADoubleEnvVarNamesTheVariableAndNeverItsValu
 	assert.NotContains(t, err.Error(), "postgres://")
 }
 
-// raises an error for decryption failure
-func TestGetOrRaise_RaisesAnErrorForDecryptionFailure(t *testing.T) {
+// get_or_raise decrypts a qf1 secret
+func TestGetOrRaise_GetOrRaiseDecryptsAQf1Secret(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
 	c := mustPublicClient(t)
-	_, ok, err := c.GetStringValue("a.broken.secret.config", nil)
-	assert.False(t, ok, "%q must have no value", "a.broken.secret.config")
+	got, ok, err := c.GetStringValue("qf1.secret.short", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "qf1.secret.short")
+	want := "hello"
+	assert.Equal(t, want, got)
+}
+
+// raises unable_to_decrypt for a qf1 secret on a keyset the environment does not hold
+func TestGetOrRaise_RaisesUnableToDecryptForAQf1SecretOnAKeysetTheEnvironmentDoesNotHold(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("qf1.secret.keyset.missing", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.secret.keyset.missing")
+	require.ErrorIs(t, err, quonfig.ErrUnableToDecrypt)
+	assert.NotContains(t, err.Error(), "qf1-priv-")
+}
+
+// raises unable_to_decrypt for a qf1 secret whose fingerprint is not held
+func TestGetOrRaise_RaisesUnableToDecryptForAQf1SecretWhoseFingerprintIsNotHeld(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("qf1.secret.key.not.held", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.secret.key.not.held")
+	require.ErrorIs(t, err, quonfig.ErrUnableToDecrypt)
+	assert.NotContains(t, err.Error(), "qf1-priv-")
+}
+
+// raises unable_to_decrypt for a qf1 secret held only under another keyset
+func TestGetOrRaise_RaisesUnableToDecryptForAQf1SecretHeldOnlyUnderAnotherKeyset(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("qf1.secret.cross.keyset", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.secret.cross.keyset")
+	require.ErrorIs(t, err, quonfig.ErrUnableToDecrypt)
+	assert.NotContains(t, err.Error(), "qf1-priv-")
+}
+
+// raises unable_to_decrypt for a qf1 secret with a tampered header
+func TestGetOrRaise_RaisesUnableToDecryptForAQf1SecretWithATamperedHeader(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("qf1.secret.tampered.header", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.secret.tampered.header")
+	require.ErrorIs(t, err, quonfig.ErrUnableToDecrypt)
+	assert.NotContains(t, err.Error(), "qf1-priv-")
+}
+
+// raises unable_to_decrypt for a qf1 secret whose keyset name is invalid even when that env var holds its key
+func TestGetOrRaise_RaisesUnableToDecryptForAQf1SecretWhoseKeysetNameIsInvalidEvenWhenThatEnvVarHoldsItsKey(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("qf1.secret.keyset.name.invalid", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.secret.keyset.name.invalid")
+	require.ErrorIs(t, err, quonfig.ErrUnableToDecrypt)
+	assert.NotContains(t, err.Error(), "qf1-priv-")
+}
+
+// raises unable_to_decrypt for a qf1 secret with a trailing colon
+func TestGetOrRaise_RaisesUnableToDecryptForAQf1SecretWithATrailingColon(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("qf1.secret.trailing.colon", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.secret.trailing.colon")
+	require.ErrorIs(t, err, quonfig.ErrUnableToDecrypt)
+	assert.NotContains(t, err.Error(), "qf1-priv-")
+}
+
+// raises unable_to_decrypt for a qf1 secret whose shared secret is all zero
+func TestGetOrRaise_RaisesUnableToDecryptForAQf1SecretWhoseSharedSecretIsAllZero(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("qf1.secret.low.order.ephemeral", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.secret.low.order.ephemeral")
+	require.ErrorIs(t, err, quonfig.ErrUnableToDecrypt)
+	assert.NotContains(t, err.Error(), "qf1-priv-")
+}
+
+// raises unable_to_decrypt for a value that still carries decryptWith
+func TestGetOrRaise_RaisesUnableToDecryptForAValueThatStillCarriesDecryptWith(t *testing.T) {
+	c := mustPublicClient(t)
+	_, ok, err := c.GetStringValue("qf1.legacy.decrypt.with", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.legacy.decrypt.with")
 	require.ErrorIs(t, err, quonfig.ErrUnableToDecrypt)
 }
 
