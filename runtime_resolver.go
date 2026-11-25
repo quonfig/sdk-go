@@ -8,46 +8,76 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/quonfig/sdk-go/v2/internal/encryption"
+	"github.com/quonfig/sdk-go/v2/internal/qf1"
 )
 
 type runtimeResolver struct {
 	envLookup EnvLookupFunc
 	store     configStore
-	evaluator *runtimeEvaluator
+	secrets   *qf1.Reader
 }
 
-func newRuntimeResolver(store configStore, evaluator *runtimeEvaluator, envLookup EnvLookupFunc) *runtimeResolver {
+// newRuntimeResolver builds the resolver for one installed store. secrets is
+// the client's qf1 reader; it outlives installs so its keyset cache does too.
+func newRuntimeResolver(store configStore, secrets *qf1.Reader, envLookup EnvLookupFunc) *runtimeResolver {
 	if envLookup == nil {
 		envLookup = os.LookupEnv
+	}
+	if secrets == nil {
+		secrets = qf1.NewReader(qf1.LookupFunc(envLookup))
 	}
 	return &runtimeResolver{
 		envLookup: envLookup,
 		store:     store,
-		evaluator: evaluator,
+		secrets:   secrets,
 	}
 }
 
 func (r *runtimeResolver) ResolveValue(val *Value, configKey string, valueType ValueType, envID string, ctx *ContextSet) (*Value, error) {
-	return r.resolveValue(val, configKey, valueType, envID, ctx, nil)
-}
-
-// resolveValue is ResolveValue plus keyPath: the config keys already being
-// resolved above this one through decryptWith. A decryptWith that points back
-// onto the path (a key config decrypted with itself, or A->B->A) is a cycle
-// and returns ErrUnableToDecrypt instead of recursing until an unrecoverable
-// stack overflow (qfg-9dxb.4).
-func (r *runtimeResolver) resolveValue(val *Value, configKey string, valueType ValueType, envID string, ctx *ContextSet, keyPath []string) (*Value, error) {
 	if val == nil {
 		return nil, nil
+	}
+	// qf1 spec 13.3 R1: this SDK has no decryptWith code. A value that still
+	// carries one fails like any undecryptable value and is never returned as
+	// its stored (ciphertext) string.
+	if val.DecryptWith != "" {
+		return nil, fmt.Errorf("%w: config %q: value uses decryptWith (the old secrets format), which this SDK no longer reads; store it in secrets/ as a qf1 secret", ErrUnableToDecrypt, configKey)
+	}
+	if r.isSecret(configKey) {
+		return r.resolveSecret(val, configKey)
 	}
 	if val.Type == ValueTypeProvided {
 		return r.resolveProvided(val, configKey, valueType)
 	}
-	if val.Confidential && val.DecryptWith != "" {
-		return r.resolveDecryption(val, configKey, envID, ctx, keyPath)
-	}
 	return val, nil
+}
+
+func (r *runtimeResolver) isSecret(configKey string) bool {
+	if r.store == nil {
+		return false
+	}
+	cfg, ok := r.store.Get(configKey)
+	return ok && cfg.Type == ConfigTypeSecret
+}
+
+// resolveSecret decrypts a value of a secret document lazily, on get (qf1
+// spec 8). A failure fails only this get (9.3) and wraps ErrUnableToDecrypt;
+// the qf1 error text names keyset and fingerprints, never key material, the
+// payload or the plaintext (9.2).
+func (r *runtimeResolver) resolveSecret(val *Value, configKey string) (*Value, error) {
+	stored, ok := val.Value.(string)
+	if !ok || val.Type != ValueTypeString {
+		return nil, fmt.Errorf("%w: config %q: secret value is not a qf1 string", ErrUnableToDecrypt, configKey)
+	}
+	plain, err := r.secrets.Decrypt(stored)
+	if err != nil {
+		return nil, fmt.Errorf("%w: config %q: %w", ErrUnableToDecrypt, configKey, err)
+	}
+	return &Value{
+		Type:         ValueTypeString,
+		Value:        plain,
+		Confidential: true,
+	}, nil
 }
 
 func (r *runtimeResolver) resolveProvided(val *Value, configKey string, valueType ValueType) (*Value, error) {
@@ -72,46 +102,6 @@ func (r *runtimeResolver) resolveProvided(val *Value, configKey string, valueTyp
 	return &Value{
 		Type:  valueTypeToType(valueType),
 		Value: coerced,
-	}, nil
-}
-
-func (r *runtimeResolver) resolveDecryption(val *Value, configKey, envID string, ctx *ContextSet, keyPath []string) (*Value, error) {
-	keyPath = append(keyPath[:len(keyPath):len(keyPath)], configKey)
-	for _, k := range keyPath {
-		if k == val.DecryptWith {
-			return nil, fmt.Errorf("%w: decryption key config %q is part of a decryptWith cycle", ErrUnableToDecrypt, val.DecryptWith)
-		}
-	}
-
-	keyCfg, ok := r.store.Get(val.DecryptWith)
-	if !ok {
-		return nil, fmt.Errorf("%w: decryption key config %q not found", ErrUnableToDecrypt, val.DecryptWith)
-	}
-
-	keyResult := r.evaluator.EvaluateConfigResponse(keyCfg, envID, ctx)
-	if keyResult == nil || !keyResult.IsMatch || keyResult.Value == nil {
-		return nil, fmt.Errorf("%w: decryption key config %q did not match", ErrUnableToDecrypt, val.DecryptWith)
-	}
-
-	resolvedKey, err := r.resolveValue(keyResult.Value, keyCfg.Key, keyCfg.ValueType, envID, ctx, keyPath)
-	if err != nil {
-		return nil, fmt.Errorf("%w: failed to resolve decryption key from %q: %v", ErrUnableToDecrypt, val.DecryptWith, err)
-	}
-
-	secretKey := resolvedKey.StringValue()
-	if secretKey == "" {
-		return nil, fmt.Errorf("%w: decryption key from %q is empty", ErrUnableToDecrypt, val.DecryptWith)
-	}
-
-	decrypted, err := encryption.DecryptValue(secretKey, val.StringValue())
-	if err != nil {
-		return nil, fmt.Errorf("%w: decryption failed for config %q: %v", ErrUnableToDecrypt, configKey, err)
-	}
-
-	return &Value{
-		Type:         ValueTypeString,
-		Value:        decrypted,
-		Confidential: true,
 	}, nil
 }
 

@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"runtime/debug"
 	"sync"
 	"time"
 
+	"github.com/quonfig/sdk-go/v2/internal/qf1"
 	"github.com/quonfig/sdk-go/v2/internal/version"
 )
 
@@ -26,7 +28,12 @@ var ErrMissingEnvVar = errors.New("missing_env_var")
 // ErrUnableToCoerce is returned when an ENV_VAR-provided config cannot be coerced to the target type.
 var ErrUnableToCoerce = errors.New("unable_to_coerce_env_var")
 
-// ErrUnableToDecrypt is returned when a confidential value cannot be decrypted.
+// ErrUnableToDecrypt is returned when a value cannot be decrypted: a qf1
+// secret whose keyset env var is missing or invalid, whose key this runtime
+// does not hold, or that fails to parse or authenticate (the error text starts
+// "qf1 <class>:", naming the keyset and fingerprints, never key material), and
+// any value that still carries the old decryptWith format, which this SDK no
+// longer reads.
 var ErrUnableToDecrypt = errors.New("unable_to_decrypt")
 
 // ErrTypeMismatch is returned by a typed getter when the config's value is not
@@ -34,6 +41,15 @@ var ErrUnableToDecrypt = errors.New("unable_to_decrypt")
 // are never coerced: a stored "false" is a string, not a bool. The only
 // conversions are int to double, and a whole double within +/-(2^53-1) to int.
 var ErrTypeMismatch = errors.New("type_mismatch")
+
+// newSecretsReader returns the qf1 reader for a client whose env lookup is
+// lookup (nil means the process environment).
+func newSecretsReader(lookup EnvLookupFunc) *qf1.Reader {
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	return qf1.NewReader(qf1.LookupFunc(lookup))
+}
 
 // configStore is a minimal interface for looking up configs by key.
 type configStore interface {
@@ -63,6 +79,11 @@ type Client struct {
 	evaluator ConfigEvaluator
 	resolver  ValueResolver
 	envID     string // environment ID for evaluation (e.g. "Production")
+
+	// secrets reads qf1 secret values. It lives for the client so its parsed
+	// keyset cache survives envelope installs; keysets are read lazily from
+	// EnvLookup on the first get of a secret, never at startup.
+	secrets *qf1.Reader
 
 	transport *runtimeTransport
 	telemetry *telemetrySubmitter
@@ -208,6 +229,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		closeCh:            make(chan struct{}),
 		resolvedFromIndex:  -1,
 		sseStreamIndex:     -1,
+		secrets:            newSecretsReader(o.EnvLookup),
 	}
 
 	if o.TelemetryEnabled() {
@@ -1344,7 +1366,7 @@ func (c *Client) installEnvelope(envelope *ConfigEnvelope, sourceIndex int) {
 	store := newRuntimeStore()
 	store.Update(envelope)
 	evaluator := newRuntimeEvaluator(store)
-	resolver := newRuntimeResolver(store, evaluator, c.opts.EnvLookup)
+	resolver := newRuntimeResolver(store, c.secrets, c.opts.EnvLookup)
 
 	c.mu.Lock()
 	c.store = store

@@ -40,6 +40,11 @@ const (
 	ConfigTypeSegment     ConfigType = "segment"
 	ConfigTypeLogLevel    ConfigType = "log_level"
 	ConfigTypeSchema      ConfigType = "schema"
+	// ConfigTypeSecret is a qf1 secret: a document in the workspace's
+	// secrets/ directory (or a type "secret" entry on the wire). Its values
+	// are qf1 ciphertext, decrypted on get with the private keys in the
+	// QUONFIG_KEYSET* env var each value names.
+	ConfigTypeSecret ConfigType = "secret"
 )
 
 // Value is the universal value wrapper.
@@ -47,7 +52,13 @@ type Value struct {
 	Type         ValueType   `json:"type"`
 	Value        interface{} `json:"value"`
 	Confidential bool        `json:"confidential,omitempty"`
-	DecryptWith  string      `json:"decryptWith,omitempty"`
+	// DecryptWith is the key config of the old (pre-qf1) secrets format.
+	//
+	// Deprecated: the SDK no longer reads decryptWith values. Any value that
+	// carries one fails with ErrUnableToDecrypt (qf1 spec 13.3 R1); secrets
+	// now live in the workspace's secrets/ directory as qf1 values. The field
+	// is still decoded so such values can be recognized and refused.
+	DecryptWith string `json:"decryptWith,omitempty"`
 }
 
 // BoolValue returns the value as bool, or false.

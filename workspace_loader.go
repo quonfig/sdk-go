@@ -16,12 +16,21 @@ import (
 // schemas/ is intentionally excluded: those files are raw JSON Schema documents,
 // not Configs, and SDKs do not consume them. Including them caused empty-Key
 // stub rows in the in-memory store. Mirrors api-delivery (qfg-uzsl).
+//
+// secrets/ MUST stay last (qf1 spec 13.7): the store is a map by key and the
+// last write wins, so a secret shadows a same-key document left in configs/
+// during the move to qf1.
 var workspaceSubdirectories = []string{
 	"configs",
 	"feature-flags",
 	"segments",
 	"log-levels",
+	secretsSubdirectory,
 }
+
+// secretsSubdirectory holds qf1 secrets. A document's directory, not its
+// "type" field, makes it a secret.
+const secretsSubdirectory = "secrets"
 
 type workspaceConfig struct {
 	ID              string        `json:"id"`
@@ -116,6 +125,9 @@ func loadWorkspaceConfigs(dir string) ([]workspaceConfig, error, error) {
 			if err != nil {
 				errs = append(errs, fmt.Errorf("parse %s: %w", filePath, err))
 				return nil
+			}
+			if subdir == secretsSubdirectory {
+				cfg.Type = ConfigTypeSecret
 			}
 			configs = append(configs, *cfg)
 			return nil
