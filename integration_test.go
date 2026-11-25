@@ -339,11 +339,14 @@ func TestIntegration_FrontendFiltering(t *testing.T) {
 		t.Errorf("expected %q for james.test.key via frontend, got %q", "test4", val)
 	}
 
-	// A backend-only key should be visible to the backend client but absent from the frontend client.
-	if _, ok, err := backendClient.GetStringValue("brand.new.secret", nil); err != nil || !ok {
-		t.Fatalf("expected backend client to see brand.new.secret, ok=%v err=%v", ok, err)
+	// A backend-only key (sendToClientSdk=false) should be visible to the
+	// backend client but absent from the frontend client. brand.new.string
+	// replaces brand.new.secret, removed from integration-test-data with the
+	// old decryptWith fixtures (qfg-8seuf.3).
+	if _, ok, err := backendClient.GetStringValue("brand.new.string", nil); err != nil || !ok {
+		t.Fatalf("expected backend client to see brand.new.string, ok=%v err=%v", ok, err)
 	}
-	if _, ok, err := frontendClient.GetStringValue("brand.new.secret", nil); err != quonfig.ErrNotFound || ok {
-		t.Fatalf("expected frontend client to hide brand.new.secret, ok=%v err=%v", ok, err)
+	if _, ok, err := frontendClient.GetStringValue("brand.new.string", nil); err != quonfig.ErrNotFound || ok {
+		t.Fatalf("expected frontend client to hide brand.new.string, ok=%v err=%v", ok, err)
 	}
 }

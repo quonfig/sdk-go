@@ -195,12 +195,16 @@ func TestTelemetry_ConfidentialPlainStringIsRedactedInSelectedValue(t *testing.T
 	assertTelemetryPost(t, tel, "evaluation_summary", []interface{}{map[string]interface{}{"key": "confidential.new.string", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"string": "*****18aa7"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
 }
 
-// confidential encrypted string is redacted using ciphertext hash
-func TestTelemetry_ConfidentialEncryptedStringIsRedactedUsingCiphertextHash(t *testing.T) {
+// qf1 secret is redacted using the ciphertext hash and reported as a secret
+func TestTelemetry_Qf1SecretIsRedactedUsingTheCiphertextHashAndReportedAsASecret(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
 	tel := startTelemetryClient(t, map[string]interface{}{})
 	c := tel.Client
-	_, _, _ = c.GetStringValue("a.secret.config", nil)
-	assertTelemetryPost(t, tel, "evaluation_summary", []interface{}{map[string]interface{}{"key": "a.secret.config", "type": "CONFIG", "value": "hello.world", "value_type": "string", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"string": "*****936c9"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+	_, _, _ = c.GetStringValue("qf1.secret.short", nil)
+	assertTelemetryPost(t, tel, "evaluation_summary", []interface{}{map[string]interface{}{"key": "qf1.secret.short", "type": "SECRET", "value": "hello", "value_type": "string", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"string": "*****73985"}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
 }
 
 // confidential weighted variant is redacted in selectedValue
@@ -227,6 +231,14 @@ func TestTelemetry_NonConfidentialENVVARProvidedValueIsReportedAsItsResolvedValu
 	c := tel.Client
 	_, _, _ = c.GetIntValue("provided.a.number", nil)
 	assertTelemetryPost(t, tel, "evaluation_summary", []interface{}{map[string]interface{}{"key": "provided.a.number", "type": "CONFIG", "value": 1234, "value_type": "int", "count": 1, "reason": 1, "selected_value": map[string]interface{}{"int": 1234}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0}}}, "/api/v1/telemetry")
+}
+
+// weighted ENV_VAR variant is reported as its resolved value with reason SPLIT
+func TestTelemetry_WeightedENVVARVariantIsReportedAsItsResolvedValueWithReasonSPLIT(t *testing.T) {
+	tel := startTelemetryClient(t, map[string]interface{}{})
+	c := tel.Client
+	_, _, _ = c.WithContext(contextSet(map[string]map[string]interface{}{"user": {"tracking_id": "92a202f2"}})).GetIntValue("weighted.variant.provided.int")
+	assertTelemetryPost(t, tel, "evaluation_summary", []interface{}{map[string]interface{}{"key": "weighted.variant.provided.int", "type": "CONFIG", "value": 1234, "value_type": "int", "count": 1, "reason": 3, "selected_value": map[string]interface{}{"int": 1234}, "summary": map[string]interface{}{"config_row_index": 0, "conditional_value_index": 0, "weighted_value_index": 0}}}, "/api/v1/telemetry")
 }
 
 // checkRedactedSelectedValues asserts every counter for keys reports a

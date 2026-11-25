@@ -75,11 +75,12 @@ func TestGet_GetCanReturnAStringList(t *testing.T) {
 
 // can return a value provided by an environment variable
 func TestGet_CanReturnAValueProvidedByAnEnvironmentVariable(t *testing.T) {
+	t.Setenv("GREETING", "hello from the environment")
 	c := mustPublicClient(t)
-	got, ok, err := c.GetStringValue("prefab.secrets.encryption.key", nil)
+	got, ok, err := c.GetStringValue("greeting.from.env", nil)
 	require.NoError(t, err)
-	require.True(t, ok, "%q found no value", "prefab.secrets.encryption.key")
-	want := "c87ba22d8662282abe8a0e4651327b579cb64a454ab0f4c170b45b15f049a221"
+	require.True(t, ok, "%q found no value", "greeting.from.env")
+	want := "hello from the environment"
 	assert.Equal(t, want, got)
 }
 
@@ -93,24 +94,266 @@ func TestGet_CanReturnAValueProvidedByAnEnvironmentVariableAfterTypeCoercion(t *
 	assert.Equal(t, want, got)
 }
 
-// can decrypt and return a secret value (with decryption key in in env var)
-func TestGet_CanDecryptAndReturnASecretValueWithDecryptionKeyInInEnvVar(t *testing.T) {
+// decrypts a qf1 secret
+func TestGet_DecryptsAQf1Secret(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
 	c := mustPublicClient(t)
-	got, ok, err := c.GetStringValue("a.secret.config", nil)
+	got, ok, err := c.GetStringValue("qf1.secret.short", nil)
 	require.NoError(t, err)
-	require.True(t, ok, "%q found no value", "a.secret.config")
-	want := "hello.world"
+	require.True(t, ok, "%q found no value", "qf1.secret.short")
+	want := "hello"
 	assert.Equal(t, want, got)
 }
 
-// decrypts a secret whose key config has an environment rule
-func TestGet_DecryptsASecretWhoseKeyConfigHasAnEnvironmentRule(t *testing.T) {
+// decrypts a qf1 secret whose value is the empty string
+func TestGet_DecryptsAQf1SecretWhoseValueIsTheEmptyString(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
 	c := mustPublicClient(t)
-	got, ok, err := c.GetStringValue("env.scoped.secret", nil)
+	got, ok, err := c.GetStringValue("qf1.secret.empty", nil)
 	require.NoError(t, err)
-	require.True(t, ok, "%q found no value", "env.scoped.secret")
-	want := "hello.world"
+	require.True(t, ok, "%q found no value", "qf1.secret.empty")
+	want := ""
 	assert.Equal(t, want, got)
+}
+
+// decrypts a qf1 secret with multi-byte UTF-8
+func TestGet_DecryptsAQf1SecretWithMultiByteUTF8(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("qf1.secret.multibyte", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "qf1.secret.multibyte")
+	want := "pässwörd 日本語 🔑"
+	assert.Equal(t, want, got)
+}
+
+// decrypts a qf1 secret and keeps its leading U+FEFF
+func TestGet_DecryptsAQf1SecretAndKeepsItsLeadingUFEFF(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("qf1.secret.leading.bom", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "qf1.secret.leading.bom")
+	want := "\ufeffbom stays"
+	assert.Equal(t, want, got)
+}
+
+// decrypts a qf1 secret with quotes, backslash, newline, tab and colons
+func TestGet_DecryptsAQf1SecretWithQuotesBackslashNewlineTabAndColons(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("qf1.secret.json.special", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "qf1.secret.json.special")
+	want := "a\"b\\c\nd\te:f,g qf1:x"
+	assert.Equal(t, want, got)
+}
+
+// decrypts a qf1 secret on the bare QUONFIG_KEYSET keyset
+func TestGet_DecryptsAQf1SecretOnTheBareQUONFIGKEYSETKeyset(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("qf1.secret.default.keyset", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "qf1.secret.default.keyset")
+	want := "sk_test_default_keyset_value"
+	assert.Equal(t, want, got)
+}
+
+// decrypts a qf1 secret encrypted to the second key of a two-key keyset
+func TestGet_DecryptsAQf1SecretEncryptedToTheSecondKeyOfATwoKeyKeyset(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("qf1.secret.older.key", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "qf1.secret.older.key")
+	want := "written before rotation"
+	assert.Equal(t, want, got)
+}
+
+// decrypts the environment-scoped value of a qf1 secret on a second keyset
+func TestGet_DecryptsTheEnvironmentScopedValueOfAQf1SecretOnASecondKeyset(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("qf1.secret.env.scoped", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "qf1.secret.env.scoped")
+	want := "written with the first public key"
+	assert.Equal(t, want, got)
+}
+
+// a qf1 secret shadows a document with the same key in configs
+func TestGet_AQf1SecretShadowsADocumentWithTheSameKeyInConfigs(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, err := c.GetStringValue("qf1.secret.shadowed", nil)
+	require.NoError(t, err)
+	require.True(t, ok, "%q found no value", "qf1.secret.shadowed")
+	want := "hello"
+	assert.Equal(t, want, got)
+}
+
+// qf1 secret on a keyset the environment does not hold returns the default
+func TestGet_Qf1SecretOnAKeysetTheEnvironmentDoesNotHoldReturnsTheDefault(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.secret.keyset.missing", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// qf1 secret on a keyset the environment does not hold with no default returns nil
+func TestGet_Qf1SecretOnAKeysetTheEnvironmentDoesNotHoldWithNoDefaultReturnsNil(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.secret.keyset.missing", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.secret.keyset.missing")
+	assert.Zero(t, got)
+}
+
+// qf1 secret whose fingerprint is not held returns the default
+func TestGet_Qf1SecretWhoseFingerprintIsNotHeldReturnsTheDefault(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.secret.key.not.held", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// qf1 secret is looked up by keyset and fingerprint, never in another keyset
+func TestGet_Qf1SecretIsLookedUpByKeysetAndFingerprintNeverInAnotherKeyset(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.secret.cross.keyset", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// qf1 secret with a tampered header returns the default
+func TestGet_Qf1SecretWithATamperedHeaderReturnsTheDefault(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.secret.tampered.header", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// qf1 secret whose keyset name is invalid is refused even when that env var holds its key
+func TestGet_Qf1SecretWhoseKeysetNameIsInvalidIsRefusedEvenWhenThatEnvVarHoldsItsKey(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.secret.keyset.name.invalid", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// qf1 secret with a trailing colon is refused
+func TestGet_Qf1SecretWithATrailingColonIsRefused(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.secret.trailing.colon", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// qf1 secret whose ephemeral key gives an all-zero shared secret is refused
+func TestGet_Qf1SecretWhoseEphemeralKeyGivesAnAllZeroSharedSecretIsRefused(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.secret.low.order.ephemeral", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// a value that still carries decryptWith returns the default
+func TestGet_AValueThatStillCarriesDecryptWithReturnsTheDefault(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.legacy.decrypt.with", nil)
+	if !ok {
+		got = "DEFAULT"
+	}
+	want := "DEFAULT"
+	assert.Equal(t, want, got)
+}
+
+// a value that still carries decryptWith with no default returns nil
+func TestGet_AValueThatStillCarriesDecryptWithWithNoDefaultReturnsNil(t *testing.T) {
+	c := mustPublicClient(t)
+	got, ok, _ := c.GetStringValue("qf1.legacy.decrypt.with", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.legacy.decrypt.with")
+	assert.Zero(t, got)
 }
 
 // duration 200 ms
@@ -1619,8 +1862,12 @@ func TestGet_STRINGGetterOnAMissingEnvVarWithNoDefaultReturnsNil(t *testing.T) {
 
 // STRING getter on a decryption failure returns the default
 func TestGet_STRINGGetterOnADecryptionFailureReturnsTheDefault(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
 	c := mustPublicClient(t)
-	got, ok, _ := c.GetStringValue("a.broken.secret.config", nil)
+	got, ok, _ := c.GetStringValue("qf1.secret.key.not.held", nil)
 	if !ok {
 		got = "DEFAULT"
 	}
@@ -1630,9 +1877,13 @@ func TestGet_STRINGGetterOnADecryptionFailureReturnsTheDefault(t *testing.T) {
 
 // STRING getter on a decryption failure with no default returns nil
 func TestGet_STRINGGetterOnADecryptionFailureWithNoDefaultReturnsNil(t *testing.T) {
+	t.Setenv("QUONFIG_KEYSET", qf1TestKeyset("QUONFIG_KEYSET/1"))
+	t.Setenv("QUONFIG_KEYSETX", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST", qf1TestKeyset("QUONFIG_KEYSET_TEST/1"))
+	t.Setenv("QUONFIG_KEYSET_TEST_PROD", qf1TestKeyset("QUONFIG_KEYSET_TEST_PROD/new", "QUONFIG_KEYSET_TEST_PROD/old"))
 	c := mustPublicClient(t)
-	got, ok, _ := c.GetStringValue("a.broken.secret.config", nil)
-	assert.False(t, ok, "%q must have no value", "a.broken.secret.config")
+	got, ok, _ := c.GetStringValue("qf1.secret.key.not.held", nil)
+	assert.False(t, ok, "%q must have no value", "qf1.secret.key.not.held")
 	assert.Zero(t, got)
 }
 
