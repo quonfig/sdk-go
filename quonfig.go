@@ -30,10 +30,19 @@ var ErrUnableToCoerce = errors.New("unable_to_coerce_env_var")
 
 // ErrUnableToDecrypt is returned when a value cannot be decrypted: a qf1
 // secret whose keyset env var is missing or invalid, whose key this runtime
-// does not hold, or that fails to parse or authenticate (the error text starts
-// "qf1 <class>:", naming the keyset and fingerprints, never key material), and
-// any value that still carries the old decryptWith format, which this SDK no
-// longer reads.
+// does not hold, or that fails to parse or authenticate, and any value that
+// still carries the old decryptWith format, which this SDK no longer reads.
+//
+// Detect it with errors.Is(err, ErrUnableToDecrypt); that is the stable
+// contract. The message reads
+//
+//	unable_to_decrypt: config "<key>": qf1 <class>: <detail>
+//
+// for a qf1 failure (class is one of the qf1 spec's reader classes, such as
+// keyset_missing or key_not_held; the detail names the keyset and the
+// fingerprints, never key material or the value), or names decryptWith for an
+// old-format value. The text is for people, not for matching. The error
+// wraps two errors, so errors.Unwrap returns nil; use errors.Is.
 var ErrUnableToDecrypt = errors.New("unable_to_decrypt")
 
 // ErrTypeMismatch is returned by a typed getter when the config's value is not

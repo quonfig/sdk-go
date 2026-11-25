@@ -14,8 +14,8 @@ qf1 secrets (qfg-8seuf.9; spec `project/plans/secrets-qf1-spec.md`).
   A missing or invalid keyset, or a key this runtime does not hold, fails only
   that read with `ErrUnableToDecrypt` (message `qf1 <class>: ...`, naming the
   keyset and fingerprints), never startup.
-- `ConfigTypeSecret` (`"secret"`). Datadir mode loads `secrets/` last, so a
-  secret shadows a same-key document in `configs/`.
+- `ConfigTypeSecret` (`"secret"`), also in `evalcore`. Datadir mode loads
+  `secrets/` last, so a secret shadows a same-key document in `configs/`.
 - Telemetry reports secret evaluations with type `secret`, redacted over the
   stored ciphertext.
 
@@ -24,9 +24,15 @@ qf1 secrets (qfg-8seuf.9; spec `project/plans/secrets-qf1-spec.md`).
 - Values that carry `decryptWith` (the old secrets format) are no longer
   decrypted: reading one fails with `ErrUnableToDecrypt` and a message naming
   `decryptWith`. Move such secrets to `secrets/` before upgrading.
-- Upgrade note: an older sdk-go that reads a key stored only in `secrets/`
-  returns the raw `qf1:` string as its value; upgrade before relying on
-  secrets.
+- Upgrade note (minimum version): an older sdk-go does not read secrets.
+  Over the wire it returns the raw `qf1:` string as the value of a secret key.
+  In datadir mode it never opens `secrets/`: a key only there is missing, and
+  a key with an old copy in `configs/` is served from that copy. Upgrade every
+  reader before relying on secrets.
+- Detect a secret read failure with `errors.Is(err, ErrUnableToDecrypt)`; the
+  message (`unable_to_decrypt: config "<key>": qf1 <class>: ...`) is for
+  people. An invalid keyset name in a value is never echoed in it; valid names
+  are cut at 64 characters.
 
 ### Deprecated
 
