@@ -2,6 +2,41 @@
 
 All notable changes to the Quonfig Go SDK are documented here.
 
+## Unreleased
+
+qf1 secrets (qfg-8seuf.9; spec `project/plans/secrets-qf1-spec.md`).
+
+### Added
+
+- Secrets in the workspace's `secrets/` directory (datadir) and `type:
+  "secret"` entries on the wire are read as qf1 values and decrypted on get
+  with the private keys in the `QUONFIG_KEYSET*` env var each value names.
+  A missing or invalid keyset, or a key this runtime does not hold, fails only
+  that read with `ErrUnableToDecrypt` (message `qf1 <class>: ...`, naming the
+  keyset and fingerprints), never startup.
+- `ConfigTypeSecret` (`"secret"`). Datadir mode loads `secrets/` last, so a
+  secret shadows a same-key document in `configs/`.
+- Telemetry reports secret evaluations with type `secret`, redacted over the
+  stored ciphertext.
+
+### Changed
+
+- Values that carry `decryptWith` (the old secrets format) are no longer
+  decrypted: reading one fails with `ErrUnableToDecrypt` and a message naming
+  `decryptWith`. Move such secrets to `secrets/` before upgrading.
+- Upgrade note: an older sdk-go that reads a key stored only in `secrets/`
+  returns the raw `qf1:` string as its value; upgrade before relying on
+  secrets.
+
+### Deprecated
+
+- `Value.DecryptWith`: still decoded, so such values can be refused, but never
+  honoured.
+
+### Removed
+
+- The internal old-format decryptor (`internal/encryption`; not public API).
+
 ## 2.1.0 - 2026-10-29
 
 Malformed data now has its own error code (qfg-wg1n). Error path only: a
