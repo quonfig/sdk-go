@@ -2,12 +2,16 @@ package qf1
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ecdh"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -623,4 +627,266 @@ func TestReaderConcurrentColdCache(t *testing.T) {
 	for err := range errs {
 		t.Error(err)
 	}
+}
+
+// encodings returns the forms in which bytes b could land in an error text:
+// raw, lowercase and uppercase hex, standard and URL base64 (padded and not).
+func encodings(b []byte) []string {
+	if len(b) == 0 {
+		return nil
+	}
+	return []string{
+		string(b),
+		hex.EncodeToString(b),
+		strings.ToUpper(hex.EncodeToString(b)),
+		base64.StdEncoding.EncodeToString(b),
+		base64.RawStdEncoding.EncodeToString(b),
+		base64.URLEncoding.EncodeToString(b),
+		base64.RawURLEncoding.EncodeToString(b),
+		fmt.Sprintf("%v", b),
+		fmt.Sprintf("%q", b),
+	}
+}
+
+// derivedSecrets recomputes, outside the reader, every secret intermediate a
+// reader holds while it builds an authentication or UTF-8 error: the shared
+// secret, PRK, OKM, AES key, nonce, and (when the tag verifies) the plaintext.
+func derivedSecrets(t *testing.T, value string, env map[string]string) (secrets [][]byte, plaintext []byte) {
+	t.Helper()
+	ct, err := Parse(value)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	envVal, ok := env[ct.Keyset]
+	ks, err := ParseKeyset(ct.Keyset, envVal, ok)
+	if err != nil {
+		t.Fatalf("ParseKeyset: %v", err)
+	}
+	held, ok := ks.keys[ct.Fingerprint]
+	if !ok {
+		t.Fatalf("fingerprint %s not held", ct.Fingerprint)
+	}
+	shared, err := x25519With(held.private, ct.ephemeral)
+	if err != nil {
+		t.Fatalf("x25519: %v", err)
+	}
+	prk := hkdfExtract(hkdfSalt(ct.ephemeral, held.public), shared)
+	okm := hkdfExpand(prk, hkdfInfo, okmLength)
+	key, nonce := okm[:32], okm[32:]
+	block, _ := aes.NewCipher(key)
+	gcm, _ := cipher.NewGCM(block)
+	plain, _ := gcm.Open(nil, nonce, ct.sealed, ct.aad)
+	return [][]byte{shared, prk, okm, key, nonce, held.private.Bytes()}, plain
+}
+
+func forbiddenFrom(secrets [][]byte, plaintext []byte) []string {
+	var out []string
+	for _, s := range secrets {
+		out = append(out, encodings(s)...)
+	}
+	out = append(out, encodings(plaintext)...)
+	// Any 6-byte window of the plaintext, as text or hex, is a leak too.
+	for i := 0; i+6 <= len(plaintext); i++ {
+		w := plaintext[i : i+6]
+		out = append(out, string(w), hex.EncodeToString(w))
+	}
+	return out
+}
+
+// TestDecryptFailedErrorsDoNotLeakDerivedSecrets: for every decrypt_failed
+// vector (authentication failure or non-UTF-8 plaintext) the error contains
+// none of the shared secret, PRK, OKM, AES key, nonce, private key or the
+// plaintext bytes, in raw, hex or base64 form.
+func TestDecryptFailedErrorsDoNotLeakDerivedSecrets(t *testing.T) {
+	v := loadVectors(t)
+	n := 0
+	for _, c := range v.Negative {
+		if c.ExpectedError != string(DecryptFailed) {
+			continue
+		}
+		n++
+		t.Run(c.Name, func(t *testing.T) {
+			secrets, plain := derivedSecrets(t, c.Ciphertext, c.Env)
+			_, err := NewReader(mapLookup(c.Env)).Decrypt(c.Ciphertext)
+			if classOf(err) != DecryptFailed {
+				t.Fatalf("class %q, want decrypt_failed", classOf(err))
+			}
+			assertNoLeak(t, err, forbiddenFrom(secrets, plain)...)
+		})
+	}
+	if n < 8 {
+		t.Fatalf("only %d decrypt_failed vectors", n)
+	}
+}
+
+// sealForTest encrypts plaintext bytes to the first key of a vector keyset,
+// exactly as spec 7 does but with no writer checks (test-only; the SDK ships
+// no writer). The ephemeral key is fixed so the test is deterministic.
+func sealForTest(t *testing.T, ks vectorKeyset, plaintext []byte) string {
+	t.Helper()
+	ephPriv, err := ecdh.X25519().NewPrivateKey(bytes.Repeat([]byte{0x42}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pubR := mustHex(t, ks.Keys[0].PublicKeyHex)
+	shared, err := x25519(ephPriv.Bytes(), pubR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	eph := ephPriv.PublicKey().Bytes()
+	key, nonce := deriveKeyNonce(shared, eph, pubR)
+	header := "qf1:" + ks.Name + ":" + ks.Keys[0].Fingerprint + ":"
+	block, _ := aes.NewCipher(key)
+	gcm, _ := cipher.NewGCM(block)
+	sealed := gcm.Seal(nil, nonce, plaintext, []byte(header))
+	return header + base64.RawURLEncoding.EncodeToString(append(append([]byte{}, eph...), sealed...))
+}
+
+// TestNonUTF8PlaintextErrorDoesNotLeakPlaintext seals a known sentinel
+// followed by invalid UTF-8 and requires the decrypt_failed error to carry
+// no part of it.
+func TestNonUTF8PlaintextErrorDoesNotLeakPlaintext(t *testing.T) {
+	v := loadVectors(t)
+	ks := v.Keysets[0]
+	env := map[string]string{ks.Name: ks.EnvValue}
+	for name, plain := range map[string][]byte{
+		"trailing-ff":       append([]byte("SENTINEL-PLAINTEXT-7c1d"), 0xff),
+		"encoded-surrogate": append([]byte("SENTINEL-PLAINTEXT-7c1d"), 0xed, 0xa0, 0x80),
+		"overlong-nul":      append([]byte("SENTINEL-PLAINTEXT-7c1d"), 0xc0, 0x80),
+	} {
+		t.Run(name, func(t *testing.T) {
+			value := sealForTest(t, ks, plain)
+			secrets, got := derivedSecrets(t, value, env)
+			if !bytes.Equal(got, plain) {
+				t.Fatalf("test sealer round trip failed")
+			}
+			_, err := NewReader(mapLookup(env)).Decrypt(value)
+			if classOf(err) != DecryptFailed {
+				t.Fatalf("class %q, want decrypt_failed (%v)", classOf(err), err)
+			}
+			assertNoLeak(t, err, append(forbiddenFrom(secrets, plain), "SENTINEL", "7c1d")...)
+		})
+	}
+}
+
+// TestInvalidKeysetNameIsNotQuoted: a keyset field that is not a valid name
+// is never echoed (a pasted private key or plaintext would land in logs);
+// the error says only that it is invalid and how long it is.
+func TestInvalidKeysetNameIsNotQuoted(t *testing.T) {
+	v := loadVectors(t)
+	payload := v.Positive[0].Ciphertext[strings.LastIndex(v.Positive[0].Ciphertext, ":")+1:]
+	for _, name := range []string{
+		"SENTINELsecretpastedhere",
+		"QUONFIG_KEYSET_SENTINEL\n",
+		"HOME",
+		strings.Repeat("S", 100),
+	} {
+		_, err := NewReader(mapLookup(nil)).Decrypt("qf1:" + name + ":b3f48931:" + payload)
+		if classOf(err) != InvalidKeysetName {
+			t.Fatalf("%q: class %q", name, classOf(err))
+		}
+		if !strings.Contains(err.Error(), fmt.Sprintf("%d characters", len(name))) {
+			t.Fatalf("%q: error %q does not give the length", name, err)
+		}
+		assertNoLeak(t, err, "SENTINEL", "HOME", "SSSS", strings.TrimSpace(name))
+	}
+}
+
+// TestValidKeysetNameTruncatedTo64: a valid keyset name longer than 64
+// characters is echoed only as its first 64 characters.
+func TestValidKeysetNameTruncatedTo64(t *testing.T) {
+	v := loadVectors(t)
+	c := v.Positive[0]
+	long := "QUONFIG_KEYSET_" + strings.Repeat("A", 49) + "_TAILMARKER"
+	if !ValidKeysetName(long) || len(long) <= 64 {
+		t.Fatal("bad test name")
+	}
+	value := strings.Replace(c.Ciphertext, ":"+c.Keyset+":", ":"+long+":", 1)
+	checks := map[string]map[string]string{
+		"keyset_missing": {},
+		"keyset_invalid": {long: "not-a-key"},
+		"key_not_held":   {long: v.PositiveEnv["QUONFIG_KEYSET"]},
+	}
+	for want, env := range checks {
+		_, err := NewReader(mapLookup(env)).Decrypt(value)
+		if string(classOf(err)) != want {
+			t.Fatalf("class %q, want %s (%v)", classOf(err), want, err)
+		}
+		if !strings.Contains(err.Error(), long[:64]) {
+			t.Fatalf("%s: %q does not name the truncated keyset", want, err)
+		}
+		assertNoLeak(t, err, "TAILMARKER", long[:65])
+	}
+}
+
+func TestDisplayKeysetName(t *testing.T) {
+	if got := displayKeysetName("QUONFIG_KEYSET_PROD"); got != "QUONFIG_KEYSET_PROD" {
+		t.Fatalf("got %q", got)
+	}
+	long := "QUONFIG_KEYSET_" + strings.Repeat("B", 80)
+	if got := displayKeysetName(long); got != long[:64]+"..." {
+		t.Fatalf("got %q", got)
+	}
+}
+
+// TestReaderCacheDoesNotHoldRawEnvValue: the cache compares a digest of the
+// env value, never a second copy of the private entries.
+func TestReaderCacheDoesNotHoldRawEnvValue(t *testing.T) {
+	v := loadVectors(t)
+	c := v.Positive[0]
+	r := NewReader(mapLookup(v.PositiveEnv))
+	if _, err := r.Decrypt(c.Ciphertext); err != nil {
+		t.Fatal(err)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for name, entry := range r.cache {
+		dump := fmt.Sprintf("%#v", entry)
+		for _, piece := range strings.Split(v.PositiveEnv[name], ",") {
+			piece = strings.Trim(piece, " \t\r\n")
+			if piece != "" && strings.Contains(dump, piece) {
+				t.Fatalf("cache entry for %s holds the raw env entry", name)
+			}
+		}
+	}
+}
+
+// TestFIPSOnlyRuntimeRefusal: under GODEBUG=fips140=only crypto/ecdh refuses
+// X25519. That must fail closed with an error naming the runtime restriction,
+// not blaming the key entry. GODEBUG fips140 is read at process start, so the
+// check runs in a child test process.
+func TestFIPSOnlyRuntimeRefusal(t *testing.T) {
+	if os.Getenv("QF1_FIPS_CHILD") == "1" {
+		v := loadVectors(t)
+		c := v.Positive[0]
+		if _, err := ecdh.X25519().NewPrivateKey(make([]byte, 32)); err == nil {
+			t.Skip("this toolchain does not restrict X25519 under fips140=only")
+		}
+		got, err := NewReader(mapLookup(v.PositiveEnv)).Decrypt(c.Ciphertext)
+		if err == nil || got != "" {
+			t.Fatalf("decrypted %q under fips140=only", got)
+		}
+		msg := err.Error()
+		if strings.Contains(msg, "is not a qf1 private key") || classOf(err) == KeysetInvalid {
+			t.Fatalf("blames the key entry: %s", msg)
+		}
+		if !strings.Contains(msg, "X25519") || !strings.Contains(msg, "fips140") {
+			t.Fatalf("does not name the runtime restriction: %s", msg)
+		}
+		fmt.Println("FIPS_CHILD_OK:", msg)
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestFIPSOnlyRuntimeRefusal$", "-test.v")
+	cmd.Env = append(os.Environ(), "QF1_FIPS_CHILD=1", "GODEBUG=fips140=only")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("child failed: %v\n%s", err, out)
+	}
+	if strings.Contains(string(out), "--- SKIP") {
+		t.Skipf("child skipped:\n%s", out)
+	}
+	if !strings.Contains(string(out), "FIPS_CHILD_OK:") {
+		t.Fatalf("child did not run the check:\n%s", out)
+	}
+	t.Logf("%s", out)
 }

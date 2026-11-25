@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -106,13 +105,22 @@ type Ciphertext struct {
 	sealed      []byte // C || T
 }
 
-// quoteName renders a writer-controlled keyset name for an error: at most 64
-// characters, control characters escaped (spec 9.2).
-func quoteName(name string) string {
+// displayKeysetName renders a VALID keyset name for an error: names are
+// ASCII A-Z, 0-9 and _, so the only rule is the 64-character cap of spec 9.2.
+// An invalid keyset field is never echoed at all (it could be a pasted
+// private key or plaintext); see Parse.
+func displayKeysetName(name string) string {
 	if len(name) > 64 {
-		name = name[:64]
+		return name[:64] + "..."
 	}
-	return strconv.QuoteToASCII(name)
+	return name
+}
+
+// errRuntimeRefusedX25519 is the failure when this runtime's crypto/ecdh
+// refuses X25519 itself (GODEBUG=fips140=only does that). It is about the
+// runtime, not the key entry, and fails the value closed.
+func errRuntimeRefusedX25519(keyset string) *Error {
+	return fail(DecryptFailed, "this runtime refused X25519 for %s (crypto/ecdh disallows it, for example under GODEBUG=fips140=only); qf1 secrets cannot be read in this mode", displayKeysetName(keyset))
 }
 
 // Parse applies spec 3.5 in order; the first failing step decides the class.
@@ -130,7 +138,9 @@ func Parse(v string) (*Ciphertext, error) {
 	}
 	keyset, fp, payloadText := fields[1], fields[2], fields[3]
 	if !keysetNameRE.MatchString(keyset) {
-		return nil, fail(InvalidKeysetName, "keyset name %s does not match %s", quoteName(keyset), keysetNamePattern)
+		// Never echo the field: it is writer-controlled and could hold a
+		// pasted private key or plaintext. Its length is enough to debug.
+		return nil, fail(InvalidKeysetName, "keyset field is not a valid keyset name (%d characters; names match %s)", len(keyset), keysetNamePattern)
 	}
 	if !fingerprintRE.MatchString(fp) {
 		return nil, fail(Malformed, "fingerprint field is not 8 lowercase hex characters")
@@ -197,8 +207,9 @@ func fingerprint(pub []byte) string {
 // ParseKeyset parses the value of the env var named name (spec 6.2). set is
 // false when the variable is unset.
 func ParseKeyset(name, value string, set bool) (*Keyset, error) {
+	shown := displayKeysetName(name)
 	if !set {
-		return nil, fail(KeysetMissing, "this runtime has no %s", name)
+		return nil, fail(KeysetMissing, "this runtime has no %s", shown)
 	}
 	var entries []string
 	for _, piece := range strings.Split(value, ",") {
@@ -207,17 +218,21 @@ func ParseKeyset(name, value string, set bool) (*Keyset, error) {
 		}
 	}
 	if len(entries) == 0 {
-		return nil, fail(KeysetMissing, "%s is set but holds no keys", name)
+		return nil, fail(KeysetMissing, "%s is set but holds no keys", shown)
 	}
 	ks := &Keyset{name: name, keys: make(map[string]heldKey, len(entries))}
 	for i, entry := range entries {
+		// Whether the entry is well formed is decided here, by format alone:
+		// any 32 bytes are a valid X25519 private key (spec 5.2).
 		raw, err := ParsePrivateKeyEntry(entry)
 		if err != nil {
-			return nil, fail(KeysetInvalid, "%s entry %d is not a qf1 private key", name, i+1)
+			return nil, fail(KeysetInvalid, "%s entry %d is not a qf1 private key", shown, i+1)
 		}
+		// So a library refusal of a well-formed entry is the runtime's
+		// restriction (FIPS-only mode), not a bad key.
 		priv, err := ecdh.X25519().NewPrivateKey(raw)
 		if err != nil {
-			return nil, fail(KeysetInvalid, "%s entry %d is not a qf1 private key", name, i+1)
+			return nil, errRuntimeRefusedX25519(name)
 		}
 		pub := priv.PublicKey().Bytes()
 		fp := fingerprint(pub)
@@ -225,7 +240,7 @@ func ParseKeyset(name, value string, set bool) (*Keyset, error) {
 			if hmac.Equal(existing.public, pub) {
 				continue // the same key twice, or a clamp-equivalent encoding
 			}
-			return nil, fail(KeysetInvalid, "%s holds two different keys with fingerprint %s", name, fp)
+			return nil, fail(KeysetInvalid, "%s holds two different keys with fingerprint %s", shown, fp)
 		}
 		ks.keys[fp] = heldKey{private: priv, public: pub}
 	}
@@ -244,10 +259,14 @@ func x25519(scalar, u []byte) ([]byte, error) {
 	return x25519With(priv, u)
 }
 
+// errPublicKeyRefused marks a NewPublicKey refusal: u is always 32 bytes
+// here, so only a runtime restriction (FIPS-only mode) produces it.
+var errPublicKeyRefused = fmt.Errorf("crypto/ecdh refused the X25519 public key")
+
 func x25519With(priv *ecdh.PrivateKey, u []byte) ([]byte, error) {
 	pub, err := ecdh.X25519().NewPublicKey(u)
 	if err != nil {
-		return nil, err
+		return nil, errPublicKeyRefused
 	}
 	return priv.ECDH(pub)
 }
@@ -294,32 +313,36 @@ func allZero(b []byte) bool {
 // open decrypts ct with the key this keyset holds for its fingerprint
 // (spec 8 steps 3 to 7). There is no trial decryption.
 func (k *Keyset) open(ct *Ciphertext) (string, error) {
+	shown := displayKeysetName(ct.Keyset)
 	held, ok := k.keys[ct.Fingerprint]
 	if !ok {
 		return "", fail(KeyNotHeld, "value is encrypted to %s fingerprint %s; this runtime holds %s fingerprints [%s]",
-			ct.Keyset, ct.Fingerprint, k.name, strings.Join(k.Fingerprints(), " "))
+			shown, ct.Fingerprint, displayKeysetName(k.name), strings.Join(k.Fingerprints(), " "))
 	}
 	shared, err := x25519With(held.private, ct.ephemeral)
+	if err == errPublicKeyRefused {
+		return "", errRuntimeRefusedX25519(ct.Keyset)
+	}
 	if err != nil || allZero(shared) {
 		// crypto/ecdh refuses a small-order point with an error: that refusal
 		// IS the all-zero failure (spec 5.2).
-		return "", fail(InvalidEphemeralKey, "X25519 shared secret for %s fingerprint %s is all zero", ct.Keyset, ct.Fingerprint)
+		return "", fail(InvalidEphemeralKey, "X25519 shared secret for %s fingerprint %s is all zero", shown, ct.Fingerprint)
 	}
 	key, nonce := deriveKeyNonce(shared, ct.ephemeral, held.public)
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", fail(DecryptFailed, "AES setup failed for %s fingerprint %s", ct.Keyset, ct.Fingerprint)
+		return "", fail(DecryptFailed, "AES setup failed for %s fingerprint %s", shown, ct.Fingerprint)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", fail(DecryptFailed, "GCM setup failed for %s fingerprint %s", ct.Keyset, ct.Fingerprint)
+		return "", fail(DecryptFailed, "GCM setup failed for %s fingerprint %s", shown, ct.Fingerprint)
 	}
 	plain, err := gcm.Open(nil, nonce, ct.sealed, ct.aad)
 	if err != nil {
-		return "", fail(DecryptFailed, "authentication failed for %s fingerprint %s", ct.Keyset, ct.Fingerprint)
+		return "", fail(DecryptFailed, "authentication failed for %s fingerprint %s", shown, ct.Fingerprint)
 	}
 	if !utf8.Valid(plain) {
-		return "", fail(DecryptFailed, "plaintext for %s fingerprint %s is not valid UTF-8", ct.Keyset, ct.Fingerprint)
+		return "", fail(DecryptFailed, "plaintext for %s fingerprint %s is not valid UTF-8", shown, ct.Fingerprint)
 	}
 	return string(plain), nil
 }
@@ -335,8 +358,11 @@ type Reader struct {
 	cache map[string]cachedKeyset
 }
 
+// cachedKeyset remembers a parse result and a SHA-256 of the env value it
+// came from, so the cache never keeps a second long-lived copy of the
+// private entries.
 type cachedKeyset struct {
-	value  string
+	digest [sha256.Size]byte
 	keyset *Keyset
 	err    error
 }
@@ -353,11 +379,12 @@ func (r *Reader) keyset(name string) (*Keyset, error) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if c, ok := r.cache[name]; ok && c.value == value {
+	digest := sha256.Sum256([]byte(value))
+	if c, ok := r.cache[name]; ok && c.digest == digest {
 		return c.keyset, c.err
 	}
 	ks, err := ParseKeyset(name, value, true)
-	r.cache[name] = cachedKeyset{value: value, keyset: ks, err: err}
+	r.cache[name] = cachedKeyset{digest: digest, keyset: ks, err: err}
 	return ks, err
 }
 
@@ -371,7 +398,7 @@ func (r *Reader) Decrypt(v string) (string, error) {
 	ks, err := r.keyset(ct.Keyset)
 	if err != nil {
 		if qe, ok := err.(*Error); ok && qe.Class == KeysetMissing {
-			return "", fail(KeysetMissing, "value is encrypted to %s fingerprint %s; %s", ct.Keyset, ct.Fingerprint, qe.detail)
+			return "", fail(KeysetMissing, "value is encrypted to %s fingerprint %s; %s", displayKeysetName(ct.Keyset), ct.Fingerprint, qe.detail)
 		}
 		return "", err
 	}
